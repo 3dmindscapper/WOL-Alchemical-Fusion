@@ -108,7 +108,19 @@ Let enemies and stages roll **Radiant** variants when the Arcanos mod is install
 - 📋 Radiant giants: a custom palette or tint, plus Radiant arcana as their skills.
 - 📋 Radiant stages, built on the chaos-stage recolour system from part 3.
 
-## 5. Final-stage boss pool 📋
+## 5. Final-stage boss pool 🧪 (v0.4.0)
+
+Built:
+- 🧪 Each run has a `FinalBoss.Chance` (0.35) that the final boss is a **champion** instead of Sura:
+  - an elemental **Archon** (Fire / Water / Earth / Wind / Thunder Archon), or
+  - the **Chaos Sovereign** (`ChaosSovereignChance` 0.3), with arcana from every element.
+  It's the rival-wizard kit at a new **Final** tier: 2600 HP (+200 per difficulty), 5 arcana, a dash arcana, a signature meter, fast spell pacing, a robe and a relic, and the full intro reveal.
+- 🧪 **Placeholder "NOT SURA" badge**, top right, from arriving in the final room until the champion falls: a pulsing element-coloured frame with one of the element's arcana icons, plus "<Champion> awaits". Real art can replace it later.
+- 🧪 **Normal ending kept.** Sura stays the room's official boss. When the fight starts she's hidden and frozen and the champion appears where she stands. When the champion dies, Sura is put into her *final* death (`chaosMode` on, both form intros marked done), and the room's own code runs the victory, `BossOutro` (**Chaos arcana unlock** + achievement) and the ending, exactly as after beating her.
+- F12 test key: in the final room before the fight, it turns this fight into a champion. Elsewhere, it forces the next final room and spawns a champion beside you to try the fight.
+- 📋 Next: a big boss health bar for champions, phases (element swap at 50% for Archons), real badge art, Radiance in the Sovereign pool once Arcanos is supported, and possibly champions replacing Council members.
+
+## 5 (original plan). Final-stage boss pool
 
 The final stage can roll strong elemental wizard bosses instead of Sura, or a new boss.
 
@@ -193,5 +205,6 @@ Let rival and final bosses use arcana added by other mods.
 | F9 | Dump the element → palette table and the current stage element |
 | F10 | Cycle the nearest giant through all five elements |
 | F11 | Open a rival arena around you (three portals) |
+| F12 | Final champion test (this final room, or spawn one here and force the next final room) |
 
 Config: `BepInEx\config\osi.wol.hybridbosses.cfg` (created on first launch).

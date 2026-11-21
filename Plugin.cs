@@ -13,7 +13,7 @@ namespace WolHybridBosses
     [BepInPlugin("osi.wol.hybridbosses", "Hybrid Bosses", Version)]
     public class Plugin : BaseUnityPlugin
     {
-        public const string Version = "0.3.2";
+        public const string Version = "0.4.0";
         internal static ManualLogSource Log;
 
         internal static ConfigEntry<bool> ElementalGiants;
@@ -33,6 +33,9 @@ namespace WolHybridBosses
         internal static ConfigEntry<bool> RivalRobes;
         internal static ConfigEntry<bool> RivalRelics;
         internal static ConfigEntry<bool> GiantIntros;
+        internal static ConfigEntry<bool> FinalChampions;
+        internal static ConfigEntry<float> FinalChampionChance;
+        internal static ConfigEntry<float> FinalChaosChance;
 
         void Awake()
         {
@@ -69,8 +72,14 @@ namespace WolHybridBosses
                 "Rivals carry a random stat relic (shown in the intro) and get its bonus.");
             GiantIntros = Config.Bind("ElementalGiants", "Intro", true,
                 "When you first get close to an elemental giant, its skills and arcana appear at the top of the screen.");
+            FinalChampions = Config.Bind("FinalBoss", "Enabled", true,
+                "The final boss room can hold a champion instead of Sura. Beating it ends the run normally (victory, Chaos arcana unlock, ending).");
+            FinalChampionChance = Config.Bind("FinalBoss", "Chance", 0.35f,
+                "Chance (0 to 1) per run that the final boss is a champion instead of Sura.");
+            FinalChaosChance = Config.Bind("FinalBoss", "ChaosSovereignChance", 0.3f,
+                "When a champion is rolled: chance it is the Chaos Sovereign (arcana of every element) instead of an elemental Archon.");
             DebugKeys = Config.Bind("Debug", "Hotkeys", true,
-                "F5 list enemies, F6 cycle palette, F7 dump nearest enemy, F8 spawn test giant, F9 dump element->palette, F10 reroll nearest giant's element, F11 open a rival arena right here.");
+                "F5 list enemies, F6 cycle palette, F7 dump nearest enemy, F8 spawn test giant, F9 dump element->palette, F10 reroll nearest giant's element, F11 open a rival arena right here, F12 final champion test (forces the next final room, or spawns a champion fight here).");
 
             Harmony harmony = new Harmony("osi.wol.hybridbosses");
             harmony.PatchAll(typeof(Plugin).Assembly);
@@ -94,6 +103,7 @@ namespace WolHybridBosses
             if (Input.GetKeyDown(KeyCode.F9)) Debug.DumpElementPalette();
             if (Input.GetKeyDown(KeyCode.F10)) Debug.RerollNearestGiant();
             if (Input.GetKeyDown(KeyCode.F11)) Debug.OpenRivalArenaHere();
+            if (Input.GetKeyDown(KeyCode.F12)) Debug.FinalChampionTest();
         }
     }
 
@@ -603,6 +613,35 @@ namespace WolHybridBosses
             if (table == null) { Log.LogWarning("elementToPalette is null on " + e.GetType().Name); return; }
             Log.LogInfo("ELEMENTPALETTE (from " + e.GetType().Name + ", count " + table.Count + ", difficulty " + GameController.CurrentDifficulty + ", floor element " + Level.element + ")");
             foreach (DictionaryEntry de in table) Log.LogInfo("ELEMENTPALETTE " + de.Key + " -> " + de.Value);
+        }
+
+        // F12: in the final boss room before the fight -> make it a champion now. Elsewhere -> force the next final
+        // room to roll a champion, and spawn a Final-tier champion beside you to try the fight (no ending here).
+        internal static void FinalChampionTest()
+        {
+            FinalBossRoomEventHandler room = UnityEngine.Object.FindObjectOfType<FinalBossRoomEventHandler>();
+            if (room != null && room.GetComponent<FinalChampion>() == null)
+            {
+                FinalChampion.ForceNext = true;
+                FinalChampion.Roll(room);
+                Log.LogInfo("FINAL test: this final room now holds a champion");
+                return;
+            }
+            FinalChampion.ForceNext = true;
+            Player p = GetPlayer();
+            if (p == null) return;
+            string prefix = UnityEngine.Random.value < 0.3f ? "Chaos" : ElementalGiants.RandomPrefix();
+            Enemy e = Rivals.Spawn(p.transform.position + new Vector3(0f, 5f, 0f), prefix, RivalTier.Final);
+            if (e != null) p.StartCoroutine(TestIntro(e, prefix));
+            Log.LogInfo("FINAL test: champion spawned here; the next final room will also hold one");
+        }
+
+        static IEnumerator TestIntro(Enemy e, string prefix)
+        {
+            yield return null;
+            yield return null;
+            string title = prefix == "Chaos" ? "Chaos Sovereign" : ElementalGiants.ElementColorName(prefix) + " Archon";
+            yield return e.StartCoroutine(Rivals.Intro(e, title, "Final Champion (test)"));
         }
 
         // F11: open a rival arena around the player (stage element, or random on neutral stages).

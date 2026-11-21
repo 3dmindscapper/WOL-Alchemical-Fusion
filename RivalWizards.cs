@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Text;
@@ -7,7 +7,7 @@ using UnityEngine;
 
 namespace WolHybridBosses
 {
-    internal enum RivalTier { Easy, Medium, Hard }
+    internal enum RivalTier { Easy, Medium, Hard, Final } // Final = final-stage champion
 
     // Rival-wizard events: the misc-room portal sometimes leads to an arena with three portals (Easy/Medium/Hard).
     // Picking one teleports you into the arena, the camera shows the rival and their arcana for ~4 seconds, then the fight starts.
@@ -27,7 +27,8 @@ namespace WolHybridBosses
             {
                 case RivalTier.Easy: return new Color(0.3f, 1f, 0.4f);
                 case RivalTier.Medium: return new Color(1f, 0.8f, 0.2f);
-                default: return new Color(1f, 0.2f, 0.2f);
+                case RivalTier.Hard: return new Color(1f, 0.2f, 0.2f);
+                default: return new Color(0.85f, 0.55f, 1f);
             }
         }
 
@@ -38,18 +39,23 @@ namespace WolHybridBosses
             {
                 case RivalTier.Easy: return 500f + 50f * diff;
                 case RivalTier.Medium: return 900f + 90f * diff;
-                default: return 1400f + 125f * diff;
+                case RivalTier.Hard: return 1400f + 125f * diff;
+                default: return 2600f + 200f * diff;
             }
         }
 
-        internal static int TierArcanaCount(RivalTier t) { return t == RivalTier.Easy ? 2 : t == RivalTier.Medium ? 3 : 4; }
-        internal static float TierCooldown(RivalTier t) { return t == RivalTier.Easy ? 1.6f : t == RivalTier.Medium ? 1.2f : 0.9f; }
-        // Minimum gap between any two spells (the rival's own and borrowed arcana share it).
-        internal static float TierCastGap(RivalTier t) { return t == RivalTier.Easy ? 3f : t == RivalTier.Medium ? 2f : 1.3f; }
-        internal static float TierDamage(RivalTier t) { return t == RivalTier.Easy ? 0.5f : t == RivalTier.Medium ? 0.75f : 1f; }
-        internal static float TierWindup(RivalTier t) { return t == RivalTier.Easy ? 1.5f : t == RivalTier.Medium ? 1.2f : 1f; }
-        internal static int TierSignatureHits(RivalTier t) { return t == RivalTier.Easy ? 12 : t == RivalTier.Medium ? 9 : 6; }
+        static T ByTier<T>(RivalTier t, T easy, T medium, T hard, T final)
+        {
+            switch (t) { case RivalTier.Easy: return easy; case RivalTier.Medium: return medium; case RivalTier.Hard: return hard; default: return final; }
+        }
 
+        internal static int TierArcanaCount(RivalTier t) { return ByTier(t, 2, 3, 4, 5); }
+        internal static float TierCooldown(RivalTier t) { return ByTier(t, 1.6f, 1.2f, 0.9f, 0.85f); }
+        // Minimum gap between any two spells (the rival's own and borrowed arcana share it).
+        internal static float TierCastGap(RivalTier t) { return ByTier(t, 3f, 2f, 1.3f, 1.1f); }
+        internal static float TierDamage(RivalTier t) { return ByTier(t, 0.5f, 0.75f, 1f, 1f); }
+        internal static float TierWindup(RivalTier t) { return ByTier(t, 1.5f, 1.2f, 1f, 1f); }
+        internal static int TierSignatureHits(RivalTier t) { return ByTier(t, 12, 9, 6, 6); }
         // ---------- spell pacing ----------
         static readonly Dictionary<int, float> nextCastTime = new Dictionary<int, float>();
 
@@ -127,7 +133,7 @@ namespace WolHybridBosses
             e.targetGroup = GameController.players;
             e.currentGroup = GameController.enemies;
             e.dropLoot = true;
-            e.dropLootChest = true; // EnemyDropLoot spawns TreasureChest with chestLootTableID ("TreasureChestMiniBoss")
+            e.dropLootChest = mk.Tier != RivalTier.Final; // EnemyDropLoot spawns TreasureChest with chestLootTableID ("TreasureChestMiniBoss"); the final boss room has its own rewards
 
             // The Contestant also registers the Frost Mage's Blizzard as an extra skill. Keep it only on Water rivals.
             if (!SignatureAllowed(mk, "SummonBlizzard") && e.availableEnemySkillsDict != null) e.availableEnemySkillsDict.Remove(BlizzardSkill);
@@ -209,6 +215,27 @@ namespace WolHybridBosses
             }
             if (mk.RelicID != null) list.Add(new IntroEntry(IntroUI.ItemIcon(mk.RelicID), IntroUI.ItemName(mk.RelicID)));
             return list;
+        }
+
+        // Intro shared by arena rivals and final-stage champions: freeze the rival, camera on it, its arcana/robe/relic
+        // appear one by one, then the fight starts (with a short delay before its first spell).
+        internal static IEnumerator Intro(Enemy rival, string title, string subtitle)
+        {
+            if (rival == null) yield break;
+            rival.enabled = false;
+            RivalMarker mk = rival.GetComponent<RivalMarker>();
+            RivalTier tier = mk != null ? mk.Tier : RivalTier.Medium;
+            float intro = IntroUI.Show(title, subtitle + (mk != null ? "  ·  " + mk.Bonus.Describe() : ""), TierColor(tier),
+                mk != null ? IntroEntries(mk) : null, Plugin.RivalIntroSeconds.Value);
+            if (rival.health != null) rival.health.SetInvulnerabilityDuration(intro + 0.5f, false);
+            CameraController cam = CameraController.Instance;
+            if (cam != null) cam.OverrideAndMoveCameraToLocation(rival.transform, null, intro, true, false, false, false);
+            yield return new WaitForSeconds(intro);
+            if (rival != null)
+            {
+                DelayCasts(rival, 1.5f); // no opening burst
+                rival.enabled = true;
+            }
         }
 
         internal static string ArcanaList(List<ArcanaDef> defs)
@@ -389,22 +416,7 @@ namespace WolHybridBosses
             yield return null; // Start (and our hostile postfix) runs
             yield return null;
 
-            // Intro: freeze the rival, camera on it, its arcana/robe/relic appear one by one, then the fight.
-            rival.enabled = false;
-            RivalMarker mk = rival.GetComponent<RivalMarker>();
-            float intro = IntroUI.Show(ElementalGiants.ElementColorName(prefix) + " Rival Wizard",
-                tier + (mk != null ? "  ·  " + mk.Bonus.Describe() : ""), Rivals.TierColor(tier),
-                mk != null ? Rivals.IntroEntries(mk) : null, Plugin.RivalIntroSeconds.Value);
-            if (rival.health != null) rival.health.SetInvulnerabilityDuration(intro + 0.5f, false);
-            CameraController cam = CameraController.Instance;
-            if (cam != null) cam.OverrideAndMoveCameraToLocation(rival.transform, null, intro, true, false, false, false);
-            yield return new WaitForSeconds(intro);
-
-            if (rival != null)
-            {
-                Rivals.DelayCasts(rival, 1.5f); // no opening burst
-                rival.enabled = true;
-            }
+            yield return StartCoroutine(Rivals.Intro(rival, ElementalGiants.ElementColorName(prefix) + " Rival Wizard", tier.ToString()));
         }
 
         void Show(string text, float seconds)
