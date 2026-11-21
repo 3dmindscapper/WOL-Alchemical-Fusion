@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using HarmonyLib;
 using UnityEngine;
@@ -135,7 +136,7 @@ namespace WolHybridBosses
             int armed = ChaosEnemies.ArmAll();
 
             Plugin.Log.LogInfo("CHAOS stage on " + Level.tileSetName + ": " + meshes + " tile meshes, " + sprites + " decorations, " + lights + " lights, "
-                + armed + " enemies with chaos arcana, " + Mathf.RoundToInt((Time.realtimeSinceStartup - t0) * 1000f) + " ms");
+                + armed + " giants turned Chaos, " + Mathf.RoundToInt((Time.realtimeSinceStartup - t0) * 1000f) + " ms");
         }
 
         internal static void Revert()
@@ -251,11 +252,11 @@ namespace WolHybridBosses
         }
     }
 
-    // Enemies on a Chaos stage cast Chaos-element player arcana (1 for regular enemies, 2 for giants).
+    // On a Chaos stage only giants cast Chaos arcana (regular enemies keep their normal kit). Giants normally become
+    // Chaos giants through ElementalGiants (ChaosGiants.Apply); this catches giants spawned once the stage is active
+    // or when elemental giants are turned off.
     internal static class ChaosEnemies
     {
-        static readonly HashSet<string> NonCombat = new HashSet<string> { "Dove", "Rat", "Eagle", "TrainingDummy", "Contestant" };
-
         internal static int ArmAll()
         {
             int n = 0;
@@ -265,30 +266,148 @@ namespace WolHybridBosses
 
         internal static bool Arm(Enemy e)
         {
-            if (e == null || ChaosStages.Active == null || Rivals.IsRival(e) || e is Boss) return false;
-            if (NonCombat.Contains(e.GetType().Name) || e.fsm == null || e.GetComponent<ChaosArmed>() != null) return false;
+            if (e == null || ChaosStages.Active == null || !(e is MiniBoss) || e.GetComponent<ChaosArmed>() != null) return false;
+            ChaosGiants.Apply(e);
+            return true;
+        }
+
+        internal static List<ArcanaDef> Pool()
+        {
             List<ArcanaDef> pool = ArcanaCatalog.PoolExact("Chaos");
             pool.RemoveAll(d => d.Family == ArcanaFamily.Minion || d.Family == ArcanaFamily.Seeker || d.Family == ArcanaFamily.Ward);
-            if (pool.Count == 0) return false;
-            int count = e is MiniBoss ? 2 : 1;
-            int given = EnemyArcana.Give(e, Rivals.PickVaried(pool, count, false), e is MiniBoss ? 1f : 1.6f);
+            return pool;
+        }
+    }
+
+    // Chaos giants: Chaos element, the giant's own purple palette row (found by reading its palette texture), or a
+    // purple tint when its sheet has none (e.g. the Coffin), and 2 Chaos arcana. No borrowed elemental skills.
+    internal static class ChaosGiants
+    {
+        internal static void Apply(Enemy e)
+        {
+            if (e == null || e.GetComponent<ChaosArmed>() != null) return;
             e.gameObject.AddComponent<ChaosArmed>();
-            return given > 0;
+            e.element = ElementType.Chaos;
+
+            int idx = Plugin.ChaosGiantPalette.Value >= 0 ? Plugin.ChaosGiantPalette.Value : PurpleRow(e);
+            if (idx >= 0 && !ElementalGiants.NoElementPalettes(e)) ElementalGiants.SetPaletteIndexAll(e, idx);
+            else { ElementalGiants.Tint(e, ChaosRun.Color); idx = -1; }
+
+            int arcana = 0;
+            List<ArcanaDef> pool = ChaosEnemies.Pool();
+            if (pool.Count > 0) arcana = EnemyArcana.Give(e, Rivals.PickVaried(pool, 2, false));
+            if (Plugin.GiantIntros.Value) GiantIntro.Attach(e, "Chaos", "");
+            Plugin.Log.LogInfo("GIANT " + e.GetType().Name + " -> Chaos giant, palette " + (idx < 0 ? "purple tint" : idx.ToString()) + ", chaos arcana " + arcana);
+        }
+
+        // Palette texture per material: which row is purple, cached by texture.
+        static readonly Dictionary<int, int> purpleByTexture = new Dictionary<int, int>();
+
+        // Reads the giant's palette texture (_Palette, one row per _PaletteIndex), works out the row order from rows
+        // whose colour is known (Water bluish, Fire reddish), and returns the most purple row, or -1 if none is purple.
+        internal static int PurpleRow(Enemy e)
+        {
+            SpriteRenderer sr = e.spriteRenderer;
+            Material m = sr != null ? sr.sharedMaterial : null;
+            if (m == null || !m.HasProperty("_Palette") || !m.HasProperty("_PaletteCount")) return -1;
+            Texture pal = m.GetTexture("_Palette");
+            if (pal == null) return -1;
+            int cached;
+            if (purpleByTexture.TryGetValue(pal.GetInstanceID(), out cached)) return cached;
+
+            int result = -1;
+            try
+            {
+                int count = Mathf.RoundToInt(m.GetFloat("_PaletteCount"));
+                Color32[] px; int w, h;
+                Read(pal, out px, out w, out h);
+                bool rowsAlongY = h == count, colsAlongX = w == count && !rowsAlongY;
+                if (!rowsAlongY && !colsAlongX) { purpleByTexture[pal.GetInstanceID()] = -1; return -1; }
+
+                // Average hue/saturation per row (raw texture order).
+                float[] hue = new float[count], sat = new float[count];
+                for (int r = 0; r < count; r++) RowStats(px, w, h, r, rowsAlongY, out hue[r], out sat[r]);
+
+                // Map palette index -> raw row: try both orders, keep the one where Water is bluish and Fire reddish.
+                IDictionary table = e.elementToPalette as IDictionary;
+                int water = table != null && table.Contains(ElementType.Water) ? (int)table[ElementType.Water] : 4;
+                int fire = table != null && table.Contains(ElementType.Fire) ? (int)table[ElementType.Fire] : 5;
+                bool flipped = Score(hue, sat, count, water, fire, true) > Score(hue, sat, count, water, fire, false);
+
+                float best = 0f;
+                HashSet<int> elemental = new HashSet<int>();
+                if (table != null) foreach (object v in table.Values) elemental.Add((int)v);
+                for (int i = 0; i < count; i++)
+                {
+                    if (elemental.Contains(i)) continue; // keep element rows for elements
+                    int raw = flipped ? count - 1 - i : i;
+                    float p = Purpleness(hue[raw], sat[raw]);
+                    if (p > best) { best = p; result = i; }
+                }
+                if (best < 0.25f) result = -1;
+                Plugin.Log.LogInfo("CHAOS palette for " + e.GetType().Name + ": " + (result < 0 ? "no purple row, tint instead" : "row " + result)
+                    + " (" + w + "x" + h + ", " + (flipped ? "flipped" : "direct") + " order, score " + best.ToString("0.00") + ")");
+            }
+            catch (Exception ex) { Plugin.Log.LogWarning("CHAOS palette read failed: " + ex.Message); result = -1; }
+            purpleByTexture[pal.GetInstanceID()] = result;
+            return result;
+        }
+
+        static void Read(Texture src, out Color32[] px, out int w, out int h)
+        {
+            w = src.width; h = src.height;
+            RenderTexture rt = RenderTexture.GetTemporary(w, h, 0, RenderTextureFormat.ARGB32, RenderTextureReadWrite.Default);
+            Graphics.Blit(src, rt);
+            RenderTexture prev = RenderTexture.active;
+            RenderTexture.active = rt;
+            Texture2D t = new Texture2D(w, h, TextureFormat.RGBA32, false);
+            t.ReadPixels(new Rect(0, 0, w, h), 0, 0);
+            RenderTexture.active = prev;
+            RenderTexture.ReleaseTemporary(rt);
+            px = t.GetPixels32();
+            UnityEngine.Object.Destroy(t);
+        }
+
+        // Circular mean hue (weighted by saturation) and mean saturation of one palette row.
+        static void RowStats(Color32[] px, int w, int h, int row, bool alongY, out float hue, out float sat)
+        {
+            float x = 0f, y = 0f, s = 0f; int n = 0;
+            int len = alongY ? w : h;
+            for (int k = 0; k < len; k++)
+            {
+                Color32 c = alongY ? px[row * w + k] : px[k * w + row];
+                if (c.a == 0) continue;
+                float hh, ss, vv;
+                Color.RGBToHSV(c, out hh, out ss, out vv);
+                if (vv < 0.15f) continue;
+                x += Mathf.Cos(hh * 2f * Mathf.PI) * ss; y += Mathf.Sin(hh * 2f * Mathf.PI) * ss; s += ss; n++;
+            }
+            hue = Mathf.Repeat(Mathf.Atan2(y, x) / (2f * Mathf.PI), 1f);
+            sat = n > 0 ? s / n : 0f;
+        }
+
+        static float HueDistance(float a, float b) { float d = Mathf.Abs(a - b); return Mathf.Min(d, 1f - d); }
+
+        static float Purpleness(float hue, float sat)
+        {
+            float d = HueDistance(hue, 0.78f); // violet/purple
+            return Mathf.Clamp01(1f - d / 0.12f) * Mathf.Clamp01(sat / 0.35f);
+        }
+
+        // How well an order fits: Water row near blue (0.58), Fire row near red/orange (0.03).
+        static float Score(float[] hue, float[] sat, int count, int water, int fire, bool flipped)
+        {
+            int rw = flipped ? count - 1 - water : water, rf = flipped ? count - 1 - fire : fire;
+            if (rw < 0 || rw >= count || rf < 0 || rf >= count) return 0f;
+            return (1f - HueDistance(hue[rw], 0.58f)) + (1f - HueDistance(hue[rf], 0.03f));
         }
     }
 
     internal class ChaosArmed : MonoBehaviour { }
 
-    // Enemies spawned later on a Chaos stage (waves, summons, giants) get armed too.
-    [HarmonyPatch(typeof(Enemy), "Start")]
-    static class ChaosEnemyStartPatch
-    {
-        static void Postfix(Enemy __instance)
-        {
-            if (ChaosStages.Active == null) return;
-            try { ChaosEnemies.Arm(__instance); } catch (Exception) { }
-        }
-    }
+    // Giants spawned later on a Chaos stage become Chaos giants through the giant Start hook (GiantStartPatch ->
+    // ElementalGiants.TryMakeElemental), which runs after MiniBoss.Start has set its gray palette. An Enemy.Start
+    // hook would run too early (inside MiniBoss.Start) and be overwritten, so there is none.
 
     // "Chaos <stage>" title on Chaos stages.
     [HarmonyPatch(typeof(GameController), "get_StageTitle")]

@@ -13,7 +13,7 @@ namespace WolHybridBosses
     [BepInPlugin("osi.wol.hybridbosses", "Hybrid Bosses", Version)]
     public class Plugin : BaseUnityPlugin
     {
-        public const string Version = "0.4.2";
+        public const string Version = "0.4.3";
         internal static ManualLogSource Log;
 
         internal static ConfigEntry<bool> ElementalGiants;
@@ -39,6 +39,7 @@ namespace WolHybridBosses
         internal static ConfigEntry<bool> FinalRoomBadge;
         internal static ConfigEntry<float> ChaosStageChance;
         internal static ConfigEntry<float> ChaosStageRewards;
+        internal static ConfigEntry<int> ChaosGiantPalette;
 
         void Awake()
         {
@@ -87,6 +88,8 @@ namespace WolHybridBosses
                 "Chance (0 to 1) that a regular stage is its Chaos version: purple tiles and lights, enemies with Chaos arcana, a Chaos rival in its arena, better rewards, 'Chaos' in the title and a purple marker on the loading-screen board. Boss floors stay normal. Shift+F11 toggles it on the current stage.");
             ChaosStageRewards = Config.Bind("ChaosStages", "RewardMultiplier", 1.5f,
                 "Gold and item-drop multiplier while on a Chaos stage.");
+            ChaosGiantPalette = Config.Bind("ChaosStages", "GiantPalette", -1,
+                "Palette row for Chaos giants. -1 = find the purple row automatically from each giant's palette texture (purple tint when it has none). Set a number (F6 cycles rows on the nearest enemy) to force one.");
             DebugKeys = Config.Bind("Debug", "Hotkeys", true,
                 "F5 list enemies, F6 cycle palette, F7 dump nearest enemy, F8 spawn test giant, F9 dump element->palette, F10 reroll nearest giant's element, F11 open a rival arena right here, F12 final champion test (forces the next final room, or spawns a champion fight here).");
 
@@ -315,6 +318,9 @@ namespace WolHybridBosses
             if (!IsGiant(e) || !Plugin.ElementalGiants.Value) return;
             if (!Done.Add(e.GetInstanceID())) return;
 
+            // On a Chaos stage giants become Chaos giants instead of taking the stage element.
+            if (ChaosStages.Planned) { ChaosGiants.Apply(e); return; }
+
             string stage = StagePrefix();
             if (stage != null && Plugin.MatchStageElement.Value)
             {
@@ -373,7 +379,7 @@ namespace WolHybridBosses
         }
 
         // Keep the gray mini-boss palette and tint the sprites (and outline) in the element's colour.
-        static void Tint(Enemy e, Color c)
+        internal static void Tint(Enemy e, Color c)
         {
             Color tint = Color.Lerp(Color.white, c, 0.55f);
             foreach (SpriteRenderer sr in e.GetComponentsInChildren<SpriteRenderer>(true))
@@ -396,8 +402,13 @@ namespace WolHybridBosses
             IDictionary table = e.elementToPalette as IDictionary;
             if (table != null && table.Contains(element)) idx = (int)table[element];
             if (idx < 0) return idx;
+            SetPaletteIndexAll(e, idx);
+            return idx;
+        }
 
-            // Body plus extra parts: SuperArcher arms/bow, SuperLancer lance/attack sprite, SuperCoffin coffin.
+        // Body plus extra parts: SuperArcher arms/bow, SuperLancer lance/attack sprite, SuperCoffin coffin.
+        internal static void SetPaletteIndexAll(Enemy e, int idx)
+        {
             foreach (SpriteRenderer sr in e.GetComponentsInChildren<SpriteRenderer>(true))
             {
                 Material m = sr.sharedMaterial;
@@ -405,7 +416,6 @@ namespace WolHybridBosses
                 sr.material.SetFloat("_PaletteIndex", idx);
             }
             PaletteIndexRef(e) = idx;
-            return idx;
         }
 
         // Giants' "Summon" skill calls regular minions (SuperKnight -> "Knight"). Swap to the elemental prefab
