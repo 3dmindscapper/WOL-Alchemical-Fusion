@@ -13,7 +13,7 @@ namespace WolHybridBosses
     [BepInPlugin("osi.wol.hybridbosses", "Hybrid Bosses", Version)]
     public class Plugin : BaseUnityPlugin
     {
-        public const string Version = "0.4.3";
+        public const string Version = "0.4.4";
         internal static ManualLogSource Log;
 
         internal static ConfigEntry<bool> ElementalGiants;

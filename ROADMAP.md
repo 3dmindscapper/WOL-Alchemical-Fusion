@@ -74,7 +74,7 @@ A regular stage can have a **Chaos version** (`ChaosStages.StageChance` 0.15 per
 
 Built:
 - 🧪 **Look:** purple-tinted tiles, decorations and lights.
-- 🧪 **Enemies (v0.4.3):** regular enemies keep their normal kit (no Chaos arcana). **Giants become Chaos giants** instead of taking the stage element: Chaos element, 2 Chaos arcana, no borrowed elemental skills. They wear their own purple palette row, found automatically by reading each giant's palette texture (`ChaosStages.GiantPalette` = -1). A giant with no purple row (the Coffin) gets a purple tint instead.
+- 🧪 **Enemies (v0.4.4):** the types that have elemental versions on other stages (**Knight, Rogue (thief), Archer, Mage (wizard), Summoner**, including their elemental versions) get **1 Chaos arcana and their purple palette row**. Other regular enemies keep their normal kit. **Giants become Chaos giants** instead of taking the stage element: Chaos element, 2 Chaos arcana, no borrowed elemental skills. They wear their own purple palette row, found automatically by reading each giant's palette texture (`ChaosStages.GiantPalette` = -1). A giant with no purple row (the Coffin) gets a purple tint instead.
 - 🧪 **Rival:** the stage's rival arena features a Chaos rival casting Chaos arcana. Rivals never appear outside their arenas.
 - 🧪 **Rewards:** gold and item drops ×1.5 (`ChaosStages.RewardMultiplier`).
 - 🧪 **Shown:** "Chaos <stage>" title, and a purple marker on the loading-screen board. The board and the stage always agree.

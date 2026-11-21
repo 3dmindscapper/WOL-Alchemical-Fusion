@@ -136,7 +136,7 @@ namespace WolHybridBosses
             int armed = ChaosEnemies.ArmAll();
 
             Plugin.Log.LogInfo("CHAOS stage on " + Level.tileSetName + ": " + meshes + " tile meshes, " + sprites + " decorations, " + lights + " lights, "
-                + armed + " giants turned Chaos, " + Mathf.RoundToInt((Time.realtimeSinceStartup - t0) * 1000f) + " ms");
+                + armed + " enemies turned Chaos, " + Mathf.RoundToInt((Time.realtimeSinceStartup - t0) * 1000f) + " ms");
         }
 
         internal static void Revert()
@@ -266,8 +266,32 @@ namespace WolHybridBosses
 
         internal static bool Arm(Enemy e)
         {
-            if (e == null || ChaosStages.Active == null || !(e is MiniBoss) || e.GetComponent<ChaosArmed>() != null) return false;
-            ChaosGiants.Apply(e);
+            if (e == null || e.GetComponent<ChaosArmed>() != null) return false;
+            if (e is MiniBoss) { ChaosGiants.Apply(e); return true; }
+            return ArmRegular(e);
+        }
+
+        // The enemy types that have elemental versions on the other stages (and so a Chaos one here): Knight, Rogue
+        // (thief), Archer, Mage (wizard), Summoner, including their elemental subclasses. 1 Chaos arcana + purple row.
+        static readonly HashSet<string> ChaosTypes = new HashSet<string> { "Knight", "Rogue", "Archer", "Mage", "Summoner" };
+
+        internal static bool IsChaosType(Enemy e)
+        {
+            if (e == null || e is MiniBoss || Rivals.IsRival(e)) return false;
+            for (Type t = e.GetType(); t != null && t != typeof(Enemy); t = t.BaseType)
+                if (ChaosTypes.Contains(t.Name)) return true;
+            return false;
+        }
+
+        internal static bool ArmRegular(Enemy e)
+        {
+            if (!IsChaosType(e) || e.fsm == null || e.GetComponent<ChaosArmed>() != null) return false;
+            e.gameObject.AddComponent<ChaosArmed>();
+            int idx = Plugin.ChaosGiantPalette.Value >= 0 ? Plugin.ChaosGiantPalette.Value : ChaosGiants.PurpleRow(e);
+            if (idx >= 0) ElementalGiants.SetPaletteIndexAll(e, idx);
+            else ElementalGiants.Tint(e, ChaosRun.Color);
+            List<ArcanaDef> pool = Pool();
+            if (pool.Count > 0) EnemyArcana.Give(e, Rivals.PickVaried(pool, 1, false), 1.6f); // slower than a giant's
             return true;
         }
 
@@ -405,9 +429,24 @@ namespace WolHybridBosses
 
     internal class ChaosArmed : MonoBehaviour { }
 
-    // Giants spawned later on a Chaos stage become Chaos giants through the giant Start hook (GiantStartPatch ->
-    // ElementalGiants.TryMakeElemental), which runs after MiniBoss.Start has set its gray palette. An Enemy.Start
-    // hook would run too early (inside MiniBoss.Start) and be overwritten, so there is none.
+    // Giants become Chaos giants through the giant Start hook (GiantStartPatch -> ElementalGiants.TryMakeElemental),
+    // after MiniBoss.Start has set its gray palette. Regular Chaos-type enemies are armed one frame after their
+    // Start (Enemy.Start runs InitElement, and some subclasses set palettes after it), so the purple row sticks.
+    [HarmonyPatch(typeof(Enemy), "Start")]
+    static class ChaosRegularEnemyPatch
+    {
+        static void Postfix(Enemy __instance)
+        {
+            if (!ChaosStages.Planned || !ChaosEnemies.IsChaosType(__instance)) return;
+            try { __instance.StartCoroutine(NextFrame(__instance)); } catch (Exception) { }
+        }
+
+        static System.Collections.IEnumerator NextFrame(Enemy e)
+        {
+            yield return null;
+            if (e != null && ChaosStages.Planned) ChaosEnemies.ArmRegular(e);
+        }
+    }
 
     // "Chaos <stage>" title on Chaos stages.
     [HarmonyPatch(typeof(GameController), "get_StageTitle")]
