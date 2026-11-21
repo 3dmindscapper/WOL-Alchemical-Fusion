@@ -13,7 +13,7 @@ namespace WolHybridBosses
     [BepInPlugin("osi.wol.hybridbosses", "Hybrid Bosses", Version)]
     public class Plugin : BaseUnityPlugin
     {
-        public const string Version = "0.4.0";
+        public const string Version = "0.4.2";
         internal static ManualLogSource Log;
 
         internal static ConfigEntry<bool> ElementalGiants;
@@ -36,6 +36,9 @@ namespace WolHybridBosses
         internal static ConfigEntry<bool> FinalChampions;
         internal static ConfigEntry<float> FinalChampionChance;
         internal static ConfigEntry<float> FinalChaosChance;
+        internal static ConfigEntry<bool> FinalRoomBadge;
+        internal static ConfigEntry<float> ChaosStageChance;
+        internal static ConfigEntry<float> ChaosStageRewards;
 
         void Awake()
         {
@@ -78,19 +81,48 @@ namespace WolHybridBosses
                 "Chance (0 to 1) per run that the final boss is a champion instead of Sura.");
             FinalChaosChance = Config.Bind("FinalBoss", "ChaosSovereignChance", 0.3f,
                 "When a champion is rolled: chance it is the Chaos Sovereign (arcana of every element) instead of an elemental Archon.");
+            FinalRoomBadge = Config.Bind("FinalBoss", "RoomBadge", false,
+                "Also show the 'NOT SURA' badge in the corner of the final room (the loading-screen board always shows the champion icon).");
+            ChaosStageChance = Config.Bind("ChaosStages", "StageChance", 0.15f,
+                "Chance (0 to 1) that a regular stage is its Chaos version: purple tiles and lights, enemies with Chaos arcana, a Chaos rival in its arena, better rewards, 'Chaos' in the title and a purple marker on the loading-screen board. Boss floors stay normal. Shift+F11 toggles it on the current stage.");
+            ChaosStageRewards = Config.Bind("ChaosStages", "RewardMultiplier", 1.5f,
+                "Gold and item-drop multiplier while on a Chaos stage.");
             DebugKeys = Config.Bind("Debug", "Hotkeys", true,
                 "F5 list enemies, F6 cycle palette, F7 dump nearest enemy, F8 spawn test giant, F9 dump element->palette, F10 reroll nearest giant's element, F11 open a rival arena right here, F12 final champion test (forces the next final room, or spawns a champion fight here).");
 
+            Log.LogInfo("Hybrid Bosses " + Version + " starting; patches wait for the game's asset bundles.");
+            StartCoroutine(PatchWhenGameReady());
+        }
+
+        // IMPORTANT: no patching in Awake. Harmony has Mono compile each original method, and Mono runs the static
+        // constructors of classes it touches. Some originals touch LootManager (e.g. FinalBossRoomEventHandler.Start
+        // reads LootManager.chaosSkillList), and LootManager's static constructor loads item prefabs from the asset
+        // bundles. Before the bundles are loaded that constructor throws, and a failed static constructor breaks the
+        // class for the whole session: no loot, no items, Compass errors, and other mods' patches fail (v0.4.0/0.4.1 bug).
+        // So everything is patched only once ChaosBundle has loaded its bundles (as WoL Arcanos does with its patches).
+        IEnumerator PatchWhenGameReady()
+        {
+            float waited = 0f;
+            Traverse loaded = Traverse.Create(typeof(ChaosBundle)).Field("bundleLoaded");
+            while (!(loaded.FieldExists() && loaded.GetValue<bool>()))
+            {
+                waited += Time.unscaledDeltaTime;
+                yield return null;
+            }
+            yield return null; // one more frame, so the game's own first-frame setup has run
+
             Harmony harmony = new Harmony("osi.wol.hybridbosses");
-            harmony.PatchAll(typeof(Plugin).Assembly);
+            try { harmony.PatchAll(typeof(Plugin).Assembly); }
+            catch (Exception ex) { Log.LogError("Patching failed: " + ex); }
             try
             {
-                ArcanaCatalog.DiscoverModded();               // other mods' arcana (LegendAPI skills...)
+                ArcanaCatalog.DiscoverModded();               // other mods' arcana (LegendAPI skills, WoL Arcanos...)
                 OwnerContext.PatchPrefabClasses(harmony);     // ownership on every arcana prefab class
+                ChaosStageRunner.Ensure();                    // chaos stage variants
             }
             catch (Exception ex) { Log.LogError("ARCANA setup failed: " + ex); }
-            Log.LogInfo("Hybrid Bosses " + Version + " loaded. Elemental giants " + (ElementalGiants.Value ? "on" : "off")
-                + ", chance " + ElementalGiantChance.Value);
+            Log.LogInfo("Hybrid Bosses " + Version + " loaded (patched " + Mathf.RoundToInt(waited * 1000f) + " ms after start, once the bundles were in). Elemental giants "
+                + (ElementalGiants.Value ? "on" : "off") + ", chance " + ElementalGiantChance.Value);
         }
 
         void Update()
@@ -102,7 +134,9 @@ namespace WolHybridBosses
             if (Input.GetKeyDown(KeyCode.F8)) Debug.SpawnNextTestGiant();
             if (Input.GetKeyDown(KeyCode.F9)) Debug.DumpElementPalette();
             if (Input.GetKeyDown(KeyCode.F10)) Debug.RerollNearestGiant();
-            if (Input.GetKeyDown(KeyCode.F11)) Debug.OpenRivalArenaHere();
+            bool shift = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
+            if (Input.GetKeyDown(KeyCode.F11) && shift) ChaosStages.ToggleOnCurrentStage();
+            else if (Input.GetKeyDown(KeyCode.F11)) Debug.OpenRivalArenaHere();
             if (Input.GetKeyDown(KeyCode.F12)) Debug.FinalChampionTest();
         }
     }
@@ -627,7 +661,7 @@ namespace WolHybridBosses
                 Log.LogInfo("FINAL test: this final room now holds a champion");
                 return;
             }
-            FinalChampion.ForceNext = true;
+            FinalRun.ForceChampion(); // this run's final boss is now a champion (the next loading screen shows it)
             Player p = GetPlayer();
             if (p == null) return;
             string prefix = UnityEngine.Random.value < 0.3f ? "Chaos" : ElementalGiants.RandomPrefix();

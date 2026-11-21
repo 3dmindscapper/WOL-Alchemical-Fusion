@@ -157,7 +157,15 @@ namespace WolHybridBosses
 
             // Arcana: any player arcana of the rival's element (all elements for Chaos), picked for variety.
             List<ArcanaDef> pool = ArcanaCatalog.Pool(mk.Prefix);
-            mk.Arcana = PickVaried(pool, TierArcanaCount(mk.Tier), mk.Prefix == "Chaos");
+            if (mk.Prefix == "Chaos" && ChaosStages.Planned)
+            {
+                // Chaos stage rival: Chaos-element arcana first, topped up from the whole pool if there aren't enough.
+                List<ArcanaDef> chaos = ArcanaCatalog.PoolExact("Chaos");
+                mk.Arcana = PickVaried(chaos, TierArcanaCount(mk.Tier), false);
+                foreach (ArcanaDef d in PickVaried(pool, TierArcanaCount(mk.Tier), true))
+                    if (mk.Arcana.Count < TierArcanaCount(mk.Tier) && !mk.Arcana.Contains(d)) mk.Arcana.Add(d);
+            }
+            else mk.Arcana = PickVaried(pool, TierArcanaCount(mk.Tier), mk.Prefix == "Chaos");
             EnemyArcana.Give(e, mk.Arcana, TierCooldown(mk.Tier) * mk.Bonus.Cooldown, TierWindup(mk.Tier));
 
             // Dash arcana: fired from its own dashes, like the player's.
@@ -291,6 +299,7 @@ namespace WolHybridBosses
 
         internal static string StagePrefixOrRandom()
         {
+            if (ChaosStages.Planned) return "Chaos"; // a Chaos stage's rival challenge casts Chaos arcana
             if (UnityEngine.Random.value < Plugin.ChaosRivalChance.Value) return "Chaos";
             string p = ElementalGiants.StagePrefix();
             return p ?? ElementalGiants.RandomPrefix();
@@ -449,6 +458,7 @@ namespace WolHybridBosses
     {
         static void Postfix()
         {
+            try { ChaosStages.PlanCurrentStage(); } catch (Exception ex) { Plugin.Log.LogError("CHAOS plan failed: " + ex); }
             try { Rivals.TryReplaceMiscRoom(); }
             catch (Exception ex) { Plugin.Log.LogError("RIVAL misc room hook failed: " + ex); }
         }

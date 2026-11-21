@@ -90,7 +90,37 @@ Plan:
 12. 📋 Later: a boss health bar, better chest tables for Hard, dropping the rival's relic, a secondary element on Hard, Sura-style attack patterns (`FinalBoss` `standardPatternList`/`superPatternList`), more arcana per element, and relics with special effects (Resurrect, Vampire…) implemented for real.
 7. 📋 Arena layout tuning once seen in game (portal and rival offsets are guesses).
 
-## 3. Chaos stages (palette-swapped stages) 📋 ❓
+## 3. Chaos stages 🧪 (v0.4.2)
+
+Scope agreed for now: a regular stage can have a **Chaos version**.
+- 🧪 **Look:** purple-tinted tiles (recoloured atlas), decorations and lights.
+- 🧪 **Enemies:** they incorporate **Chaos-element arcana** (regular enemies 1, giants 2; elemental giants keep their stage element on top).
+- 🧪 **Rival:** the stage's rival challenge (misc-room arena) features a **Chaos rival** casting Chaos arcana. Rivals never appear outside their arenas.
+- 🧪 **Rewards:** gold and item drops ×1.5 while on the stage (`ChaosStages.RewardMultiplier`).
+- 🧪 **Shown:** "Chaos <stage>" stage title, and the stage's marker is tinted purple on the loading-screen board.
+- Which stages: `ChaosStages.StageChance` (0.15) per regular floor; boss floors, the Hub and the final room stay normal. The roll comes from the run seed + tier + stage, so the board and the stage always agree. **Shift+F11** toggles Chaos on the current stage for testing.
+- 📋 Later: the Council fight corrupted on Chaos runs (their attacks tinted dark purple like Chaos arcana, sprites tinted, a dialogue change that makes them seem a little corrupted). Also Chaos boss floors.
+
+### Earlier research notes (prototype v0.4.1)
+
+What the DLL shows:
+- Each stage is a `TileSet` class (`FireTileSet`, `IceTileSet`… on top of `CastleBaseTileSet`) with **one atlas `material`**. `MeshGenerator.GenerateMeshes` builds the tile meshes under a "Meshes" container with plain white vertex colours, then static-batches them. Tiles have no palette index like enemies.
+- Decorations and props are sprites under `Level.levelContainer`. There's also stage lighting (lights in the scene, `GameController.stageLight`).
+
+Prototype (code only, no new art):
+- **Tiles:** each atlas is copied through a RenderTexture (works on the game's non-readable textures), every colour is remapped by the variant (hue / saturation / value, with a per-colour cache so it's fast), and a cloned material replaces the original.
+- **Decorations:** tinted. **Lights:** blended toward the variant colour.
+- 3 variants: **Void** (purple), **Ember** (inverted warm), **Blight** (sickly green).
+- **Shift+F11** cycles Void → Ember → Blight → normal on the stage you're on. `ChaosStages.Chance` (0 for now) rolls a variant per stage. The log line shows the counts and milliseconds.
+
+Next, once the look is approved:
+- tune or add variants (maybe one per stage element);
+- a "Chaos <Stage>" title;
+- chaos rules: mixed-element enemies, more giants and rivals, Chaos rivals more likely, maybe `Level.doubleEnemies`;
+- better rewards;
+- show chaos stages on the loading-screen board.
+
+## 3 (original plan). Chaos stages
 
 Recoloured versions of the existing stages that act as "chaos" variants.
 
@@ -115,7 +145,8 @@ Built:
   - an elemental **Archon** (Fire / Water / Earth / Wind / Thunder Archon), or
   - the **Chaos Sovereign** (`ChaosSovereignChance` 0.3), with arcana from every element.
   It's the rival-wizard kit at a new **Final** tier: 2600 HP (+200 per difficulty), 5 arcana, a dash arcana, a signature meter, fast spell pacing, a robe and a relic, and the full intro reveal.
-- 🧪 **Placeholder "NOT SURA" badge**, top right, from arriving in the final room until the champion falls: a pulsing element-coloured frame with one of the element's arcana icons, plus "<Champion> awaits". Real art can replace it later.
+- 🧪 **Loading-screen icon (v0.4.1).** The run decision is made when the run starts. On the loading screen's progress board (the three stage bosses, then Sura's Chaos icon), the final circle shows the champion instead: the ring tinted in its element colour, the Chaos symbol hidden, one of the element's arcana icons in its place. It's placeholder art, and it greys out under the board's dimmer like the others.
+- The old corner badge in the final room is now optional (`FinalBoss.RoomBadge`, off).
 - 🧪 **Normal ending kept.** Sura stays the room's official boss. When the fight starts she's hidden and frozen and the champion appears where she stands. When the champion dies, Sura is put into her *final* death (`chaosMode` on, both form intros marked done), and the room's own code runs the victory, `BossOutro` (**Chaos arcana unlock** + achievement) and the ending, exactly as after beating her.
 - F12 test key: in the final room before the fight, it turns this fight into a champion. Elsewhere, it forces the next final room and spawns a champion beside you to try the fight.
 - 📋 Next: a big boss health bar for champions, phases (element swap at 50% for Archons), real badge art, Radiance in the Sovereign pool once Arcanos is supported, and possibly champions replacing Council members.
@@ -205,6 +236,7 @@ Let rival and final bosses use arcana added by other mods.
 | F9 | Dump the element → palette table and the current stage element |
 | F10 | Cycle the nearest giant through all five elements |
 | F11 | Open a rival arena around you (three portals) |
-| F12 | Final champion test (this final room, or spawn one here and force the next final room) |
+| F12 | Final champion test (this final room, or spawn one here and make this run's final boss a champion) |
+| Shift+F11 | Toggle the Chaos version of the current stage |
 
 Config: `BepInEx\config\osi.wol.hybridbosses.cfg` (created on first launch).

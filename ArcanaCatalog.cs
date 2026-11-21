@@ -70,6 +70,14 @@ namespace WolHybridBosses
         // Dash arcana of an element, for the caster's dash.
         internal static List<ArcanaDef> DashPool(string prefix) { return Filter(prefix, true); }
 
+        // Arcana whose own element is exactly this one ("Chaos" here means Chaos-element arcana only, not every element).
+        internal static List<ArcanaDef> PoolExact(string element)
+        {
+            List<ArcanaDef> list = new List<ArcanaDef>();
+            foreach (ArcanaDef d in Filter("Chaos", false)) if (d.Element == element) list.Add(d);
+            return list;
+        }
+
         static List<ArcanaDef> Filter(string prefix, bool dashes)
         {
             EnsureBuilt();

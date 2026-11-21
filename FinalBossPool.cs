@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using HarmonyLib;
 using UnityEngine;
+using UnityEngine.UI;
 
 namespace WolHybridBosses
 {
@@ -29,17 +30,18 @@ namespace WolHybridBosses
         internal string Title { get { return title; } }
         internal bool Fighting { get { return swapped && !ended; } }
 
+        // Uses the run's decision (FinalRun, rolled when the run starts, also shown on the loading-screen board).
         internal static FinalChampion Roll(FinalBossRoomEventHandler room)
         {
-            bool force = ForceNext;
-            ForceNext = false;
-            if (!force && (!Plugin.FinalChampions.Value || UnityEngine.Random.value >= Plugin.FinalChampionChance.Value)) return null;
+            if (ForceNext) { ForceNext = false; FinalRun.ForceChampion(); }
+            FinalRun.Tick();
+            if (FinalRun.ChampionPrefix == null) return null;
 
             FinalChampion fc = room.gameObject.GetComponent<FinalChampion>() ?? room.gameObject.AddComponent<FinalChampion>();
             fc.room = room;
-            fc.prefix = UnityEngine.Random.value < Plugin.FinalChaosChance.Value ? "Chaos" : ElementalGiants.RandomPrefix();
-            fc.title = fc.prefix == "Chaos" ? "Chaos Sovereign" : ElementalGiants.ElementColorName(fc.prefix) + " Archon";
-            FinalChampionBadge.Show(fc);
+            fc.prefix = FinalRun.ChampionPrefix;
+            fc.title = FinalRun.ChampionTitle;
+            if (Plugin.FinalRoomBadge.Value) FinalChampionBadge.Show(fc);
             Plugin.Log.LogInfo("FINAL boss this run: " + fc.title + " (not Sura)");
             return fc;
         }
@@ -128,6 +130,130 @@ namespace WolHybridBosses
             tr.Field("thirdFormStarted").SetValue(true);  // ...and the super-form intro
             try { sura.fsm.ChangeState("Dead", false); }
             catch (Exception ex) { Plugin.Log.LogError("FINAL could not finish Sura: " + ex); }
+        }
+    }
+
+    // The run's final-boss decision. Rolled once per run: when you leave the Hub for a new run, or when the run's
+    // loop count / stage order changes. Read by the loading-screen board (icon) and the final room (the fight).
+    internal static class FinalRun
+    {
+        static string runKey;
+        static bool needRoll = true;
+
+        internal static string ChampionPrefix { get; private set; }
+
+        // Per-run seed: other per-run decisions (which stages are Chaos) are derived from it, so the loading-screen
+        // board and the stage generator always agree.
+        internal static int Seed { get; private set; }
+
+        internal static string ChampionTitle
+        {
+            get
+            {
+                if (ChampionPrefix == null) return null;
+                return ChampionPrefix == "Chaos" ? "Chaos Sovereign" : ElementalGiants.ElementColorName(ChampionPrefix) + " Archon";
+            }
+        }
+
+        static string Key()
+        {
+            string order = GameController.levelNameList != null ? string.Join(",", GameController.levelNameList.ToArray()) : "";
+            return GameController.loopCount + "|" + order;
+        }
+
+        internal static void Tick()
+        {
+            string level = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name ?? "";
+            if (level == "Hub" || level == "Tutorial") { needRoll = true; return; }
+            string key = Key();
+            if (!needRoll && key == runKey) return;
+            needRoll = false;
+            runKey = key;
+            Seed = UnityEngine.Random.Range(1, int.MaxValue);
+            if (Plugin.FinalChampions.Value && UnityEngine.Random.value < Plugin.FinalChampionChance.Value) Pick();
+            else ChampionPrefix = null;
+            Plugin.Log.LogInfo("FINAL run roll (" + key + "): " + (ChampionPrefix == null ? "Sura" : ChampionTitle));
+        }
+
+        internal static void ForceChampion()
+        {
+            Tick();
+            if (ChampionPrefix == null) Pick();
+        }
+
+        static void Pick()
+        {
+            ChampionPrefix = UnityEngine.Random.value < Plugin.FinalChaosChance.Value ? "Chaos" : ElementalGiants.RandomPrefix();
+        }
+    }
+
+    // Loading-screen board: the final circle (Sura's Chaos icon after the three stage bosses) shows the champion
+    // instead on champion runs: the circle tinted in its element colour, the Chaos symbol hidden, one of the element's
+    // arcana icons in its place (placeholder art). It stays under the board's dimmer, so it greys out like the others.
+    [HarmonyPatch(typeof(GameProgressBoard), "Enable")]
+    static class ProgressBoardPatch
+    {
+        const string OverlayName = "HB_ChampionIcon";
+        static bool loggedLayout;
+
+        static void Postfix(GameProgressBoard __instance)
+        {
+            try
+            {
+                FinalRun.Tick();
+                RectTransform circle = Traverse.Create(__instance).Field("finalBossCircle").GetValue() as RectTransform;
+                Image dimmer = Traverse.Create(__instance).Field("finalBossDimmer").GetValue() as Image;
+                if (circle == null) return;
+                if (!loggedLayout) { loggedLayout = true; LogLayout(circle, dimmer); }
+
+                Transform existing = circle.Find(OverlayName);
+                bool champion = FinalRun.ChampionPrefix != null;
+                foreach (Image img in circle.GetComponentsInChildren<Image>(true))
+                {
+                    if (img == dimmer || img.name == OverlayName) continue;
+                    if (img.transform == circle)
+                        img.color = champion ? ElementalGiants.ElementColor(FinalRun.ChampionPrefix) : Color.white; // the ring
+                    else img.enabled = !champion; // the Chaos symbol
+                }
+                if (!champion) { if (existing != null) existing.gameObject.SetActive(false); return; }
+
+                Image icon;
+                if (existing == null)
+                {
+                    GameObject go = new GameObject(OverlayName, typeof(RectTransform));
+                    go.transform.SetParent(circle, false);
+                    icon = go.AddComponent<Image>();
+                    icon.preserveAspect = true;
+                    icon.raycastTarget = false;
+                    RectTransform rt = (RectTransform)go.transform;
+                    rt.anchorMin = new Vector2(0.18f, 0.18f);
+                    rt.anchorMax = new Vector2(0.82f, 0.82f);
+                    rt.offsetMin = rt.offsetMax = Vector2.zero;
+                    if (dimmer != null && dimmer.transform.parent == circle) go.transform.SetSiblingIndex(dimmer.transform.GetSiblingIndex());
+                }
+                else
+                {
+                    existing.gameObject.SetActive(true);
+                    icon = existing.GetComponent<Image>();
+                }
+                List<ArcanaDef> pool = ArcanaCatalog.Pool(FinalRun.ChampionPrefix);
+                Sprite s = pool.Count > 0 ? IntroUI.SkillIcon(pool[0].SkillID) : null;
+                icon.sprite = s;
+                icon.color = s != null ? Color.white : ElementalGiants.ElementColor(FinalRun.ChampionPrefix);
+            }
+            catch (Exception ex) { Plugin.Log.LogWarning("FINAL board icon failed: " + ex.Message); }
+        }
+
+        static void LogLayout(RectTransform circle, Image dimmer)
+        {
+            List<string> parts = new List<string>();
+            foreach (Transform t in circle.GetComponentsInChildren<Transform>(true))
+            {
+                Image img = t.GetComponent<Image>();
+                parts.Add(t.name + (img != null ? "[Image " + (img.sprite != null ? img.sprite.name : "-") + (img == dimmer ? " dimmer" : "") + "]" : ""));
+            }
+            Plugin.Log.LogInfo("FINAL board circle layout: " + string.Join(", ", parts.ToArray())
+                + (dimmer != null ? " | dimmer parent: " + (dimmer.transform.parent != null ? dimmer.transform.parent.name : "none") : ""));
         }
     }
 
