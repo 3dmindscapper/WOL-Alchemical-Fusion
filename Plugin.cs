@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
@@ -13,7 +13,7 @@ namespace WolHybridBosses
     [BepInPlugin("osi.wol.hybridbosses", "Hybrid Bosses", Version)]
     public class Plugin : BaseUnityPlugin
     {
-        public const string Version = "0.4.4";
+        public const string Version = "0.4.8";
         internal static ManualLogSource Log;
 
         internal static ConfigEntry<bool> ElementalGiants;
@@ -40,6 +40,7 @@ namespace WolHybridBosses
         internal static ConfigEntry<float> ChaosStageChance;
         internal static ConfigEntry<float> ChaosStageRewards;
         internal static ConfigEntry<int> ChaosGiantPalette;
+        internal static ConfigEntry<float> ChaosEnemyChance;
 
         void Awake()
         {
@@ -88,6 +89,8 @@ namespace WolHybridBosses
                 "Chance (0 to 1) that a regular stage is its Chaos version: purple tiles and lights, enemies with Chaos arcana, a Chaos rival in its arena, better rewards, 'Chaos' in the title and a purple marker on the loading-screen board. Boss floors stay normal. Shift+F11 toggles it on the current stage.");
             ChaosStageRewards = Config.Bind("ChaosStages", "RewardMultiplier", 1.5f,
                 "Gold and item-drop multiplier while on a Chaos stage.");
+            ChaosEnemyChance = Config.Bind("ChaosStages", "EnemyChance", 0.5f,
+                "On a Chaos stage, chance (0 to 1) that each Knight, Rogue, Archer, Mage, Summoner or Lancer is a Chaos version (1 Chaos arcana + purple colours). Like elemental stages, not every one is. Giants are always Chaos there.");
             ChaosGiantPalette = Config.Bind("ChaosStages", "GiantPalette", -1,
                 "Palette row for Chaos giants. -1 = find the purple row automatically from each giant's palette texture (purple tint when it has none). Set a number (F6 cycles rows on the nearest enemy) to force one.");
             DebugKeys = Config.Bind("Debug", "Hotkeys", true,

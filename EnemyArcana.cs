@@ -31,6 +31,7 @@ namespace WolHybridBosses
         public float Spread, ShotDelay;
         public string EnemyStatID;   // summons: enemy-side stats to use ("FlameSummonerMinion")
         public bool Castable = true;
+        public bool Basic;           // a rival's basic attack: replaces its built-in "Attack", no spell gap, not AI-picked
 
         public ArcanaDef(string element, string skillID, string prefabClass, Delivery delivery,
             float windup = 0.6f, float cooldown = 7f, float minRange = 0f, float maxRange = 9f, int priority = 5)
@@ -165,7 +166,7 @@ namespace WolHybridBosses
         // Empowered (signature) casts load the ultimate stats and hit harder.
         internal static void MakeEnemyAttack(Attack atk, Enemy owner, ArcanaDef d, bool empowered = false)
         {
-            AttackInfo info = atk.SetAttackInfo("Player", d.SkillID, 1, empowered); // real arcana damage, element, status effects
+            AttackInfo info = atk.SetAttackInfo("Player", d.SkillID, 1, ArcanaCaster.SignatureCast); // real arcana damage, element, status effects; signature stats only for a signature cast
             if (info == null) return;
             ReOwn(info, owner);
             if (empowered) info.damage = Mathf.RoundToInt(info.damage * 1.3f);
@@ -241,17 +242,30 @@ namespace WolHybridBosses
         // and has a compatible type): who cast it, which stats to load, where it goes and who it targets.
         internal static void InitPrefabFields(GameObject go, Enemy owner, ArcanaDef d, Vector2 origin, Vector2 dir, bool empowered = false)
         {
-            if (empowered)
+            // Enhanced = isEmpowered; the signature version (isUltimate) only on a rival's signature cast.
+            bool signature = ArcanaCaster.SignatureCast;
+            if (empowered || signature)
                 foreach (MonoBehaviour mb in go.GetComponentsInChildren<MonoBehaviour>(true))
                 {
                     if (mb == null) continue;
                     Set(mb, mb.GetType(), "isEmpowered", true);
-                    Set(mb, mb.GetType(), "isUltimate", true);
+                    Set(mb, mb.GetType(), "empowered", true);
+                    if (signature) Set(mb, mb.GetType(), "isUltimate", true);
                 }
             foreach (MonoBehaviour mb in go.GetComponentsInChildren<MonoBehaviour>(true))
             {
                 if (mb == null || mb is Attack || mb is ArcanaOwned) continue;
                 Type t = mb.GetType();
+                // What the player's states point at themselves (boomerangs come back to it, swirls follow it)
+                // and where they aim, when the prefab left them empty.
+                SetIfEmpty(mb, t, "parentTrans", owner.transform);
+                SetIfEmpty(mb, t, "followTrans", owner.transform);
+                SetIfEmpty(mb, t, "orbitTrans", owner.transform);
+                Set(mb, t, "targetVector", dir);
+                Set(mb, t, "atkVector", dir);
+                Set(mb, t, "attackVec", dir);
+                Set(mb, t, "attackVector", dir);
+                Set(mb, t, "spawnPos", (Vector3)origin);
                 Set(mb, t, "skillCategory", "Player");
                 Set(mb, t, "waveSkillCategory", "Player");
                 Set(mb, t, "skillID", d.SkillID);
@@ -267,10 +281,17 @@ namespace WolHybridBosses
             }
         }
 
+        static void SetIfEmpty(object target, Type t, string field, UnityEngine.Object value)
+        {
+            FieldInfo f = ArcanaFinisher.Field(t, field);
+            if (f == null || value == null || !f.FieldType.IsAssignableFrom(value.GetType())) return;
+            try { if ((f.GetValue(target) as UnityEngine.Object) == null) f.SetValue(target, value); } catch (Exception) { }
+        }
+
         static void Set(object target, Type t, string field, object value)
         {
             if (value == null) return;
-            FieldInfo f = AccessTools.Field(t, field);
+            FieldInfo f = ArcanaFinisher.Field(t, field);
             if (f == null || f.IsStatic || f.IsInitOnly || !f.FieldType.IsAssignableFrom(value.GetType())) return;
             try { f.SetValue(target, value); } catch (Exception) { }
         }

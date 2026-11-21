@@ -56,6 +56,19 @@ namespace WolHybridBosses
         internal static float TierDamage(RivalTier t) { return ByTier(t, 0.5f, 0.75f, 1f, 1f); }
         internal static float TierWindup(RivalTier t) { return ByTier(t, 1.5f, 1.2f, 1f, 1f); }
         internal static int TierSignatureHits(RivalTier t) { return ByTier(t, 12, 9, 6, 6); }
+        // How long a full meter stays ready before it runs out unused (the player's also decays).
+        internal static float TierSignatureSeconds(RivalTier t) { return ByTier(t, 8f, 10f, 12f, 14f); }
+
+        // Audit: every skill the rival can use, for the log (should match its intro).
+        internal static string KitList(Enemy e, RivalMarker mk)
+        {
+            List<string> parts = new List<string>();
+            if (e.availableEnemySkillsDict != null) foreach (string k in e.availableEnemySkillsDict.Keys) parts.Add(k);
+            if (mk.Basic != null) parts.Add("basic:" + mk.Basic.SkillID);
+            if (mk.Dash != null) parts.Add("dash:" + mk.Dash.SkillID);
+            foreach (string s in SignatureArcana) if (SignatureAllowed(mk, s)) parts.Add("own:" + s);
+            return string.Join(", ", parts.ToArray());
+        }
         // ---------- spell pacing ----------
         static readonly Dictionary<int, float> nextCastTime = new Dictionary<int, float>();
 
@@ -155,17 +168,38 @@ namespace WolHybridBosses
                 c.Field(f).SetValue(c.Field(f).GetValue<float>() * cdm);
             c.Field("dashCooldown").SetValue(c.Field("dashCooldown").GetValue<float>() * cdm);
 
-            // Arcana: any player arcana of the rival's element (all elements for Chaos), picked for variety.
+            // Basic attack: a basic arcana of its element replaces the Contestant's built-in Wind Slash basic (which has
+            // no stats outside its ally category, so it swung for nothing and the rival looked stuck in place).
             List<ArcanaDef> pool = ArcanaCatalog.Pool(mk.Prefix);
+            List<ArcanaDef> basics = (mk.Prefix == "Chaos" && ChaosStages.Planned) ? ArcanaCatalog.PoolExact("Chaos") : new List<ArcanaDef>(pool);
+            basics.RemoveAll(d => d.Family != ArcanaFamily.Melee);
+            if (basics.Count == 0) { basics = new List<ArcanaDef>(pool); basics.RemoveAll(d => d.Family != ArcanaFamily.Melee); }
+            if (basics.Count > 0)
+            {
+                ArcanaDef b = basics[UnityEngine.Random.Range(0, basics.Count)].Scaled(1f, 1f);
+                b.Basic = true;
+                b.Windup = 0.3f;
+                b.Cooldown = 0.5f; // short: while it cools down the rival can't swing and just stands in range
+                b.MinRange = 0f;
+                b.MaxRange = 4f;
+                mk.Basic = b;
+                EnemyArcana.Give(e, new[] { b });
+            }
+            RivalBasics.Register(e, mk);
+            pool.RemoveAll(d => d.Family == ArcanaFamily.Melee); // basics only in the basic slot
+
+            // Arcana: any player arcana of the rival's element (all elements for Chaos), picked for variety.
             if (mk.Prefix == "Chaos" && ChaosStages.Planned)
             {
                 // Chaos stage rival: Chaos-element arcana first, topped up from the whole pool if there aren't enough.
                 List<ArcanaDef> chaos = ArcanaCatalog.PoolExact("Chaos");
+                chaos.RemoveAll(d => d.Family == ArcanaFamily.Melee);
                 mk.Arcana = PickVaried(chaos, TierArcanaCount(mk.Tier), false);
                 foreach (ArcanaDef d in PickVaried(pool, TierArcanaCount(mk.Tier), true))
                     if (mk.Arcana.Count < TierArcanaCount(mk.Tier) && !mk.Arcana.Contains(d)) mk.Arcana.Add(d);
             }
             else mk.Arcana = PickVaried(pool, TierArcanaCount(mk.Tier), mk.Prefix == "Chaos");
+            mk.Signature = PickSignature(mk, (mk.Prefix == "Chaos" && ChaosStages.Planned) ? ArcanaCatalog.PoolExact("Chaos") : pool);
             EnemyArcana.Give(e, mk.Arcana, TierCooldown(mk.Tier) * mk.Bonus.Cooldown, TierWindup(mk.Tier));
 
             // Dash arcana: fired from its own dashes, like the player's.
@@ -176,11 +210,17 @@ namespace WolHybridBosses
                 if (DashArcana.Give(e, mk.Dash) == null) mk.Dash = null;
             }
 
-            // Signature meter: fills on hits that land on the player; full = next arcana empowered.
-            Signature.Enable(e, TierSignatureHits(mk.Tier), mk.Prefix);
+            // Signature meter: fills on hits that land on the player; full = the signature activates.
+            Signature.Enable(e, TierSignatureHits(mk.Tier), mk.Prefix, TierSignatureSeconds(mk.Tier), mk.Signature);
 
-            Plugin.Log.LogInfo("RIVAL " + mk.Prefix + " pool: " + pool.Count + " arcana, dash " + (mk.Dash != null ? mk.Dash.SkillID : "none")
-                + " (of " + dashes.Count + "), signature after " + TierSignatureHits(mk.Tier) + " hits");
+            // Unstuck watchdog: a rival that "runs" without moving while the player is out of reach dashes at them.
+            e.gameObject.AddComponent<RivalUnstuck>().Owner = e;
+
+            Plugin.Log.LogInfo("RIVAL " + mk.Prefix + " pool: " + pool.Count + " arcana, basic " + (mk.Basic != null ? mk.Basic.SkillID : "none")
+                + ", dash " + (mk.Dash != null ? mk.Dash.SkillID : "none") + " (of " + dashes.Count + "), signature "
+                + (mk.Signature != null ? mk.Signature.SkillID : "none") + " after " + TierSignatureHits(mk.Tier) + " hits, ready for "
+                + TierSignatureSeconds(mk.Tier) + "s");
+            Plugin.Log.LogInfo("RIVAL kit (everything it may cast): " + KitList(e, mk));
 
             Plugin.Log.LogInfo("RIVAL " + mk.Prefix + " " + mk.Tier + " ready: HP " + Mathf.RoundToInt(TierHP(mk.Tier) * mk.Bonus.Hp)
                 + ", arcana " + ArcanaList(mk.Arcana) + ", robe " + (mk.OutfitID ?? "none") + " (row " + mk.RobeColor + ")"
@@ -194,9 +234,16 @@ namespace WolHybridBosses
             Color el = ElementalGiants.ElementColor(mk.Prefix);
             foreach (ArcanaDef d in mk.Arcana)
             {
-                IntroEntry ie = new IntroEntry(IntroUI.SkillIcon(d.SkillID), IntroUI.SkillName(d.SkillID));
+                bool isSig = mk.Signature != null && mk.Signature.SkillID == d.SkillID;
+                IntroEntry ie = new IntroEntry(IntroUI.SkillIcon(d.SkillID), IntroUI.SkillName(d.SkillID) + (isSig ? " (signature)" : ""));
                 if (ie.Icon == null) ie.Tint = el;
                 list.Add(ie);
+            }
+            if (mk.Basic != null)
+            {
+                IntroEntry be = new IntroEntry(IntroUI.SkillIcon(mk.Basic.SkillID), IntroUI.SkillName(mk.Basic.SkillID) + " (basic)");
+                if (be.Icon == null) be.Tint = el;
+                list.Add(be);
             }
             if (mk.Dash != null)
             {
@@ -255,6 +302,24 @@ namespace WolHybridBosses
 
         // Picks n arcana spreading them over different elements (Chaos) or different kinds of cast (projectile, wave,
         // ground spell, self spell, basic...), so a loadout isn't three fireball-likes.
+        // Its signature arcana, like the player's signature slot: one of its arcana that has a signature version in
+        // the game (highest priority). If none of them has one, its last arcana is swapped for one that does.
+        static ArcanaDef PickSignature(RivalMarker mk, List<ArcanaDef> pool)
+        {
+            ArcanaDef best = null;
+            foreach (ArcanaDef d in mk.Arcana)
+                if (Signature.Capable(d) && (best == null || d.Priority > best.Priority)) best = d;
+            if (best != null) return best;
+            List<ArcanaDef> options = new List<ArcanaDef>();
+            foreach (ArcanaDef d in pool)
+                if (Signature.Capable(d) && d.Family != ArcanaFamily.Melee && d.Family != ArcanaFamily.Dash
+                    && !EnemyArcana.Broken.Contains(d.SkillID) && !mk.Arcana.Exists(a => a.SkillID == d.SkillID)) options.Add(d);
+            if (options.Count == 0) return null;
+            ArcanaDef pick = options[UnityEngine.Random.Range(0, options.Count)];
+            if (mk.Arcana.Count > 0) mk.Arcana[mk.Arcana.Count - 1] = pick; else mk.Arcana.Add(pick);
+            return pick;
+        }
+
         internal static List<ArcanaDef> PickVaried(List<ArcanaDef> pool, int n, bool byElement)
         {
             List<ArcanaDef> shuffled = new List<ArcanaDef>(pool);
@@ -282,9 +347,10 @@ namespace WolHybridBosses
             switch (spell)
             {
                 case "ShootFireball": return mk.Prefix == "Flame";
-                case "SummonTornado": return mk.Prefix == "Wind";
+                case "SummonTornado":
+                case "SwordThrow": return mk.Prefix == "Wind"; // Sword Throw is the spinning cyclone boomerang: a wind spell
                 case "SummonBlizzard": return mk.Prefix == "Frost";
-                default: return true; // Sword Throw: neutral
+                default: return false; // anything else of its own: not part of an elemental kit
             }
         }
 
@@ -347,6 +413,8 @@ namespace WolHybridBosses
         public RivalTier Tier;
         public List<ArcanaDef> Arcana = new List<ArcanaDef>();
         public ArcanaDef Dash;
+        public ArcanaDef Basic;
+        public ArcanaDef Signature; // the one arcana that spends a full signature meter (its signature version)
         public RivalBonus Bonus = new RivalBonus();
         public string OutfitID, RelicID;
         public int RobeColor = -1;
@@ -544,7 +612,9 @@ namespace WolHybridBosses
         static void Postfix(object __instance)
         {
             Enemy e = Traverse.Create(__instance).Field("parent").GetValue() as Enemy;
-            if (Rivals.IsRival(e)) Rivals.MarkCast(e);
+            if (!Rivals.IsRival(e)) return;
+            Rivals.MarkCast(e);
+            if (Plugin.DebugKeys.Value) Plugin.Log.LogInfo("RIVAL own spell: " + __instance.GetType().Name);
         }
     }
 

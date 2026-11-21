@@ -272,8 +272,9 @@ namespace WolHybridBosses
         }
 
         // The enemy types that have elemental versions on the other stages (and so a Chaos one here): Knight, Rogue
-        // (thief), Archer, Mage (wizard), Summoner, including their elemental subclasses. 1 Chaos arcana + purple row.
-        static readonly HashSet<string> ChaosTypes = new HashSet<string> { "Knight", "Rogue", "Archer", "Mage", "Summoner" };
+        // (thief), Archer, Mage (wizard), Summoner, Lancer, including their elemental subclasses. Like elemental stages,
+        // where not every one of them is elemental, each rolls ChaosStages.EnemyChance: 1 Chaos arcana + purple row.
+        static readonly HashSet<string> ChaosTypes = new HashSet<string> { "Knight", "Rogue", "Archer", "Mage", "Summoner", "Lancer" };
 
         internal static bool IsChaosType(Enemy e)
         {
@@ -286,7 +287,8 @@ namespace WolHybridBosses
         internal static bool ArmRegular(Enemy e)
         {
             if (!IsChaosType(e) || e.fsm == null || e.GetComponent<ChaosArmed>() != null) return false;
-            e.gameObject.AddComponent<ChaosArmed>();
+            e.gameObject.AddComponent<ChaosArmed>();                                  // rolled once, either way
+            if (UnityEngine.Random.value >= Plugin.ChaosEnemyChance.Value) return false; // stays its normal self
             int idx = Plugin.ChaosGiantPalette.Value >= 0 ? Plugin.ChaosGiantPalette.Value : ChaosGiants.PurpleRow(e);
             if (idx >= 0) ElementalGiants.SetPaletteIndexAll(e, idx);
             else ElementalGiants.Tint(e, ChaosRun.Color);

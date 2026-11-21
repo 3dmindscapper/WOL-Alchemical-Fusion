@@ -10,22 +10,27 @@ namespace WolHybridBosses
     internal static class ArcanaCaster
     {
         // One cast, honouring the def's shots: a fan goes out at once, a chain runs as a coroutine on the caster.
-        internal static void CastAll(Enemy caster, ArcanaDef def, Vector2 aim, Vector2? originOverride, bool empowered)
+        // empowered = enhanced (isEmpowered, more shots, +30% damage); signature = the arcana's signature version
+        // (isUltimate), only for a rival's signature arcana cast while its meter is ready (see Signature).
+        internal static void CastAll(Enemy caster, ArcanaDef def, Vector2 aim, Vector2? originOverride, bool empowered, bool signature = false)
         {
             int shots = Mathf.Max(1, def.Shots);
-            if (empowered) shots = shots > 1 ? shots * 2 - 1 : (def.Delivery == Delivery.Projectile ? 3 : 1);
+            if (empowered && !signature) shots = shots > 1 ? shots * 2 - 1 : (def.Delivery == Delivery.Projectile ? 3 : 1);
             float spread = def.Spread > 0f ? def.Spread : (shots > 1 && def.ShotDelay <= 0f ? 30f : 0f);
             if (empowered && spread > 0f) spread *= 1.5f;
 
-            if (def.ShotDelay > 0f && shots > 1) { caster.StartCoroutine(Chain(caster, def, aim, shots, empowered)); return; }
+            if (def.ShotDelay > 0f && shots > 1) { caster.StartCoroutine(Chain(caster, def, aim, shots, empowered, signature)); return; }
             for (int i = 0; i < shots; i++)
             {
                 float off = shots == 1 ? 0f : Mathf.Lerp(-spread * 0.5f, spread * 0.5f, i / (float)(shots - 1));
-                SafeCast(caster, def, Rotate(aim, off), originOverride, empowered, i == 0);
+                SafeCast(caster, def, Rotate(aim, off), originOverride, empowered, i == 0, signature);
             }
         }
 
-        static IEnumerator Chain(Enemy caster, ArcanaDef def, Vector2 aim, int shots, bool empowered)
+        // True while a signature-version cast is being spawned (read by MakeEnemyAttack / InitPrefabFields).
+        internal static bool SignatureCast;
+
+        static IEnumerator Chain(Enemy caster, ArcanaDef def, Vector2 aim, int shots, bool empowered, bool signature)
         {
             for (int i = 0; i < shots; i++)
             {
@@ -36,7 +41,7 @@ namespace WolHybridBosses
                     Vector2 to = (Vector2)caster.closestTargetInfo.position - (Vector2)caster.transform.position;
                     if (to.sqrMagnitude > 0.01f) dir = to.normalized; // re-aim each shot
                 }
-                SafeCast(caster, def, dir, null, empowered, i == 0);
+                SafeCast(caster, def, dir, null, empowered, i == 0, signature);
                 yield return new WaitForSeconds(def.ShotDelay);
             }
         }
@@ -47,18 +52,20 @@ namespace WolHybridBosses
             return new Vector2(v.x * c - v.y * s, v.x * s + v.y * c);
         }
 
-        static void SafeCast(Enemy caster, ArcanaDef def, Vector2 dir, Vector2? originOverride, bool empowered, bool log)
+        static void SafeCast(Enemy caster, ArcanaDef def, Vector2 dir, Vector2? originOverride, bool empowered, bool log, bool signature)
         {
             // Summons run in the game's native enemy mode: no ownership context (it would invert their targeting).
             bool owned = def.Delivery != Delivery.Summon;
             if (owned) OwnerContext.Enter(caster, true); // everything spawned now is tagged; its targeting aims at players
+            bool prevSig = SignatureCast;
+            SignatureCast = signature;
             try { Cast(caster, def, dir, originOverride, empowered, log); }
             catch (Exception ex)
             {
                 EnemyArcana.Broken.Add(def.SkillID);
                 Plugin.Log.LogWarning("ARCANA " + def.SkillID + " cast failed on " + caster.GetType().Name + " (disabled for this session): " + ex);
             }
-            finally { if (owned) OwnerContext.Exit(true); }
+            finally { SignatureCast = prevSig; if (owned) OwnerContext.Exit(true); }
         }
 
         static void Cast(Enemy caster, ArcanaDef def, Vector2 dir, Vector2? originOverride, bool empowered, bool log)
@@ -76,15 +83,30 @@ namespace WolHybridBosses
             switch (def.Delivery)
             {
                 case Delivery.Projectile:
-                    Projectile proj = Projectile.CreateProjectile(caster, prefab, origin, rot, null);
-                    if (proj != null)
+                    if (prefab.GetComponent<Projectile>() != null)
                     {
-                        proj.parentObject = caster.gameObject;
-                        proj.parentEntity = caster;
-                        proj.moveVector = dir;
-                        spawned = proj.gameObject;
+                        Projectile proj = Projectile.CreateProjectile(caster, prefab, origin, rot, null);
+                        if (proj != null)
+                        {
+                            proj.parentObject = caster.gameObject;
+                            proj.parentEntity = caster;
+                            proj.moveVector = dir;
+                            spawned = proj.gameObject;
+                        }
                     }
-                    else spawned = UnityEngine.Object.Instantiate(prefab, origin, rot) as GameObject; // not a Projectile after all
+                    else
+                    {
+                        // The projectile sits on a child (Water Arc): CreateProjectile can't take it, so spawn the whole
+                        // prefab like the player's state does and wire the child projectile.
+                        spawned = UnityEngine.Object.Instantiate(prefab, origin, rot) as GameObject;
+                        Projectile child = spawned != null ? spawned.GetComponentInChildren<Projectile>(true) : null;
+                        if (child != null)
+                        {
+                            child.parentObject = caster.gameObject;
+                            child.parentEntity = caster;
+                            child.moveVector = dir;
+                        }
+                    }
                     break;
                 case Delivery.Wave:
                     spawned = UnityEngine.Object.Instantiate(prefab, origin, rot) as GameObject;
@@ -117,9 +139,10 @@ namespace WolHybridBosses
                 EnemyArcana.MakeEnemyAttack(atk, caster, def, empowered);
                 attacks++;
             }
+            ArcanaFinisher.Finish(spawned, caster, def, dir, target, empowered, SignatureCast); // the launch step the player's state would run
             if (log && Plugin.DebugKeys.Value)
                 Plugin.Log.LogInfo("ARCANA " + caster.GetType().Name + " cast " + def.SkillID + " [" + def.Element + ", " + def.Family + "/" + def.Delivery
-                    + (def.Shots > 1 ? " x" + def.Shots : "") + (empowered ? ", SIGNATURE" : "") + ", attacks " + attacks + "]");
+                    + (def.Shots > 1 ? " x" + def.Shots : "") + (SignatureCast ? ", SIGNATURE" : empowered ? ", enhanced" : "") + ", attacks " + attacks + "]");
         }
     }
 
@@ -216,7 +239,7 @@ namespace WolHybridBosses
 
         public ArcanaState(string name, FSM fsm, Enemy ent, ArcanaDef d)
             : base(name, fsm, ent,
-                   Plugin.IgnoreSkillDifficulty.Value ? 0 : 1, d.Priority, d.MinRange, d.MaxRange, d.Cooldown, true)
+                   Plugin.IgnoreSkillDifficulty.Value ? 0 : 1, d.Priority, d.MinRange, d.MaxRange, d.Cooldown, !d.Basic)
         {
             def = d;
             exitTime = 0.4f + (d.Shots > 1 ? d.ShotDelay * d.Shots : 0f);
@@ -228,18 +251,19 @@ namespace WolHybridBosses
         // Shared spell rhythm: no arcana while the enemy's cast gap is running (see Rivals.MarkCast).
         public override bool IsReady()
         {
-            return base.IsReady() && Rivals.CanCast(parent) && !EnemyArcana.Broken.Contains(def.SkillID);
+            if (EnemyArcana.Broken.Contains(def.SkillID)) return false;
+            // A ready signature goes out at the next opening, whatever the shared cast gap says.
+            if (Signature.IsReady(parent) && Signature.IsSignatureArcana(parent, def)) return base.IsReady();
+            return def.Basic ? base.IsReady() : base.IsReady() && Rivals.CanCast(parent);
         }
 
         public override void OnEnter()
         {
-            Rivals.MarkCast(parent);
+            if (!def.Basic) Rivals.MarkCast(parent);
             base.OnEnter();
             if (parent.movement != null) parent.movement.EndMovement();
-            if (!string.IsNullOrEmpty(castingAnimName)) TryPlay(castingAnimName);
-            float windup = def.Windup;
-            if (Signature.Ready(parent)) windup *= 1.4f; // a longer, readable tell before a signature cast
-            windupStopwatchID = ChaosStopwatch.Begin(windup, false, 0f, 0, 0);
+            PlayCastAnimation();
+            windupStopwatchID = ChaosStopwatch.Begin(def.Windup, false, 0f, 0, 0);
         }
 
         public override void ExecuteSkill()
@@ -247,19 +271,39 @@ namespace WolHybridBosses
             base.ExecuteSkill(); // marks windup done and queues the exit
             DeactivatePowerUpEffect(false);
             Vector2 aim = targetVector.sqrMagnitude > 0.001f ? targetVector.normalized : Vector2.right;
-            // Signature casters (rivals) empower from their meter; everyone else can roll an enhanced cast.
-            bool empowered = Signature.HasMeter(parent)
-                ? Signature.Consume(parent)
-                : UnityEngine.Random.value < Plugin.EnhancedArcanaChance.Value;
-            ArcanaCaster.CastAll(parent, def, aim, null, empowered);
+            // Its signature arcana cast with a full meter = the signature version (spends the meter, with the cue).
+            // Any cast by anyone can roll an enhanced version.
+            bool signature = !def.Basic && Signature.Consume(parent, def);
+            bool empowered = signature || UnityEngine.Random.value < Plugin.EnhancedArcanaChance.Value;
+            ArcanaCaster.CastAll(parent, def, aim, null, empowered, signature);
         }
 
-        void TryPlay(string anim)
+        // Without a cast animation the caster stands still with its run cycle looping ("walking in place").
+        // Like the game's own enemy states: basics play "Attack"+facing, spells "Cast"+facing (Contestant: CastLeft,
+        // AttackRight...), falling back to the plain names and the skill's castingAnimName. Only states the
+        // animator actually has are played.
+        void PlayCastAnimation()
+        {
+            string dir = parent.facingDirection.ToString();
+            string[] names = def.Basic
+                ? new[] { "Attack" + dir, "Attack", "Cast" + dir, "Cast", castingAnimName }
+                : new[] { "Cast" + dir, "Cast", castingAnimName, "Attack" + dir, "Attack" };
+            string played = null;
+            foreach (string n in names) if (TryPlay(n)) { played = n; break; }
+            if (Plugin.DebugKeys.Value && animLogged.Add(parent.GetType().Name + "|" + def.SkillID))
+                Plugin.Log.LogInfo("ARCANA " + parent.GetType().Name + " " + def.SkillID + " animation: " + (played ?? "none found (keeps its current animation)"));
+        }
+
+        static readonly HashSet<string> animLogged = new HashSet<string>();
+
+        bool TryPlay(string anim)
         {
             Animator a = parent.anim;
-            if (a == null) return;
+            if (a == null || string.IsNullOrEmpty(anim)) return false;
             int hash = Animator.StringToHash(anim);
-            if (a.HasState(0, hash)) a.Play(hash, 0, 0f);
+            if (!a.HasState(0, hash)) return false;
+            a.Play(hash, 0, 0f);
+            return true;
         }
     }
 }

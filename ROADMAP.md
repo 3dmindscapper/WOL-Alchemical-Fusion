@@ -56,6 +56,15 @@ Built:
   - a signature meter that fills on hits and empowers its next arcana;
   - summons and wards;
   - its own Fireball / Tornado / Blizzard only when they match its element.
+- 🧪 **Fixes (v0.4.5), from testing:**
+  - **Walking in place:** the built-in basic attack (a Wind Slash with no stats outside its ally role) swung for nothing over and over. Rivals now get an **elemental basic arcana** (shown in the intro as "(basic)") that replaces it, and an unstuck watchdog makes them dash at you if they "run" without moving.
+  - **Only their kit:** the log lists everything a rival may cast (`RIVAL kit …`), and logs its built-in spells too (`RIVAL own spell …`). They match the intro: arcana, basic, dash, and the own spells that fit its element.
+  - **Signature like the player's (reworked in v0.4.8):** each rival has one **signature arcana** (marked "(signature)" in the intro; always an arcana that has a signature version in the game). Its hits fill the meter. When full it gets the player's overdrive aura, glow and sound. The next time it casts that arcana it fires the **signature version**, with the player's cue (burst, hit-stop, camera shake). Unused, the ready state runs out after 8 / 10 / 12 / 14 s (Easy / Medium / Hard / Final).
+- 🧪 **Fixes (v0.4.6), from testing:**
+  - **Cyclone boomerang on every rival:** that's the rival's own Sword Throw, which was wrongly treated as neutral. It's now a Wind spell, so only Wind (and Chaos) rivals throw it.
+  - **Still walking in place at times:** next to you, while its basic cooled down, the rival stood still with its run cycle playing. It now shows its idle pose while standing and runs again when it moves, and its arcana casts play a cast animation.
+- 🧪 **Fixes (v0.4.7):** arcana that the player "finishes" after casting (the Hammer Throw's spin-and-throw, boomerangs, dragons, axes, bolas, charge shots like Ball Lightning) now get that last step when an enemy casts them, so nothing is left floating in place.
+- 🧪 **Fixes (v0.4.8):** the Earth rival's axe basic now spins out instead of floating; the Frost rival's Water Arc basic works (it crashed before); rivals no longer glow at random (that was the old timed signature window).
 - ✅ **Robe and relic:** a random player robe (its colours and stat bonuses) and a random stat relic (real icon and name, effect translated to a rival stat).
 - 🧪 Player-style fall protection; a mini-boss reward chest on death.
 
@@ -74,7 +83,7 @@ A regular stage can have a **Chaos version** (`ChaosStages.StageChance` 0.15 per
 
 Built:
 - 🧪 **Look:** purple-tinted tiles, decorations and lights.
-- 🧪 **Enemies (v0.4.4):** the types that have elemental versions on other stages (**Knight, Rogue (thief), Archer, Mage (wizard), Summoner**, including their elemental versions) get **1 Chaos arcana and their purple palette row**. Other regular enemies keep their normal kit. **Giants become Chaos giants** instead of taking the stage element: Chaos element, 2 Chaos arcana, no borrowed elemental skills. They wear their own purple palette row, found automatically by reading each giant's palette texture (`ChaosStages.GiantPalette` = -1). A giant with no purple row (the Coffin) gets a purple tint instead.
+- 🧪 **Enemies (v0.4.5):** the types that have elemental versions on other stages (**Knight, Rogue (thief), Archer, Mage (wizard), Summoner, Lancer**, including their elemental versions) each have a 50% chance (`ChaosStages.EnemyChance`) to be a Chaos version: **1 Chaos arcana and their purple palette row**. That's like elemental stages, where not all of them are elemental. Other regular enemies keep their normal kit. **Giants become Chaos giants** instead of taking the stage element: Chaos element, 2 Chaos arcana, no borrowed elemental skills. They wear their own purple palette row, found automatically by reading each giant's palette texture (`ChaosStages.GiantPalette` = -1). A giant with no purple row (the Coffin) gets a purple tint instead.
 - 🧪 **Rival:** the stage's rival arena features a Chaos rival casting Chaos arcana. Rivals never appear outside their arenas.
 - 🧪 **Rewards:** gold and item drops ×1.5 (`ChaosStages.RewardMultiplier`).
 - 🧪 **Shown:** "Chaos <stage>" title, and a purple marker on the loading-screen board. The board and the stage always agree.

@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
 using HarmonyLib;
@@ -93,39 +94,82 @@ namespace WolHybridBosses
     }
 
     // ---------------------------------------------------------------------------------------------
-    // Signature: like the player's, a meter fills as the caster's attacks land on the player. When full, the
-    // caster glows and its next arcana is empowered (ultimate stats, more shots, bigger, +30% damage).
+    // Signature, as the player's works (Player.HandleOverdrive): hits on the player fill a meter. Full = READY:
+    // the game's overdrive aura + glowing outline + the "PlayerOverdrive" activation sound, and the signature
+    // arcana's cooldown resets. Ready slowly runs out (expire sound) if unused. Only the rival's ONE signature
+    // arcana (an arcana the game gives a signature variant, Player+SkillState.hasSignatureVariant) can spend it:
+    // cast while ready it fires its signature version (isUltimate), with the player's cue (burst, hit-stop freeze,
+    // camera shake, brief invulnerability). Any other cast leaves the meter alone. Giants never get this.
     // ---------------------------------------------------------------------------------------------
     internal static class Signature
     {
-        internal static void Enable(Enemy e, int hitsNeeded, string elementPrefix)
+        // Player skill states whose constructor sets hasSignatureVariant = true (tools/fieldwriters.ps1).
+        static readonly HashSet<string> SignatureStates = new HashSet<string>
+        {
+            "FreezingLungeState", "MultiShotState", "ShootArrowState", "ShootBallLightningState", "ShootFireArc", "ShootFireball",
+            "ShootVacuumShot", "SummonHomingMissilesState", "SummonIceWaveState", "SummonMeteorStrikeState", "SummonSkeletonMinionState",
+            "SummonTornadoState", "SummonTumbleFistState", "SwordThrowState", "TeleStrikeState", "ThrowIceLance", "UseAeroRipple",
+            "UseAquaBeam", "UseAquaDragon", "UseBlazingBlitz", "UseChaosBall", "UseChaosBeam", "UseChaosCluster", "UseChaosDrop",
+            "UseChaosEraser", "UseChaosLunge", "UseChaosMinion", "UseChaosSwordStorm", "UseChaosSwordSummon", "UseCurrentBurst",
+            "UseEarthAxe", "UseEarthBoomerang", "UseEarthCascade", "UseEarthDrill", "UseEarthJump", "UseEarthWheel", "UseFireBeam",
+            "UseFireBlastState", "UseFlameReturner", "UseFlameSlash", "UseFlameSwirl", "UseFrostFan", "UseFrostSwing", "UseHammerThrow",
+            "UseIceBoomerang", "UseIceChakram", "UseLightningFist", "UseLightningSword", "UseLightningXStrike", "UseMortalCoil",
+            "UsePhantomKnights", "UsePiercingShock", "UsePlantBarrage", "UsePoisonBolas", "UseRisingDragon", "UseShatterStone",
+            "UseShockDragon", "UseShockNova", "UseSlicingBarrage", "UseSonicBoom", "UseSpikeRing", "UseThunderDrop", "UseThunderFan",
+            "UseVacuumFlame", "UseVoidShift", "UseVoltSplinter", "UseWaterBall", "UseWaterBlast", "UseWhirlingAxe", "UseWhirlpool",
+            "UseWhirlwind", "UseWindFalcon", "UseWindSlam",
+        };
+        static HashSet<string> capableIds;
+
+        // Does this arcana have a signature version in the game?
+        internal static bool Capable(ArcanaDef d)
+        {
+            if (d == null) return false;
+            if (capableIds == null)
+            {
+                capableIds = new HashSet<string>();
+                foreach (GenArcana g in ArcanaCatalog.AllRows())
+                    if (g.ClassName != null && SignatureStates.Contains(g.ClassName)) capableIds.Add(g.SkillID);
+            }
+            return capableIds.Contains(d.SkillID);
+        }
+
+        internal static void Enable(Enemy e, int hitsNeeded, string elementPrefix, float readySeconds, ArcanaDef signatureArcana)
         {
             SignatureMeter m = e.GetComponent<SignatureMeter>() ?? e.gameObject.AddComponent<SignatureMeter>();
             m.Owner = e;
             m.Need = Mathf.Max(1, hitsNeeded);
+            m.ReadySeconds = Mathf.Max(4f, readySeconds);
             m.Color = ElementalGiants.ElementColor(elementPrefix);
+            m.SkillID = signatureArcana != null ? signatureArcana.SkillID : null;
         }
 
-        internal static bool HasMeter(Enemy e) { return e != null && e.GetComponent<SignatureMeter>() != null; }
+        static SignatureMeter Meter(Enemy e) { return e == null ? null : e.GetComponent<SignatureMeter>(); }
 
-        internal static bool Ready(Enemy e)
+        internal static bool HasMeter(Enemy e) { return Meter(e) != null; }
+
+        // The meter is full and waiting for the signature arcana.
+        internal static bool IsReady(Enemy e) { SignatureMeter m = Meter(e); return m != null && m.Ready; }
+
+        internal static bool IsSignatureArcana(Enemy e, ArcanaDef d)
         {
-            SignatureMeter m = e == null ? null : e.GetComponent<SignatureMeter>();
-            return m != null && m.IsReady;
+            SignatureMeter m = Meter(e);
+            return m != null && d != null && m.SkillID != null && m.SkillID == d.SkillID;
         }
 
-        internal static bool Consume(Enemy e)
+        // Called as an arcana fires: true (and the meter is spent, with the player's cue) only for the signature
+        // arcana while ready. The cast then uses its signature version.
+        internal static bool Consume(Enemy e, ArcanaDef d)
         {
-            SignatureMeter m = e == null ? null : e.GetComponent<SignatureMeter>();
-            if (m == null || !m.IsReady) return false;
-            m.Reset();
-            Plugin.Log.LogInfo("SIGNATURE " + e.GetType().Name + " unleashed");
+            SignatureMeter m = Meter(e);
+            if (m == null || !m.Ready || !IsSignatureArcana(e, d)) return false;
+            m.Fire(d);
             return true;
         }
 
         internal static void AddHit(Enemy e)
         {
-            SignatureMeter m = e == null ? null : e.GetComponent<SignatureMeter>();
+            SignatureMeter m = Meter(e);
             if (m != null) m.AddHit();
         }
     }
@@ -134,29 +178,105 @@ namespace WolHybridBosses
     {
         public Enemy Owner;
         public int Need = 8;
+        public float ReadySeconds = 10f;
         public Color Color = Color.white;
+        public string SkillID;
         int hits;
-        float readySince;
+        float readySince, firedAt = -10f, nextForce;
+        string firedName;
+        OverdriveEffects aura;
 
-        internal bool IsReady { get { return hits >= Need; } }
+        internal bool Ready { get; private set; }
 
         internal void AddHit()
         {
-            if (IsReady) return;
+            if (Ready || SkillID == null) return;
             hits++;
-            if (IsReady)
-            {
-                readySince = Time.time;
-                SetOutline(Color);
-                Plugin.Log.LogInfo("SIGNATURE " + (Owner != null ? Owner.GetType().Name : "?") + " ready");
-            }
+            if (hits >= Need) BecomeReady();
         }
 
-        internal void Reset()
+        // Full meter: the player's overdrive look and sound, and the signature arcana is ready to go.
+        void BecomeReady()
         {
-            hits = 0;
-            SetOutline(Color.clear);
+            Ready = true;
+            readySince = Time.time;
+            nextForce = Time.time + 0.3f;
+            EnsureAura();
+            try { if (aura != null) { aura.ToggleAura(true); aura.Burst(10, true, false, true); } } catch (Exception) { }
+            SetOutline(Color);
+            ArcanaState s = SignatureState();
+            if (s != null && s.cooldownRef != null) { try { s.cooldownRef.Reset(); } catch (Exception) { } }
+            Plugin.Log.LogInfo("SIGNATURE " + Owner.GetType().Name + " ready (" + SkillID + ")");
         }
+
+        // The signature arcana was cast while ready: the player's activation cue, then the meter starts over.
+        internal void Fire(ArcanaDef d)
+        {
+            Ready = false;
+            hits = 0;
+            firedAt = Time.time;
+            firedName = IntroUI.SkillName(d.SkillID);
+            try { if (aura != null) { aura.Burst(40, false, true, true); aura.ToggleAura(false); } } catch (Exception) { }
+            try { TimeScaleController.StandardFreezeIntoEaseOutTimeScale(); } catch (Exception) { }
+            try { CameraController.ShakeCamera(1f, false); } catch (Exception) { }
+            try { if (Owner.health != null) Owner.health.SetInvulnerabilityDuration(0.6f, false); } catch (Exception) { }
+            SetOutline(Color.clear);
+            Plugin.Log.LogInfo("SIGNATURE " + Owner.GetType().Name + " cast: " + d.SkillID + " (signature version)");
+        }
+
+        void Expire()
+        {
+            Ready = false;
+            hits = 0;
+            try { if (aura != null) aura.ToggleAura(false); } catch (Exception) { }
+            try { SoundManager.PlayAudio("PlayerOverdriveExpire", 1f, false, -1f, -1f); } catch (Exception) { }
+            SetOutline(Color.clear);
+            Plugin.Log.LogInfo("SIGNATURE " + Owner.GetType().Name + " expired unused");
+        }
+
+        void EnsureAura()
+        {
+            if (aura != null || Owner == null) return;
+            try
+            {
+                GameObject prefab = OverdriveEffects.Prefab;
+                if (prefab == null) return;
+                GameObject go = UnityEngine.Object.Instantiate(prefab, Owner.transform) as GameObject;
+                aura = go != null ? go.GetComponent<OverdriveEffects>() : null;
+                Material mat = Owner.spriteRenderer != null ? Owner.spriteRenderer.material : null;
+                if (aura != null) aura.Initialize(new Color(Color.r * 1.6f, Color.g * 1.6f, Color.b * 1.6f, 0.5f), Owner.transform, mat);
+            }
+            catch (Exception ex) { Plugin.Log.LogWarning("SIGNATURE aura failed: " + ex.Message); aura = null; }
+        }
+
+        ArcanaState SignatureState()
+        {
+            if (Owner == null || Owner.availableEnemySkillsDict == null) return null;
+            foreach (Enemy.SkillState s in Owner.availableEnemySkillsDict.Values)
+            {
+                ArcanaState a = s as ArcanaState;
+                if (a != null && a.Def.SkillID == SkillID) return a;
+            }
+            return null;
+        }
+
+        void Update()
+        {
+            if (Owner == null || !Ready) return;
+            if (Owner.health == null || Owner.health.CurrentHealthValue <= 0) { Expire(); return; }
+            if (Time.time - readySince > ReadySeconds) { Expire(); return; }
+            // Like a player who has their signature up: use it at the next opening (out of Chase/Idle).
+            if (Time.time < nextForce || !Owner.enabled || Owner.fsm == null || Owner.enemySkillUseInProgress) return;
+            string state = Owner.fsm.currentStateName ?? "";
+            if (!state.Contains("Chase") && !state.Contains("Idle")) return;
+            nextForce = Time.time + 0.5f;
+            ArcanaState s = SignatureState();
+            if (s == null || EnemyArcana.Broken.Contains(SkillID)) { Expire(); return; }
+            if (!s.IsReady()) return;
+            try { s.Transition(false); } catch (Exception ex) { Plugin.Log.LogWarning("SIGNATURE cast failed: " + ex.Message); }
+        }
+
+        void OnDestroy() { if (aura != null) Destroy(aura.gameObject); }
 
         void SetOutline(Color c)
         {
@@ -167,6 +287,8 @@ namespace WolHybridBosses
             if (m.HasProperty("_OutlineColor2")) m.SetColor("_OutlineColor2", c);
         }
 
+        static GUIStyle burstStyle, labelStyle;
+
         void OnGUI()
         {
             if (Owner == null || !Owner.enabled || Owner.health == null || Owner.health.CurrentHealthValue <= 0) return;
@@ -174,24 +296,47 @@ namespace WolHybridBosses
             if (cam == null) return;
             Vector3 sp = cam.WorldToScreenPoint(Owner.transform.position + new Vector3(0f, -0.35f, 0f));
             if (sp.z < 0f) return;
+            if (burstStyle == null)
+            {
+                burstStyle = new GUIStyle(GUI.skin.label) { fontSize = 22, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+                labelStyle = new GUIStyle(GUI.skin.label) { fontSize = 12, fontStyle = FontStyle.Bold, alignment = TextAnchor.UpperCenter };
+            }
             float w = 64f, h = 6f;
             Rect back = new Rect(sp.x - w * 0.5f, Screen.height - sp.y, w, h);
             Color old = GUI.color;
             GUI.color = new Color(0f, 0f, 0f, 0.7f);
             GUI.DrawTexture(back, Texture2D.whiteTexture);
-            float fill = Mathf.Clamp01(hits / (float)Need);
+
+            float fill;
             Color c = Color;
-            if (IsReady) c = Color.Lerp(Color, Color.white, 0.5f + 0.5f * Mathf.Sin((Time.time - readySince) * 10f));
+            if (Ready)
+            {
+                fill = Mathf.Clamp01(1f - (Time.time - readySince) / ReadySeconds); // runs out if unused
+                c = Color.Lerp(Color, Color.white, 0.5f + 0.5f * Mathf.Sin((Time.time - readySince) * 10f));
+            }
+            else fill = Mathf.Clamp01(hits / (float)Need);
             GUI.color = c;
             GUI.DrawTexture(new Rect(back.x + 1, back.y + 1, (w - 2) * fill, h - 2), Texture2D.whiteTexture);
-            if (IsReady)
-            {
-                GUI.color = c;
-                GUIStyle st = new GUIStyle(GUI.skin.label) { fontSize = 12, fontStyle = FontStyle.Bold, alignment = TextAnchor.UpperCenter };
-                st.normal.textColor = c;
-                GUI.Label(new Rect(back.x - 30, back.y + h, w + 60, 18), "SIGNATURE", st);
-            }
             GUI.color = old;
+
+            if (Ready)
+            {
+                labelStyle.normal.textColor = c;
+                GUI.Label(new Rect(back.x - 40, back.y + h, w + 80, 18), "SIGNATURE READY", labelStyle);
+            }
+            // The cast: big text over the rival, rising and fading.
+            float t = Time.time - firedAt;
+            if (t >= 0f && t < 1.4f)
+            {
+                Vector3 top = cam.WorldToScreenPoint(Owner.transform.position + new Vector3(0f, 1.6f, 0f));
+                float a = Mathf.Clamp01(1.4f - t);
+                string text = "SIGNATURE: " + (firedName ?? "");
+                Rect r = new Rect(top.x - 160f, Screen.height - top.y - 20f - t * 30f, 320f, 40f);
+                burstStyle.normal.textColor = new Color(0f, 0f, 0f, a * 0.8f);
+                GUI.Label(new Rect(r.x + 2, r.y + 2, r.width, r.height), text, burstStyle);
+                burstStyle.normal.textColor = new Color(Color.r, Color.g, Color.b, a);
+                GUI.Label(r, text, burstStyle);
+            }
         }
     }
 
@@ -265,6 +410,129 @@ namespace WolHybridBosses
                 if (owner != null) Signature.AddHit(owner);
             }
             catch (Exception) { }
+        }
+    }
+    // ---------------------------------------------------------------------------------------------
+    // Rival basics: the Contestant's chase state switches to its built-in "Attack" (a Wind Slash basic whose stats
+    // only exist in its ally category). For rivals that switch goes to their assigned elemental basic arcana instead,
+    // so they only ever use what their intro shows. If the basic is cooling down, the switch is skipped.
+    // ---------------------------------------------------------------------------------------------
+    internal static class RivalBasics
+    {
+        static readonly Dictionary<FSM, Enemy> byFsm = new Dictionary<FSM, Enemy>();
+
+        internal static void Register(Enemy e, RivalMarker mk)
+        {
+            if (e != null && e.fsm != null) byFsm[e.fsm] = e;
+        }
+
+        internal static Enemy RivalOf(FSM fsm)
+        {
+            Enemy e;
+            if (fsm == null || !byFsm.TryGetValue(fsm, out e)) return null;
+            if (e == null) { byFsm.Remove(fsm); return null; }
+            return e;
+        }
+    }
+
+    [HarmonyPatch(typeof(FSM), "ChangeState", new Type[] { typeof(string), typeof(bool) })]
+    static class RivalAttackRedirectPatch
+    {
+        // The Contestant's own spells, by FSM state name -> the arcana they stand for.
+        static readonly Dictionary<string, string> OwnSpells = new Dictionary<string, string>
+        {
+            { "Fireball", "ShootFireball" }, { "Tornado", "SummonTornado" }, { "SwordThrow", "SwordThrow" },
+        };
+
+        static bool Prefix(FSM __instance, ref string __0)
+        {
+            if (__0 == null) return true;
+            string own;
+            if (OwnSpells.TryGetValue(__0, out own))
+            {
+                // Hard block at the source: an off-theme own spell never starts (whatever path asks for it).
+                // Go to Chase instead of cancelling, so a state that already ended never gets left running.
+                Enemy r = RivalBasics.RivalOf(__instance);
+                if (r == null || Rivals.SignatureAllowed(r.GetComponent<RivalMarker>(), own)) return true;
+                if (__instance.currentStateName == "Chase") return false;
+                __0 = "Chase";
+                return true;
+            }
+            if (__0 != "Attack") return true;
+            Enemy e = RivalBasics.RivalOf(__instance);
+            if (e == null) return true;
+            RivalMarker mk = e.GetComponent<RivalMarker>();
+            if (mk == null || mk.Basic == null) return true;
+            // Basics aren't offered to the AI, so look the state up in the FSM's own state table.
+            IDictionary states = Traverse.Create(__instance).Field("states").GetValue() as IDictionary;
+            string name = "Arcana" + mk.Basic.SkillID;
+            Enemy.SkillState basic = states != null && states.Contains(name) ? states[name] as Enemy.SkillState : null;
+            if (basic != null && basic.IsReady()) basic.Transition(false); // its elemental basic instead of the built-in Wind Slash
+            return false;                                                  // never the built-in basic
+        }
+    }
+
+    // A rival that keeps "running" in place (blocked path) while the player is out of reach dashes at the player.
+    internal class RivalUnstuck : MonoBehaviour
+    {
+        public Enemy Owner;
+        Vector2 lastPos;
+        float stillSince, nextAllowed;
+
+        Vector2 animPos;
+        float animStill;
+        bool idleShown;
+
+        // Chase keeps the Run cycle playing even when the rival stands still (at the player waiting on its
+        // basic, or blocked): show Idle while it stands, Run again once it moves.
+        void FixAnimation(string state)
+        {
+            Vector2 pos = Owner.transform.position;
+            bool moved = (pos - animPos).sqrMagnitude > 0.0004f;
+            animPos = pos;
+            if (!state.Contains("Chase")) { idleShown = false; animStill = Time.time; return; }
+            if (moved)
+            {
+                animStill = Time.time;
+                if (idleShown) { idleShown = false; Play("Run" + Owner.facingDirection, "Run"); }
+                return;
+            }
+            if (!idleShown && Time.time - animStill > 0.15f && Play("Idle" + Owner.facingDirection, "Idle")) idleShown = true;
+        }
+
+        bool Play(params string[] names)
+        {
+            Animator a = Owner.anim;
+            if (a == null) return false;
+            foreach (string n in names)
+            {
+                int hash = Animator.StringToHash(n);
+                if (a.HasState(0, hash)) { a.Play(hash, 0, 0f); return true; }
+            }
+            return false;
+        }
+
+        void Update()
+        {
+            if (Owner == null || !Owner.enabled || Owner.fsm == null || Owner.health == null || Owner.health.CurrentHealthValue <= 0) return;
+            FixAnimation(Owner.fsm.currentStateName ?? "");
+            Vector2 pos = Owner.transform.position;
+            if ((pos - lastPos).sqrMagnitude > 0.04f) { lastPos = pos; stillSince = Time.time; return; }
+            string state = Owner.fsm.currentStateName ?? "";
+            if (!state.Contains("Chase")) { stillSince = Time.time; return; }
+            if (Time.time - stillSince < 1f || Time.time < nextAllowed) return;
+
+            Player p = GameController.playerScripts != null && GameController.playerScripts.Length > 0 ? GameController.playerScripts[0] : null;
+            if (p == null || Vector2.Distance(p.transform.position, pos) < 3.5f) return;
+            nextAllowed = Time.time + 2.5f;
+            stillSince = Time.time;
+            try
+            {
+                Traverse.Create(Owner).Method("CalculateDashVector", new object[] { p.transform }).GetValue();
+                Owner.fsm.ChangeState("Dash", false);
+                Plugin.Log.LogInfo("RIVAL unstuck: dashing at the player");
+            }
+            catch (Exception ex) { Plugin.Log.LogWarning("RIVAL unstuck failed: " + ex.Message); }
         }
     }
 }
