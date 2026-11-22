@@ -33,7 +33,7 @@ namespace WolHybridBosses
         {
             "No infusions? You still wield the elements one at a time, the way the Council taught you.",
             "Your arcana are pure, untouched. Let me show you what they could become.",
-            "Not a single fusion? Visit Tomi, little wizard. The elements were never meant to stay apart.",
+            "Not a single fusion? Visit Tomix, little wizard. The elements were never meant to stay apart.",
             "You have never fused an element. Learn to blend them, and one day you may stand where I stand.",
         };
 
@@ -108,6 +108,8 @@ namespace WolHybridBosses
                 if (top != null && ElementWords.TryGetValue(top, out words) && UnityEngine.Random.value < 0.5f) lines.Add(Pick(words));
                 else lines.Add(Pick(NoInfusion));
             }
+            string gear = GearReaction.ForAlchemist(); // v1.1.1: what you wear
+            if (gear != null) lines.Add(gear);
             lines.Add(Pick(Challenge));
             return lines;
         }
@@ -119,6 +121,7 @@ namespace WolHybridBosses
         internal static void Setup(Enemy e)
         {
             if (e == null) return;
+            AlchemistTrueForm.RememberPalettes(e); // v1.1.1: the originals, for its true form's element looks
             try { RecolorEngine.RecolorBody(e, "Pure", false); } catch (Exception ex) { Plugin.Log.LogWarning("ALCHEMIST recolour failed: " + ex.Message); }
             WhiteAura.Attach(e.transform, e.spriteRenderer != null ? e.spriteRenderer.material : null);
             Plugin.Log.LogInfo("ALCHEMIST ready: white, aura, every arcana dual");

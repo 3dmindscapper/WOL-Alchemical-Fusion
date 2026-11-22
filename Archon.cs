@@ -84,6 +84,8 @@ namespace WolHybridBosses
             string[] h;
             List<string> l = new List<string> { Hello.TryGetValue(prefix ?? "", out h) ? Pick(h) : "I am an Archon, the element made flesh." };
             l.Add(Pick(Throne));
+            string gear = GearReaction.ForArchon(prefix); // v1.1.1
+            if (gear != null) l.Add(gear);
             l.Add(Pick(Challenge));
             return l;
         }
@@ -95,19 +97,50 @@ namespace WolHybridBosses
         internal static IEnumerator Monologue(Enemy boss, string speaker, List<string> lines, Color colour)
         {
             if (boss == null || lines == null || lines.Count == 0) yield break;
-            float total = 0f;
-            foreach (string l in lines) total += 3.2f + l.Length * 0.035f;
+            // v1.1.1: it stays put and untouchable for as long as the conversation lasts (no fixed timer any more).
             boss.enabled = false;
-            if (boss.health != null) try { boss.health.SetInvulnerabilityDuration(total + 1f, false); } catch (Exception) { }
-            try { CameraController cam = CameraController.Instance; if (cam != null) cam.OverrideAndMoveCameraToLocation(boss.transform, null, total, true, false, false, false); } catch (Exception) { }
+            if (boss.movement != null) boss.movement.EndMovement();
+            if (boss.health != null) try { boss.health.SetInvulnerabilityDuration(600f, false); } catch (Exception) { }
+            try { CameraController cam = CameraController.Instance; if (cam != null) cam.OverrideAndMoveCameraToLocation(boss.transform, null, 600f, true, false, false, false); } catch (Exception) { }
+            yield return Converse(speaker, lines, colour);
+            if (boss != null && boss.health != null) try { boss.health.SetInvulnerabilityDuration(0.5f, false); } catch (Exception) { }
+            Plugin.Log.LogInfo("FINAL " + speaker + " spoke " + lines.Count + " lines");
+        }
+        // v1.1.1: a conversation: everyone stays put (the players paused, the speaker frozen by its caller), each line
+        // stays until Confirm / Interact (pad) or Space / Enter / E / F is pressed: the first press finishes the
+        // typing, the next one moves on. Lines still move on by themselves after a generous read time.
+        internal static IEnumerator Converse(string speaker, List<string> lines, Color colour)
+        {
+            if (lines == null || lines.Count == 0) yield break;
+            RivalSpeech.Skippable = true;
+            try { GameController.PauseAllPlayers(true); } catch (Exception) { }
             foreach (string l in lines)
             {
-                if (boss == null) yield break;
-                float wait = 3.2f + l.Length * 0.035f;
-                RivalSpeech.Say(speaker, l, colour, wait - 0.4f);
-                yield return new WaitForSeconds(wait);
+                RivalSpeech.Say(speaker, l, colour, 600f);
+                float start = Time.unscaledTime, auto = 4.5f + l.Length * 0.06f;
+                yield return null;
+                while (Time.unscaledTime - start < auto)
+                {
+                    if (Time.unscaledTime - start > 0.2f && Advance())
+                    {
+                        if (!RivalSpeech.FullyShown) RivalSpeech.ShowAll();
+                        else break;
+                    }
+                    yield return null;
+                }
             }
-            Plugin.Log.LogInfo("FINAL " + speaker + " spoke " + lines.Count + " lines");
+            RivalSpeech.Hide();
+            RivalSpeech.Skippable = false;
+            try { GameController.PauseAllPlayers(false); } catch (Exception) { }
+        }
+
+        static bool Advance()
+        {
+            if (Input.GetKeyDown(KeyCode.Space) || Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.E) || Input.GetKeyDown(KeyCode.F)) return true;
+            Player p = Elites.Player0;
+            ChaosInputDevice dev = p != null ? p.inputDevice : null;
+            if (dev == null) return false;
+            try { return dev.GetButtonDown("Confirm") || dev.GetButtonDown("Interact"); } catch (Exception) { return false; }
         }
     }
 
@@ -152,12 +185,7 @@ namespace WolHybridBosses
             string[] last;
             if (alchemist) last = AlchemistLast;
             else if (!Last.TryGetValue(prefix ?? "", out last)) last = new[] { "The element returns to its source." };
-            foreach (string l in last)
-            {
-                float t = 3.2f + l.Length * 0.035f;
-                RivalSpeech.Say(title, l, colour, t - 0.4f);
-                yield return new WaitForSeconds(t);
-            }
+            yield return ChampionSpeech.Converse(title, new List<string>(last), colour); // v1.1.1: skippable, everyone paused
             string ending;
             if (alchemist) ending = "The Primordial Return";
             else if (!Endings.TryGetValue(prefix ?? "", out ending)) ending = "The Element Returns";

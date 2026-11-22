@@ -16,7 +16,8 @@ namespace WolHybridBosses
         Enemy owner;
         RivalMarker mk;
         string title;
-        bool done;
+        bool done, shifted;
+        internal bool Shifted { get { return shifted; } } // v1.1.1: its phase 2 has finished (the true form waits for it)
 
         internal static void Attach(Enemy e, string title)
         {
@@ -126,6 +127,7 @@ namespace WolHybridBosses
             if (owner == null) yield break;
             Rivals.DelayCasts(owner, 0.6f);
             owner.enabled = true;
+            shifted = true;
         }
 
         // Arcana it doesn't already have (and not basics).

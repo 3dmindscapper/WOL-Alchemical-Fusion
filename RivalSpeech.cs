@@ -87,6 +87,12 @@ namespace WolHybridBosses
         static GUIStyle nameStyle, textStyle;
         static Font styleFont;
 
+        // v1.1.1: conversations (ChampionSpeech.Converse): a "next" hint, typing that can be finished early, and hiding.
+        internal static bool Skippable;
+        internal static bool FullyShown { get { return instance == null || instance.text == null || (Time.unscaledTime - instance.start) * 45f >= instance.text.Length; } }
+        internal static void ShowAll() { if (instance != null && instance.text != null) instance.start = Time.unscaledTime - instance.text.Length / 45f - 0.05f; }
+        internal static void Hide() { if (instance != null) instance.until = 0f; }
+
         internal static void Say(string speaker, string line, Color colour, float seconds = 4f)
         {
             if (string.IsNullOrEmpty(line)) return;
@@ -125,7 +131,15 @@ namespace WolHybridBosses
             GUI.color = old;
             GameFont.Shadowed(new Rect(box.x + 18f, box.y + 6f, box.width - 36f, 24f), speaker, nameStyle, colour);
             GameFont.Shadowed(new Rect(box.x + 18f, box.y + 32f, box.width - 36f, box.height - 38f), "\"" + visible + (shown >= text.Length ? "\"" : ""), textStyle, new Color(1f, 0.97f, 0.9f));
+            if (Skippable && shown >= text.Length) // v1.1.1
+            {
+                if (hintStyle == null || hintStyle.font != nameStyle.font) hintStyle = new GUIStyle(nameStyle) { alignment = TextAnchor.MiddleRight, fontSize = 13 };
+                float blink = 0.55f + 0.45f * Mathf.Abs(Mathf.Sin(Time.unscaledTime * 3f));
+                GameFont.Shadowed(new Rect(box.x, box.yMax - 22f, box.width - 14f, 18f), "Confirm  ▶", hintStyle, new Color(1f, 0.92f, 0.7f, blink));
+            }
         }
+
+        static GUIStyle hintStyle;
     }
 
     // On a rival: its half-health and defeat lines.

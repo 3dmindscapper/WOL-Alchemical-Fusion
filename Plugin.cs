@@ -15,7 +15,7 @@ namespace WolHybridBosses
     [BepInDependency(MantleRobe.LegendApiGuid, BepInDependency.DependencyFlags.HardDependency)] // v1.1.1: required (the White Mantle robe, later content)
     public class Plugin : BaseUnityPlugin
     {
-        public const string Version = "1.1.1";
+        public const string Version = "1.1.2";
         internal static ManualLogSource Log;
 
         internal static ConfigEntry<bool> ElementalGiants;
@@ -129,7 +129,7 @@ namespace WolHybridBosses
             VariantRadiantShare = Config.Bind("StageVariants", "RadiantShare", 0.35f, "With WoL Arcanos installed, the share of variant stages that are Radiant (Arcanos' Fulgor element).");
             VariantPrismShare = Config.Bind("StageVariants", "PrismShare", 0.15f, "With WoL Arcanos installed, the share of variant stages that are Prism (Arcanos' Prisma element).");
             VariantArchonChance = Config.Bind("StageVariants", "ArchonChance", 0.25f, "With WoL Arcanos installed, chance that an elemental Archon (final champion or arena Archon) is a Radiant or Prism Archon instead.");
-            InfusionEnabled = Config.Bind("Infusion", "Enabled", true, "Tomi comes to the arcana merchant during runs: in his spellbook, keep one arcana and sacrifice another (yours or a card off the shelf) and the kept one takes the sacrificed one's element (damage type, status, +10% damage, its colours). Late in a run an infused arcana can take a second element (dual). Infused versions unlock for good and are chosen at Tomi in the Hub.");
+            InfusionEnabled = Config.Bind("Infusion", "Enabled", true, "Tomix (Tomi's gold mixing-tome cousin) comes to the arcana merchant during runs: in his spellbook, keep one arcana and sacrifice another (yours or a card off the shelf) and the kept one takes the sacrificed one's element (damage type, status, +10% damage, its colours). Late in a run an infused arcana can take a second element (dual). Infused versions unlock for good and are chosen at Tomix beside Tomi in the Hub (his journal: J / pad Interact).");
             InfusedCouncil = Config.Bind("Infusion", "InfusedCouncil", true, "A Council member (2nd and 3rd tier, when the tier has no Chaos/Radiant/Prism member) may have infused their element with another: same moveset, the other element's damage, status and colours, new lines, and a reward of that element. 15% / 25%, +20% from the second loop.");
             RivalScaleWithProgress = Config.Bind("RivalWizards", "ScaleWithProgress", true, "The rival's difficulty is rolled with Hard more likely deeper in the run (Easy/Medium/Hard %: first tier 60/30/10, second 30/45/25, third 15/40/45, later loops 5/30/65). Off: an even roll.");
             EchoEnabled = Config.Bind("RivalWizards", "EchoOfLastRun", true, "A rival portal can hold the Echo of your last run instead (your arcana with their infusions, robe and stat relics), once per run. Beating it gives a gold chest.");
@@ -137,9 +137,9 @@ namespace WolHybridBosses
             ElementalNeutralChance = Config.Bind("Enemies", "ElementalCoffinCyclopsChance", 0.6f, "On an elemental stage, chance that a Coffin Knight, Cyclops, blob (any kind) or ghoul (Ghoul, Macho Ghoul) takes the stage's element: recoloured body and elemental attacks in its colours, plus one borrowed arcana for Coffin Knights and Cyclops. Blobs and ghouls also take Chaos / Radiant / Prism on those stages.");
             BossFightsEnabled = Config.Bind("BossFights", "Enabled", true, "Special mini-bosses made from regular enemies (Giant Cyclops, Mimic King, Cyclops Eye Court, Elemental Conclave, Hive Mother, Gravewarden) can take a giant's place in the mini-boss pool.");
             MinibossFightChance = Config.Bind("BossFights", "MinibossChance", 0.3f, "Chance that a giant (mini-boss) spawn becomes one of the six special mini-bosses instead, picked evenly.");
-            BountiesEnabled = Config.Bind("Bounties", "Enabled", true, "One bounty per run (rolled in the Hub, shown top left there): slay a given elite, beat a special mini-boss or a rival, clear a trial, infuse at Tomi. Completing it drops gold.");
+            BountiesEnabled = Config.Bind("Bounties", "Enabled", true, "One bounty per run (rolled in the Hub, shown top left there): slay a given elite, beat a special mini-boss or a rival, clear a trial, infuse at Tomix. Completing it drops gold.");
             GrudgeChance = Config.Bind("RivalWizards", "GrudgeChance", 0.3f, "Chance that a rival you beat (not the Echo or an Archon) wants a rematch later in the run: 60% per later stage its portal opens; it comes back a tier harder with some arcana infused, and beating it may drop one of its arcana (regular 35%, infused 12%).");
-            ModifiersButton = Config.Bind("Modifiers", "Button", "Skill4", "Controller action that opens the in-game modifiers menu while Tomi's spellbook is open in the Hub (F1 on the keyboard works anywhere in the Hub).");
+            ModifiersButton = Config.Bind("Modifiers", "Button", "Skill4", "Controller action that opens the in-game modifiers menu while Tomi's or Tomix's spellbook is open in the Hub (F1 on the keyboard works anywhere in the Hub).");
             NocturneFree = Config.Bind("Nocturne", "Free", true, "Nocturne the Cardist's shuffle costs nothing (the game charges 10 gems).");
             NocturnePreset = Config.Bind("Nocturne", "Preset", 0, "Which shuffle Nocturne deals (chosen in her menu): 0 full shuffle, 1 arcana only, 2 robe and relic, 3 element build, 4 alchemist.");
             AlchemistChance = Config.Bind("FinalBoss", "AlchemistChance", 0.25f, "When the final room holds a champion: chance it is the Primordial Alchemist (white wizard, every arcana dual-infused). Beating it teaches an infused version; the first win gives the White Mantle.");
@@ -151,7 +151,7 @@ namespace WolHybridBosses
             EliteInfusedDropChance = Config.Bind("Elites", "InfusedDropChance", 0.12f, "Chance that an elite (not an Infused one) drops an arcana that is already infused.");
             TrialsEnabled = Config.Bind("Trials", "Enabled", true, "Sometimes a trial portal opens on a stage: three waves with all your arcana forced into one element; clearing it drops an arcana already infused with that element.");
             TrialChance = Config.Bind("Trials", "Chance", 0.12f, "Chance per stage that a trial portal opens.");
-            InfusionButtons = Config.Bind("Infusion", "Buttons", "Skill1,Skill2,Skill3", "Controller actions (the game's own input action names) that act as the infuse key [I] in Tomi's spellbook. Tomi's menu only uses Confirm and Cancel, so the arcana buttons are free. Other names: Interact, EquipMenu, Slide, Skill0..Skill5.");
+            InfusionButtons = Config.Bind("Infusion", "Buttons", "Skill1,Skill2,Skill3", "Controller actions (the game's own input action names) that act as the infuse key [I] in Tomix's spellbook. The spellbook only uses Confirm and Cancel, so the arcana buttons are free. Other names: Interact, EquipMenu, Slide, Skill0..Skill5.");
             InfusedDropChance = Config.Bind("Infusion", "InfusedDropChance", 0.04f, "Chance that a dropped arcana comes already infused with another element.");
             InfusedStockChance = Config.Bind("Infusion", "InfusedStockChance", 0.08f, "Chance that an arcana in the merchant's stock is already infused (25% pricier).");
             UnlockedStockChance = Config.Bind("Infusion", "UnlockedStockChance", 0.5f, "v1.1.1: chance that a merchant arcana you have unlocked infused versions of is sold as one of them (10% pricier).");

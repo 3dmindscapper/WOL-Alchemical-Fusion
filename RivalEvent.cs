@@ -649,6 +649,11 @@ namespace WolHybridBosses
             RivalVoice voice = record != null ? RivalVoice.Echo : archon ? RivalVoice.Archon : grudge != null ? RivalVoice.Rematch : RivalVoice.Rival;
             Color voiceColour = record != null ? EchoColor : ElementalGiants.ElementColor(rivalPrefix);
             RivalSpeech.Say(title, league != null && grudge == null ? League.Greet(league) : RivalLines.Greet(voice, rivalPrefix), voiceColour);
+            if (record == null) // v1.1.1: it notices your robe (not the Echo: it is you)
+            {
+                if (archon) { string al = GearReaction.ForArchon(rivalPrefix); if (al != null) StartCoroutine(SayLater(title, al, voiceColour, 3.6f)); }
+                else StartCoroutine(GearReaction.FollowRival(title, rivalPrefix, voiceColour));
+            }
             if (rival != null)
             {
                 RivalBanter banter = rival.gameObject.AddComponent<RivalBanter>();
@@ -723,7 +728,14 @@ namespace WolHybridBosses
             yield return StartCoroutine(Rivals.Intro(r, title, subtitle + (lg != null ? "  ·  " + lg.Record : "")));
             Color c = ElementalGiants.ElementColor(pfx);
             RivalSpeech.Say(title, lg != null ? League.Greet(lg) : RivalLines.Greet(RivalVoice.Rival, pfx), c);
+            StartCoroutine(GearReaction.FollowRival(title, pfx, c)); // v1.1.1
             AddBanter(r, pfx, title, c);
+        }
+
+        static IEnumerator SayLater(string speaker, string line, Color c, float delay)
+        {
+            yield return new WaitForSeconds(delay);
+            RivalSpeech.Say(speaker, line, c, 3.2f);
         }
 
         static bool Alive(Enemy e) { return e != null && e.health != null && e.health.CurrentHealthValue > 0; }

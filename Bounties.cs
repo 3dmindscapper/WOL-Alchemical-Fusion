@@ -46,7 +46,7 @@ namespace WolHybridBosses
                     case BountyKind.Special: return "Defeat a special mini-boss";
                     case BountyKind.Rival: return "Defeat a rival wizard";
                     case BountyKind.Trial: return "Clear an infusion trial";
-                    default: return "Infuse " + Need + " arcana at Tomi";
+                    default: return "Infuse " + Need + " arcana at Tomix";
                 }
             }
         }
@@ -84,6 +84,7 @@ namespace WolHybridBosses
     internal class BountyBoard : MonoBehaviour
     {
         bool wasInHub;
+        string lastScene;
 
         // v1.1.1: bounty news as a centred card, like the portal announcements. It waits for any card already on
         // screen (a rival / trial portal), then stays long enough to read.
@@ -111,6 +112,9 @@ namespace WolHybridBosses
             // v1.1.1: home = the Hub or your house (walking into the house isn't a run start). The title screen and
             // loading scenes are neither: no bounty card there, and quitting to the title isn't a run start either.
             bool inHub = TomiInfusion.AtHome;
+            string sceneNow = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
+            if (inHub && sceneNow != lastScene) StartCoroutine(Tomix.BesideTomi()); // v1.1.1: Tomix floats beside Tomi (Hub, your house)
+            lastScene = sceneNow;
             if (!inHub && !TomiInfusion.InRun) return; // title screen, loading, PvP...: wait
             if (inHub && !wasInHub)
             {

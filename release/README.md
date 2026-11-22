@@ -23,21 +23,23 @@ A run-changing content mod for Wizard of Legend: elemental bosses, rival wizards
 - With **WoL Arcanos**, stages can also be **Radiant** or **Prism**.
 
 ### Infusion
-- **Tomi comes to the arcana merchant** during runs. In his spellbook, keep one arcana and sacrifice another (or buy a card off the shelf to sacrifice). The kept arcana takes the sacrificed one's element: damage type, status effect, +10% damage, and its animation, icon and card in that element's colours.
+- **Tomix, the Mixing Tome** (Tomi's gold cousin) comes to the arcana merchant during runs. In his spellbook, keep one arcana and sacrifice another (or buy a card off the shelf to sacrifice). The kept arcana takes the sacrificed one's element: damage type, status effect, +10% damage, and its animation, icon and card in that element's colours.
 - **Dual infusion**: later in a run, an infused arcana can take a second element. Its casts alternate between the two.
-- **Unlocks**: every infused version you make stays unlocked. In the Hub, Tomi lets you choose each arcana's version: the original, a single infused version, or a dual pair (the arcana's own element counts).
+- **Unlocks**: every infused version you make stays unlocked. In the Hub, Tomix floats beside Tomi: his book lets you choose each arcana's version: the original, a single infused version, or a dual pair (the arcana's own element counts).
 - **Random versions**: runs sometimes roll a dual version for you, and **Nocturne's shuffle** (free, with presets: full, arcana only, robe and relic, one element, alchemist) can roll any version you've unlocked.
 - **Infusion trials**: three waves with all your arcana forced into one element, for a pre-infused reward.
 - **The arcana merchant** often sells arcana you've unlocked infused versions of as one of those versions.
 
 ### Robes (in the wardrobe, through LegendAPI)
 - **White Mantle**: beat the Primordial Alchemist. Infused and dual arcana hit harder and cool down faster.
-- **Primordial robes**: beat each element's Archon. Its look and aura, and that element's arcana hit harder, cool down faster and inflict their status more often.
+- **Primordial robes**: beat each element's Archon. Its look and aura, and that element's arcana hit harder, cool down faster and inflict their status more often. Own them all and the Primordial Alchemist shows its **true form**.
+- Rivals and champions notice what you wear.
 - **Grandmaster's Robe**: reach the league's top rank.
 
 ### Run extras
 - **Bounties**: one per run, announced in the Hub and at the start of the run, with a gold reward.
-- **Rival League board**: walk up to the big wizard statue in the Hub and press Interact (or F2) for your rank, your record against each rival, and the next bounty.
+- **Rival League board**: walk up to the big wizard statue in the Hub and press Interact (or F2) for your rank, your record against each rival, your robes and the next bounty.
+- **Tomix's journal**: with his book open, press J (pad: Interact) for your infused versions and dual pairs, one page per element.
 - **Modifiers menu**: press **F1** in the Hub (controller: **Skill4** while Tomi's spellbook is open) to switch systems on or off and tune their chances. No config file editing needed, which makes it handy on the Steam Deck.
 
 ## Installation
@@ -46,9 +48,11 @@ Install with **r2modman** or the **Thunderstore Mod Manager**. Manual install: p
 Requires **BepInExPack of Legend** and **LegendAPI** (installed automatically). **WoL Arcanos** is recommended: with it installed, Radiant and Prism content turns on automatically, and it respects Arcanos' own unlock rules.
 
 ## Controls
-- **Infusing at Tomi**: press **I** on the keyboard. On a controller, press any of the **Skill1 / Skill2 / Skill3** arcana buttons (changeable in the config, `Infusion.Buttons`).
+- **Infusing at Tomix**: press **I** on the keyboard. On a controller, press any of the **Skill1 / Skill2 / Skill3** arcana buttons (changeable in the config, `Infusion.Buttons`).
 - **Modifiers menu**: F1 in the Hub, or Skill4 while Tomi's spellbook is open.
 - **Rival League board**: Interact at the big wizard statue in the Hub, or F2.
+- **Tomix's journal**: J, or Interact on a pad, while his book is open.
+- **Champion conversations**: Confirm / Interact (pad) or Space / Enter to go to the next line.
 - **Test hotkeys** are off by default. Turn on `Debug.Hotkeys` in the config to use them; the list is in the project's ROADMAP.md.
 
 ## Files it creates

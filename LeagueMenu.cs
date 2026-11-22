@@ -121,11 +121,9 @@ namespace WolHybridBosses
         static GUIStyle right;
         static GUIStyle Right() { if (right == null || right.font != rowStyle.font) right = new GUIStyle(rowStyle) { alignment = TextAnchor.MiddleRight, richText = true }; return right; }
 
-        static void Draw()
+        static Rect Panel(float h)
         {
-            List<string> prefixes = new List<string> { "Flame", "Frost", "Earth", "Wind", "Thunder", "Chaos" };
-            if (ArcanosBridge.Present) { prefixes.Add("Radiant"); prefixes.Add("Prism"); }
-            float w = Mathf.Min(620f, Screen.width - 40f), h = 230f + 24f * prefixes.Count;
+            float w = Mathf.Min(620f, Screen.width - 40f);
             Rect box = new Rect((Screen.width - w) / 2f, Mathf.Max(20f, (Screen.height - h) / 2f), w, h);
             Color old = GUI.color;
             GUI.color = new Color(0.04f, 0.03f, 0.07f, 0.92f);
@@ -134,6 +132,14 @@ namespace WolHybridBosses
             GUI.DrawTexture(new Rect(box.x, box.y, box.width, 2f), Texture2D.whiteTexture);
             GUI.DrawTexture(new Rect(box.x, box.yMax - 2f, box.width, 2f), Texture2D.whiteTexture);
             GUI.color = old;
+            return box;
+        }
+
+        static void Draw()
+        {
+            List<string> prefixes = new List<string> { "Flame", "Frost", "Earth", "Wind", "Thunder", "Chaos" };
+            if (ArcanosBridge.Present) { prefixes.Add("Radiant"); prefixes.Add("Prism"); }
+            Rect box = Panel(254f + 24f * prefixes.Count);
             Color text = new Color(0.9f, 0.88f, 0.84f), dim = new Color(0.7f, 0.68f, 0.64f);
             GameFont.Shadowed(new Rect(box.x, box.y + 10f, box.width, 30f), "Rival League", titleStyle, new Color(1f, 0.9f, 0.6f));
             float y = box.y + 48f;
@@ -163,7 +169,8 @@ namespace WolHybridBosses
             if (Bounties.Active && Plugin.BountiesEnabled.Value)
                 Row(box, ref y, "Next run's bounty:  " + Bounties.Text, Bounties.Reward + "+ gold", text);
             if (Plugin.TestMode) Row(box, ref y, "Test hotkeys on: nothing is saved this session", null, new Color(1f, 0.55f, 0.45f));
-            GameFont.Shadowed(new Rect(box.x, box.yMax - 30f, box.width, 22f), "Interact / Esc / F2: close", small, dim);
+            if (AlchemistTrueForm.Earned) Row(box, ref y, "Every Primordial robe: the Alchemist will show its true form", null, new Color(1f, 0.95f, 0.8f));
+            GameFont.Shadowed(new Rect(box.x, box.yMax - 30f, box.width, 22f), "Interact / Esc / F2: close  ·  infusions: Tomix's journal", small, dim);
         }
     }
 }

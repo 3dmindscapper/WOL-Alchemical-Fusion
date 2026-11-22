@@ -611,10 +611,11 @@ namespace WolHybridBosses
         {
             try
             {
-                if (!TomiInfusion.InRun || ui == null) return;
+                if (ui == null) return;
                 if (p == null) p = Traverse.Create(ui).Field("player").GetValue() as Player;
                 if (p == null) return;
-                HashSet<string> owned = TomiInfusion.OwnedIds(p);
+                HashSet<string> owned = TomiInfusion.BookFilter(p); // v1.1.2: also Tomix's book at home
+                if (owned == null) return;
                 int removed = 0;
                 foreach (string field in new[] { "eleSpellDict", "eleOverdriveDict" })
                 {
@@ -645,13 +646,14 @@ namespace WolHybridBosses
         {
             try
             {
-                if (!TomiInfusion.InRun || __0 == null) return true;
-                if (ownedFrame != Time.frameCount || owned == null)
+                if (__0 == null) return true;
+                if (ownedFrame != Time.frameCount)
                 {
-                    owned = TomiInfusion.OwnedIds(Traverse.Create(__instance).Field("player").GetValue() as Player);
+                    owned = TomiInfusion.BookFilter(Traverse.Create(__instance).Field("player").GetValue() as Player);
                     ownedFrame = Time.frameCount;
                 }
-                return owned.Count == 0 || owned.Contains(__0.skillID);
+                if (owned == null) return true;
+                return (TomiInfusion.InRun && owned.Count == 0) || owned.Contains(__0.skillID);
             }
             catch (Exception) { return true; }
         }
@@ -790,25 +792,47 @@ namespace WolHybridBosses
                     GameObject go = new GameObject("HybridBosses_TomiInfusion");
                     DontDestroyOnLoad(go);
                     instance = go.AddComponent<TomiInfusion>();
+                    go.AddComponent<TomixJournal>(); // v1.1.1
+                    go.AddComponent<TomixBookText>(); // v1.1.2
                 }
                 return instance;
             }
         }
 
-        internal static void Opened(SpellBookUI ui) { if (!Plugin.InfusionEnabled.Value) return; Instance.ui = ui; Instance.keep = Instance.sacrifice = null; Instance.message = null; }
+        // v1.1.1: only Tomix's book infuses / switches versions; Tomi's is the game's own. The book is still tracked
+        // either way (the modifiers menu opens from it on a pad).
+        bool infusing;
+        internal static bool TomixOpen { get { return instance != null && instance.Active && instance.infusing; } }
+        internal static SpellBookUI UI { get { return instance != null ? instance.ui : null; } }
+
+        // v1.1.2: what a spellbook lists. In a run: the arcana you hold (and the shelf). At home in Tomix's book (open,
+        // or opening: the game builds the lists inside Activate, before our Activate postfix): only arcana with
+        // unlocked infused versions. Tomi's own book at home: everything (null = no filter).
+        internal static HashSet<string> BookFilter(Player p)
+        {
+            if (InRun) return OwnedIds(p);
+            if (!TomixOpen && !Tomix.Opening) return null;
+            HashSet<string> ids = new HashSet<string>();
+            foreach (string id in InfusionUnlocks.UnlockedIds) if (InfusionUnlocks.Versions(id).Count > 0) ids.Add(id);
+            return ids;
+        }
+        internal static void Opened(SpellBookUI ui) { bool tomix = Tomix.ConsumeOpen(); if (!Plugin.InfusionEnabled.Value) return; Instance.ui = ui; Instance.infusing = tomix; Instance.keep = Instance.sacrifice = null; Instance.message = null; }
         internal static void Closed(SpellBookUI ui) { if (instance != null && instance.ui == ui) { instance.ui = null; instance.keep = instance.sacrifice = null; } }
 
         // Ctrl+F8 test key / fallback: Tomi right here.
-        internal static void SpawnAt(Vector2 at)
+        // v1.1.1: Tomix (Tomi's prefab, recoloured and renamed) unless asked otherwise.
+        internal static SpellBookNpc SpawnAt(Vector2 at, bool makeTomix = true)
         {
             try
             {
                 GameObject prefab = SpellBookNpc.Prefab;
-                if (prefab == null) return;
-                Globals.ChaosInst<SpellBookNpc>(prefab, null, (Vector3)at, null);
-                Plugin.Log.LogInfo("INFUSION Tomi spawned at " + at);
+                if (prefab == null) return null;
+                SpellBookNpc npc = Globals.ChaosInst<SpellBookNpc>(prefab, null, (Vector3)at, null);
+                if (makeTomix) Tomix.Make(npc);
+                Plugin.Log.LogInfo("INFUSION spellbook spawned at " + at);
+                return npc;
             }
-            catch (Exception ex) { Plugin.Log.LogWarning("INFUSION Tomi spawn failed: " + ex.Message); }
+            catch (Exception ex) { Plugin.Log.LogWarning("INFUSION spellbook spawn failed: " + ex.Message); return null; }
         }
 
         internal static void SpawnHere()
@@ -849,7 +873,7 @@ namespace WolHybridBosses
 
         void Update()
         {
-            if (!Active || ModifiersMenu.IsOpen) return;
+            if (!Active || !infusing || ModifiersMenu.IsOpen || TomixJournal.IsOpen) return;
             if (!Input.GetKeyDown(KeyCode.I) && !PadPressed()) return;
             Player.SkillState cur = Cursor();
             if (InRun) RunPress(cur); else HubPress(cur);
@@ -939,6 +963,7 @@ namespace WolHybridBosses
             if (dual) Say(IntroUI.SkillName(keepId) + " now alternates " + Infusion.Name(first) + " and " + Infusion.Name(give) + "!  (" + IntroUI.SkillName(sacId) + (fromShelf != null ? " was taken from the shelf)" : " was consumed)"));
             else Say(Infusion.Name(give) + "-infused " + IntroUI.SkillName(keepId) + "!  (" + IntroUI.SkillName(sacId) + (fromShelf != null ? " was taken from the shelf)" : " was consumed)"));
             Bounties.Report(BountyKind.Infuse, null); // v0.9.16
+            Tomix.SayMixed(); // v1.1.1
             Plugin.Log.LogInfo("INFUSION " + keepId + " took " + Infusion.Name(give) + " from " + sacId + (fromShelf != null ? " (from the shelf)" : "") + " for " + total + " gold");
         }
 
@@ -947,7 +972,7 @@ namespace WolHybridBosses
             if (cur == null) { Say("Point the cursor at an arcana."); return; }
             // v0.9.18: the original, each single version, then each unlocked dual pair.
             List<string> options = InfusionUnlocks.Options(cur.skillID);
-            if (options.Count <= 1) { Say(IntroUI.SkillName(cur.skillID) + " has no infused versions yet. Infuse it at Tomi during a run."); return; }
+            if (options.Count <= 1) { Say(IntroUI.SkillName(cur.skillID) + " has no infused versions yet. Bring it to Tomix during a run."); return; }
             int i = options.IndexOf(InfusionUnlocks.SelectedRaw(cur.skillID) ?? "");
             InfusionUnlocks.SelectRaw(cur.skillID, options[(i + 1) % options.Count]);
             Refresh(PlayerOf());
@@ -966,7 +991,7 @@ namespace WolHybridBosses
 
         void OnGUI()
         {
-            if (!Active) return;
+            if (!Active || !infusing || TomixJournal.IsOpen) return;
             Player.SkillState cur = Cursor();
             string line;
             if (InRun)
@@ -984,10 +1009,16 @@ namespace WolHybridBosses
             {
                 List<ElementType> v = cur != null ? InfusionUnlocks.Versions(cur.skillID) : new List<ElementType>();
                 int opts = cur != null ? InfusionUnlocks.Options(cur.skillID).Count : 1;
-                line = v.Count == 0 ? "Infused versions you unlock in runs can be chosen here with [I]"
-                    : "<b>[I] Switch version</b>  " + IntroUI.SkillName(cur.skillID) + ": " + InfusionUnlocks.Label(InfusionUnlocks.SelectedRaw(cur.skillID)) + "  (" + opts + " versions"
-                      + (InfusionUnlocks.Pairs(cur.skillID).Count > 0 ? ", " + InfusionUnlocks.Pairs(cur.skillID).Count + " dual" : "") + ")";
-                if (cur != null) line += "\n" + Memory(cur, v);
+                // v1.1.2: Tomix's book at home lists only your infused arcana.
+                if (cur == null || v.Count == 0)
+                    line = "Tomix's book: only your infused arcana  ·  open an element, then [I] on an arcana to pick its version  ·  J / Interact: journal";
+                else
+                {
+                    int duals = InfusionUnlocks.Pairs(cur.skillID).Count;
+                    line = "<b>[I] Switch version</b>  ·  " + IntroUI.SkillName(cur.skillID) + ": " + InfusionUnlocks.Label(InfusionUnlocks.SelectedRaw(cur.skillID))
+                        + "  ·  " + (opts - 1) + " infused version" + (opts - 1 == 1 ? "" : "s") + (duals > 0 ? " (" + duals + " dual)" : "") + "  ·  J / Interact: journal";
+                    line += "\n" + Memory(cur, v);
+                }
             }
             if (message != null && Time.unscaledTime < messageUntil) line += "\n<color=#ffe9a8>" + message + "</color>";
             line = line.Replace("<b>", "").Replace("</b>", "").Replace("[I]", Key);

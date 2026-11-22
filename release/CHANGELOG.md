@@ -1,6 +1,16 @@
 # Changelog
 
-## 1.1.1 (in testing)
+## 1.1.2
+- **Tomix, the Mixing Tome:** Tomi's scorch-marked cousin now does all the infusing; his pages shimmer through every element in turn. He floats across from Tomi in the Hub and your house (on the matching planter) (choose each arcana's version in his book) and comes to the arcana merchant during runs (infuse there). His journal (J, or pad Interact, with his book open) lists your infused versions and dual pairs page by page, per element. His book at home lists only arcana you've unlocked infused versions of, and reads as his ("Infusions", and per element how many arcana you've infused); Tomi's own book is back to the game's.
+- **Conversations:** champions stay in place and you're paused while they talk; Confirm / Interact (pad) or Space / Enter / E / F finishes the line, then moves on. Lines still advance by themselves.
+- **Fixed:** the Primordial Alchemist's true form could start during its intro (cycling colours and attacking while it talked); it now waits for the fight and its second phase. The true-form card lists the elements instead of blank squares.
+- The infusion journal moved from the League board to Tomix.
+
+## 1.1.1
+The first update since 1.0.0; it includes 1.1.0 below.
+- **The Primordial Alchemist's true form:** own every Primordial robe and the Alchemist gains a third phase, cycling through each Archon's colours, aura and arcana.
+- **Alchemist's Journal:** a second page on the League board (Tab / Left / Right) listing every infused version and dual pair you've unlocked, per arcana, and the version Tomi uses.
+- **Gear reactions:** rivals, Archons and the Alchemist comment on the robe you wear (Primordial, White Mantle, Grandmaster's) or your Grandmaster rank.
 - **Bounties** are announced as centred cards: in the Hub, when the run starts, and at each step of progress.
 - **LegendAPI is now required** (installed automatically); WoL Arcanos is recommended.
 - **Nocturne** skips her 10-gem pitch when the shuffle is free and goes straight to the preset menu.
@@ -25,7 +35,7 @@
 - **Test hotkeys:** Alt+1 / Alt+2 tournament / team portals, Alt+3 Primordial Alchemist final, Alt+4 Archon final, Alt+5 Archon portal, Alt+6 instakill. With the hotkeys on, nothing is unlocked for good.
 - **The Primordial Alchemist** (formerly the White Alchemist): a godlike manifestation of the essence every element flows from. It now introduces itself before the fight, comments on your infused or dual-infused arcana and on the element you lean on, and speaks at half health and in defeat.
 
-## 1.1.0 (in testing)
+## 1.1.0 (not released on its own; part of 1.1.1)
 - **Nocturne the Cardist:** her shuffle is free, and talking to her opens a preset menu:
   - full shuffle
   - arcana only

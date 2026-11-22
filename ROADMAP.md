@@ -122,6 +122,10 @@ Expansions are themed updates built on the systems already in place. Each sectio
 - **Grandmaster's Robe.** Reaching the league's top rank (Grandmaster) unlocks it: +30% damage to wizards (rivals, the Echo, Archons, the Primordial Alchemist, the Council and Sura), with a gold aura.
 - **Alternate endings.** Sura keeps the standard ending. After an Archon or the Primordial Alchemist, its last words play in the recoloured castle, followed by an ending card of its own ("The First Fire Returns", "The Primordial Return"...). Then the exit portal and the game's ending scene as usual.
 
+- **Primordial true form.** With every Primordial robe (the six base elements, plus Radiant with Arcanos), the Alchemist gets a third phase at 25% health: it heals to 60% and cycles through each Archon's colours, aura and two of its arcana, one form every 9 seconds.
+- **Tomix, the Mixing Tome** (1.1.2). Tomi's gold cousin, a recoloured spellbook with his own lines: beside Tomi in the Hub (versions, and his journal with one page per element: infused versions and dual pairs) and at the merchant in runs (infusing). Tomi's book is the game's again.
+- **Skippable conversations** (1.1.2). Champions stay put, you're paused, Confirm / Interact or Space / Enter advances.
+- **Gear reactions.** Rivals (after their greeting), Archons and the Alchemist (in their intro) comment on your Primordial robe, the White Mantle, the Grandmaster's Robe or your Grandmaster rank.
 - **Hit flair.** Elemental ghouls, blobs and golems (and elemental Coffin Knights / Cyclops) throw a small burst of their element when they hit you.
 - **Council portraits** on the loading board are recoloured onto their element's or variant's ramp.
 
@@ -168,6 +172,9 @@ Future ideas, none scheduled. Sizes are rough (S / M / L).
   - **Elite ghosts / after-images:** no box, and they still fade.
   - **Primordial robes:** unlock after an Archon (log `ROBES unlocked`), appear in the wardrobe, recolour you with an aura; the element's arcana cool down faster and hit harder.
   - **Grandmaster's Robe:** in the wardrobe at Grandmaster; extra damage on rivals, the Council and Sura only.
+  - **True form:** at 25% after the Transmuted phase, only with every robe (Alt+7 to test); forms change every 9s with their colours and arcana (log `ALCHEMIST form:`).
+  - **Tomix:** appears beside Tomi in the Hub and at the merchant in runs (log `TOMIX is here`), gold, name over his head; his book infuses / switches versions, Tomi's doesn't; the journal opens with J / pad Interact and pages work on a pad.
+  - **Conversations:** you're paused, Confirm skips; no attacks during the Alchemist's intro.
   - **Epilogues:** the last words and the ending card after a champion (log `FINAL epilogue`), then the exit portal works.
 
 ---
@@ -234,6 +241,7 @@ Future ideas, none scheduled. Sizes are rough (S / M / L).
 | Alt+4 | Jump to the final fight against an Archon (or the Chaos Sovereign) |
 | Alt+5 | Hard rival portal that always holds an Archon |
 | Alt+6 | Instakill on / off (every enemy at 1 HP) |
+| Alt+7 | Every Primordial robe for this session, then the Primordial Alchemist final (its true form) |
 | (any, hotkeys on) | Test mode: no unlocks are saved this session (mod progress files, the game's arcana unlocks, the final Chaos arcana) |
 | F11 | Rival portal beside you (cycles elements) |
 | Shift+F11 | Toggle the variant on the current stage |

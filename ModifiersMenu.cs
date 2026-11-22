@@ -66,7 +66,7 @@ namespace WolHybridBosses
                     Steps("Echo of your last run", Plugin.EchoChance, new[] { 0f, 0.2f, 0.35f, 0.6f }, true),
                     Steps("Rival rematches", Plugin.GrudgeChance, new[] { 0f, 0.15f, 0.3f, 0.5f }, true),
                     Steps("Infusion trials", Plugin.TrialChance, new[] { 0f, 0.08f, 0.12f, 0.25f }, true),
-                    Toggle("Infusion at Tomi", Plugin.InfusionEnabled),
+                    Toggle("Infusion at Tomix", Plugin.InfusionEnabled),
                     Toggle("Corrupted Council", Plugin.CorruptedCouncil),
                     Toggle("Infused Council", Plugin.InfusedCouncil),
                     Toggle("Final champions", Plugin.FinalChampions),

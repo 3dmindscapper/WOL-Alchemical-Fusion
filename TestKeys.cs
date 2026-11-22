@@ -17,6 +17,7 @@ namespace WolHybridBosses
     //   Alt+1  tournament portal   Alt+2  team match portal   Alt+3  final vs the Primordial Alchemist
     //   Alt+4  final vs an Archon (or the Chaos Sovereign)   Alt+5  a Hard rival portal that holds an Archon
     //   Alt+6  instakill on / off (every enemy at 1 HP)
+    //   Alt+7  every Primordial robe (this session only), then the Alchemist final: its true form
     // With the hotkeys on, unlocks aren't saved (Plugin.TestMode; NoTestUnlocksPatch below).
     internal static class TestKeys
     {
@@ -38,6 +39,7 @@ namespace WolHybridBosses
                 else if (Input.GetKeyDown(KeyCode.Alpha3)) { FinalRun.ForceAlchemist(); Debug.JumpToFinal(); }
                 else if (Input.GetKeyDown(KeyCode.Alpha4)) { FinalRun.ForceArchon(); Debug.JumpToFinal(); }
                 else if (Input.GetKeyDown(KeyCode.Alpha5)) RivalEvent.OpenArchonHere();
+                else if (Input.GetKeyDown(KeyCode.Alpha7)) { foreach (PrimordialRobe r in PrimordialRobes.All) Progress.SetBool("robe." + r.Prefix, true); FinalRun.ForceAlchemist(); Debug.JumpToFinal(); } // v1.1.1
                 else if (Input.GetKeyDown(KeyCode.Alpha6)) { Instakill = !Instakill; IntroUI.Show("Instakill " + (Instakill ? "on" : "off"), "Test key  ·  every enemy dies to one hit", new Color(1f, 0.5f, 0.4f), null, 2f); Plugin.Log.LogInfo("TEST instakill " + Instakill); }
             }
             catch (Exception ex) { Plugin.Log.LogWarning("TEST key failed: " + ex.Message); }
