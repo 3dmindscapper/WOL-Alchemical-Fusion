@@ -10,11 +10,11 @@ using UnityEngine;
 
 namespace WolHybridBosses
 {
-    [BepInPlugin("osi.wol.hybridbosses", "Hybrid Bosses", Version)]
+    [BepInPlugin("osi.wol.hybridbosses", "WOL Alchemical Fusion", Version)] // the ID stays (config, unlocks and Echo files carry over)
     [BepInDependency("wolarcanos.arcanos", BepInDependency.DependencyFlags.SoftDependency)] // optional: Radiant / Prism variants
     public class Plugin : BaseUnityPlugin
     {
-        public const string Version = "0.9.21";
+        public const string Version = "1.0.0";
         internal static ManualLogSource Log;
 
         internal static ConfigEntry<bool> ElementalGiants;
@@ -64,7 +64,7 @@ namespace WolHybridBosses
             ElementalGiants = Config.Bind("ElementalGiants", "Enabled", true,
                 "Giant (Super*) enemies can spawn with an element, its palette and that element's enemy skills.");
             MatchStageElement = Config.Bind("ElementalGiants", "MatchStageElement", true,
-                "No longer used (v0.9.9): on an elemental stage (Forest/Earth, Ice, Fire, Air, Lightning) every giant always takes that stage's element.");
+                "No longer used: on an elemental stage every giant takes that stage's element.");
             ElementalGiantChance = Config.Bind("ElementalGiants", "NeutralStageChance", 0.5f,
                 "On a neutral stage (castle, final stage): chance (0 to 1) that a giant gets a random element. Applies on every difficulty, including normal.");
             IgnoreSkillDifficulty = Config.Bind("ElementalGiants", "IgnoreSkillDifficulty", true,
@@ -86,7 +86,7 @@ namespace WolHybridBosses
             ChampionPhases = Config.Bind("FinalBoss", "Phases", true,
                 "Final champions shift at half health: an Archon becomes a two-element hybrid (keeps 2 arcana, gains 3 of a second element, casts faster); the Chaos Sovereign gains 2 more arcana and casts faster.");
             ArchonRivalChance = Config.Bind("RivalWizards", "ArchonChance", 0.25f,
-                "Chance (0 to 1) that the Hard portal of a rival arena holds an Archon (a final champion with its second phase; Chaos Sovereign on Chaos stages) instead of a Hard rival. It drops a gold chest.");
+                "Chance (0 to 1) that a Hard rival is an Archon instead (a final champion with its second phase; never the Echo or a rematch).");
             CorruptedCouncil = Config.Bind("ChaosStages", "CorruptedCouncil", true,
                 "A Council member whose tier had a Chaos stage is corrupted: dark purple sprites and attacks, glitched dialog with Chaos whispers, 'Corrupted' on the boss bar, and a purple boss circle on the loading-screen board.");
             BossBars = Config.Bind("BossBar", "Enabled", true,
@@ -94,7 +94,7 @@ namespace WolHybridBosses
             GiantBossBars = Config.Bind("BossBar", "Giants", true,
                 "Elemental giants get the boss health bar too, when their intro shows.");
             RivalEvents = Config.Bind("RivalWizards", "Enabled", true,
-                "A rival portal can open somewhere on a stage: it leads to a selector room (Easy/Medium/Hard portals) and an arena, then back. The stage's misc room is left alone.");
+                "A rival portal can open in a stage's starting room: it leads straight to an arena with a rival wizard (or the Echo of your last run), then back.");
             RivalEventChance = Config.Bind("RivalWizards", "Chance", 0.3f,
                 "Chance (0 to 1) per regular stage that a rival portal opens.");
             RivalIntroSeconds = Config.Bind("RivalWizards", "IntroSeconds", 4f,
@@ -102,7 +102,7 @@ namespace WolHybridBosses
             RivalRobes = Config.Bind("RivalWizards", "Robes", true,
                 "Rivals wear a random player robe (its colours) and get that robe's stat bonuses.");
             RivalRelics = Config.Bind("RivalWizards", "Relics", true,
-                "Rivals carry a random stat relic (shown in the intro) and get its bonus.");
+                "Rivals carry a random relic (cursed ones included, with their trade-off). Relics that only affect their holder (armour, evade, resistances, speed, shields...) run for real on the rival; the rest become matching stat bonuses.");
             GiantIntros = Config.Bind("ElementalGiants", "Intro", true,
                 "When you first get close to an elemental giant, its skills and arcana appear at the top of the screen.");
             FinalChampions = Config.Bind("FinalBoss", "Enabled", true,
@@ -121,7 +121,7 @@ namespace WolHybridBosses
             VariantRadiantShare = Config.Bind("StageVariants", "RadiantShare", 0.35f, "With WoL Arcanos installed, the share of variant stages that are Radiant (Arcanos' Fulgor element).");
             VariantPrismShare = Config.Bind("StageVariants", "PrismShare", 0.15f, "With WoL Arcanos installed, the share of variant stages that are Prism (Arcanos' Prisma element).");
             VariantArchonChance = Config.Bind("StageVariants", "ArchonChance", 0.25f, "With WoL Arcanos installed, chance that an elemental Archon (final champion or arena Archon) is a Radiant or Prism Archon instead.");
-            InfusionEnabled = Config.Bind("Infusion", "Enabled", true, "An Infusion Altar stands beside the arcana merchant: keep one arcana, sacrifice another, and the kept one takes the sacrificed one's element (+10% damage). Run only.");
+            InfusionEnabled = Config.Bind("Infusion", "Enabled", true, "Tomi comes to the arcana merchant during runs: in his spellbook, keep one arcana and sacrifice another (yours or a card off the shelf) and the kept one takes the sacrificed one's element (damage type, status, +10% damage, its colours). Late in a run an infused arcana can take a second element (dual). Infused versions unlock for good and are chosen at Tomi in the Hub.");
             InfusedCouncil = Config.Bind("Infusion", "InfusedCouncil", true, "A Council member (2nd and 3rd tier, when the tier has no Chaos/Radiant/Prism member) may have infused their element with another: same moveset, the other element's damage, status and colours, new lines, and a reward of that element. 15% / 25%, +20% from the second loop.");
             RivalScaleWithProgress = Config.Bind("RivalWizards", "ScaleWithProgress", true, "The rival's difficulty is rolled with Hard more likely deeper in the run (Easy/Medium/Hard %: first tier 60/30/10, second 30/45/25, third 15/40/45, later loops 5/30/65). Off: an even roll.");
             EchoEnabled = Config.Bind("RivalWizards", "EchoOfLastRun", true, "A rival portal can hold the Echo of your last run instead (your arcana with their infusions, robe and stat relics), once per run. Beating it gives a gold chest.");
@@ -142,13 +142,13 @@ namespace WolHybridBosses
             InfusedStockChance = Config.Bind("Infusion", "InfusedStockChance", 0.08f, "Chance that an arcana in the merchant's stock is already infused (25% pricier).");
             RadiantHealthDropChance = Config.Bind("StageVariants", "RadiantHealthDrop", 0.15f, "Chance that an enemy on a Radiant stage leaves a health pickup when it dies.");
             ChaosEnemyChance = Config.Bind("ChaosStages", "EnemyChance", 0.5f,
-                "On a Chaos stage, chance (0 to 1) that each Knight, Rogue, Archer, Mage, Summoner or Lancer is a Chaos version (1 Chaos arcana + purple colours). Like elemental stages, not every one is. Giants are always Chaos there.");
+                "No longer used: on a Chaos / Radiant / Prism stage every humanoid enemy (and some Coffin Knights, Cyclops, blobs and ghouls) takes the variant.");
             ChaosGiantPalette = Config.Bind("ChaosStages", "GiantPalette", -1,
                 "Palette row for Chaos giants. -1 = find the purple row automatically from each giant's palette texture (purple tint when it has none). Set a number (F6 cycles rows on the nearest enemy) to force one.");
-            DebugKeys = Config.Bind("Debug", "Hotkeys", true,
-                "F5 list enemies, F6 cycle palette, F7 dump nearest enemy, F8 spawn test giant, F9 dump element->palette, F10 reroll nearest giant's element, F11 open a rival arena right here, F12 final champion test (forces the next final room, or spawns a champion fight here).");
+            DebugKeys = Config.Bind("Debug", "Hotkeys", false,
+                "Test hotkeys (F5-F12 with Ctrl / Shift / Alt; the full list is in the README). Off for normal play.");
 
-            Log.LogInfo("Hybrid Bosses " + Version + " starting; patches wait for the game's asset bundles.");
+            Log.LogInfo("WOL Alchemical Fusion " + Version + " starting; patches wait for the game's asset bundles.");
             StartCoroutine(PatchWhenGameReady());
         }
 
@@ -179,13 +179,14 @@ namespace WolHybridBosses
                 ChaosStageRunner.Ensure();                    // chaos stage variants
             }
             catch (Exception ex) { Log.LogError("ARCANA setup failed: " + ex); }
-            Log.LogInfo("Hybrid Bosses " + Version + " loaded (patched " + Mathf.RoundToInt(waited * 1000f) + " ms after start, once the bundles were in). Elemental giants "
+            Log.LogInfo("WOL Alchemical Fusion " + Version + " loaded (patched " + Mathf.RoundToInt(waited * 1000f) + " ms after start, once the bundles were in). Elemental giants "
                 + (ElementalGiants.Value ? "on" : "off") + ", chance " + ElementalGiantChance.Value);
         }
 
         void Update()
         {
             if (!DebugKeys.Value) return;
+            if (Input.GetKey(KeyCode.LeftAlt) || Input.GetKey(KeyCode.RightAlt)) { TestKeys.Update(); return; } // v1.0.0: Alt + F-keys
             if (Input.GetKeyDown(KeyCode.F5) && (Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl))) MinibossFights.TestHere(); // v0.9.11: the next special mini-boss beside you
             else if (Input.GetKeyDown(KeyCode.F5)) Debug.ListEnemies();
             if (Input.GetKeyDown(KeyCode.F6) && !(Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl))) Debug.CyclePalette();

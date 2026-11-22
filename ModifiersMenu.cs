@@ -123,7 +123,7 @@ namespace WolHybridBosses
             GUI.DrawTexture(new Rect(box.x, box.y, box.width, 2f), Texture2D.whiteTexture);
             GUI.DrawTexture(new Rect(box.x, box.yMax - 2f, box.width, 2f), Texture2D.whiteTexture);
             GUI.color = old;
-            GameFont.Shadowed(new Rect(box.x, box.y + 10f, box.width, 30f), "Hybrid Bosses  ·  Modifiers", titleStyle, new Color(1f, 0.9f, 0.6f));
+            GameFont.Shadowed(new Rect(box.x, box.y + 10f, box.width, 30f), "Alchemical Fusion  ·  Modifiers", titleStyle, new Color(1f, 0.9f, 0.6f));
             for (int i = 0; i < list.Count; i++)
             {
                 Rect r = new Rect(box.x + 28f, box.y + 50f + i * rowH, box.width - 56f, rowH);

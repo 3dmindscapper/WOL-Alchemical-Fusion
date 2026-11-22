@@ -71,6 +71,23 @@ Cloning the player GameObject and driving it from script failed:
 - v0.0.7 tested: summon swap works (logged EarthKnight, FlameLancer etc.). SuperCoffin goes **pink** on palettes 4–8, so its sheet has no elemental rows: keep palette 3 and tint or outline it (MiniBoss uses `_OutlineColor`/`_OutlineColor2`). The user wants the coffin (and rivals) to cast **player arcana** instead.
 - Arcana research: `Contestant : Enemy` (PvP wizard) reimplements Tornado/SwordThrow/Fireball as its own states (ctor typed to Contestant). Its FireballState instantiates the prefab and calls `Attack.SetAttackInfo("Player", "ShootFireball", level, isUltimate)`, the same call player arcana make (e.g. `UseFireBeam.CreateFireBeam`: `FireBeam.Prefab` + `ChaosInst` + `SetAttackInfo`). There are 100 `Player+Use*` arcana. Plan: our own data-driven `ArcanaState : Enemy.SkillState` (skillID, prefab, delivery type). See ROADMAP "Enemy Arcana".
 
+## v1.0.0 rename: released as **WOL Alchemical Fusion**
+- **What changed:** the Thunderstore package name (`WOL_Alchemical_Fusion`), the BepInPlugin display name ("WOL Alchemical Fusion"; the log source shows it), the startup log lines, the modifiers menu title, the README / ROADMAP / CHANGELOG titles, and the icon ("AF" / "ALCHEMICAL FUSION"). The zip is now `release/WOL_Alchemical_Fusion-1.0.0.zip`.
+- **Kept on purpose:** the plugin GUID `osi.wol.hybridbosses` (so the config file, the unlocks file and the Echo file carry over), `WolHybridBosses.dll`, the namespace, the internal `HybridBosses_*` object names, and the GitHub repo name.
+
+## v1.0.0: first public release
+- **TestKeys.cs (Alt + F-keys, only with Debug.Hotkeys):**
+  - Alt+F5: rematch portal (`RivalEvent.OpenRematchHere`)
+  - Alt+F6: bounty step
+  - Alt+F7: +500 gold (`Wallet.Deposit`)
+  - Alt+F8: infusion test pack (unlock a random version per equipped arcana, then `Infusion.RollShuffled`)
+  - Alt+F10: forced Echo portal (`RivalEvent.OpenEchoHere`; records one first if none; `Open(..., forceEcho)`)
+
+  `Plugin.Update` routes Alt to `TestKeys` before the other keys.
+- **Release defaults:** `Debug.Hotkeys` now defaults to false (existing cfgs keep their value). Stale config descriptions were refreshed (Infusion, Archon chance, Relics, Rival portal, and the two unused entries marked "No longer used").
+- **ROADMAP.md** was rewritten for 1.0.0: a feature summary by area, what to confirm in play, ideas, and the full hotkey table.
+- **release/:** `manifest.json` (Thunderstore; depends on `Modding_Council-BepInExPack_of_Legend-5.4.2100`), an original `icon.png` (256×256, drawn with System.Drawing, no game art), a player `README.md` (also copied to the repo root), `CHANGELOG.md`, and `Hybrid_Bosses-1.0.0.zip` (the zip and DLL are gitignored).
+
 ## v0.9.21: real relics on rivals where safe; cursed relics
 - **Relics work on any entity:** `Entity.InitComponents` gives every entity an `Inventory`. `Inventory.AddItem` sets `Item.parentEntity` and calls `Activate`.
 - **But most relics aren't holder-only.** An offline IL scan of all 367 relic classes (their own and base methods) flagged 326 as unsafe: they read `parentPlayer`, call into Player / LootManager / GameController / Wallet / GameUI, touch those classes' statics or Enemy statics, or call `StatManager` (category-wide stat data). The flagged set includes, for example, `DamageUp` → `StatManager.ModifyAllStatData(parentSkillCategory, ...)`. Rivals use the shared enemy category and cast arcana loaded from the "Player" category, so running these on a rival would buff every enemy or the player.

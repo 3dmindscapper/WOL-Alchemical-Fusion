@@ -62,7 +62,27 @@ namespace WolHybridBosses
             Open((Vector2)p.transform.position + new Vector2(2.5f, 0f), prefix ?? Rivals.StagePrefixOrRandom(), false, false);
         }
 
-        static void Open(Vector2 entranceAt, string prefix, bool announce, bool inStartRoom, GrudgeRecord grudge = null)
+        // v1.0.0 test keys: Alt+F10 the Echo of your last run (recorded from your loadout now if there's none), Alt+F5
+        // a rematch rival (a tier harder, some arcana infused).
+        internal static void OpenEchoHere()
+        {
+            Player p = Elites.Player0;
+            if (p == null) return;
+            if (EchoRecorder.Last == null) EchoRecorder.RecordNow();
+            EchoRecorder.FoughtThisRun = false;
+            Open((Vector2)p.transform.position + new Vector2(2.5f, 0f), Rivals.StagePrefixOrRandom(), false, false, null, true);
+        }
+
+        internal static void OpenRematchHere()
+        {
+            Player p = Elites.Player0;
+            if (p == null) return;
+            GrudgeRecord g = new GrudgeRecord { Prefix = Rivals.StagePrefixOrRandom(), Tier = RivalTier.Hard };
+            Grudges.Pending = g;
+            Open((Vector2)p.transform.position + new Vector2(2.5f, 0f), g.Prefix, true, false, g);
+        }
+
+        static void Open(Vector2 entranceAt, string prefix, bool announce, bool inStartRoom, GrudgeRecord grudge = null, bool forceEcho = false)
         {
             if (Current != null) Current.Close();
             GameObject go = new GameObject("HybridBosses_RivalEvent");
@@ -70,7 +90,7 @@ namespace WolHybridBosses
             ev.prefix = prefix;
             ev.entrancePos = entranceAt;
             // What waits behind the portal, rolled now so its colour and the announcement can say so.
-            ev.echo = EchoRecorder.Available && UnityEngine.Random.value < Plugin.EchoChance.Value;
+            ev.echo = EchoRecorder.Available && (forceEcho || UnityEngine.Random.value < Plugin.EchoChance.Value);
             ev.tier = ev.echo ? EchoTier : Plugin.RivalScaleWithProgress.Value ? RollTier(false) : (RivalTier)UnityEngine.Random.Range(0, 3);
             ev.inStartRoom = inStartRoom;
             if (grudge != null) { ev.grudge = grudge; ev.echo = false; ev.tier = grudge.Tier; }
