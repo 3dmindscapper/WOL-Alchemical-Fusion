@@ -124,6 +124,7 @@ Expansions are themed updates built on the systems already in place. Each sectio
 
 - **Primordial true form.** With every Primordial robe (the six base elements, plus Radiant with Arcanos), the Alchemist gets a third phase at 25% health: it heals to 60% and cycles through each Archon's colours, aura and two of its arcana, one form every 9 seconds.
 - **Tomix, the Mixing Tome** (1.1.2). Tomi's gold cousin, a recoloured spellbook with his own lines: beside Tomi in the Hub (versions, and his journal with one page per element: infused versions and dual pairs) and at the merchant in runs (infusing). Tomi's book is the game's again.
+- **1.1.3 polish:** Water infusions freeze (slow is the game's wind status), infused lightning lines and lightning art take their new colour, Tomix breaks his planter tree and gets Tomi's arrival beam.
 - **Skippable conversations** (1.1.2). Champions stay put, you're paused, Confirm / Interact or Space / Enter advances.
 - **Gear reactions.** Rivals (after their greeting), Archons and the Alchemist (in their intro) comment on your Primordial robe, the White Mantle, the Grandmaster's Robe or your Grandmaster rank.
 - **Hit flair.** Elemental ghouls, blobs and golems (and elemental Coffin Knights / Cyclops) throw a small burst of their element when they hit you.

@@ -19,47 +19,39 @@ namespace WolHybridBosses
         static GUIStyle nameStyle, subStyle;
         static Font styleFont;
 
-        // v1.1.2: his pages shimmer through every element in turn (his palette mapped onto each ramp from the
-        // original, never stacked), with a little burst of that element: an infusion tome, not a gold Tomi.
-        static readonly string[] Ramps = { "Fire", "Water", "Earth", "Wind", "Thunder", "Chaos", "Radiant" };
-        static readonly ElementType[] Bursts = { ElementType.Fire, ElementType.Water, ElementType.Earth, ElementType.Air, ElementType.Lightning, ElementType.Chaos, ElementType.Ice };
-        readonly Dictionary<SpriteRenderer, Texture> originals = new Dictionary<SpriteRenderer, Texture>();
-        bool nonPalette;
-        int step = -1;
-        float next;
+        // v1.1.2: his pages glow through every element in turn: a soft tint that fades from one element's colour to
+        // the next (the book's own detail stays; a full recolour flattened it into a yellow blob), with a little burst of
+        // the element as each one arrives. An infusion tome, not a blue Tomi.
+        static readonly ElementType[] Cycle = { ElementType.Fire, ElementType.Water, ElementType.Earth, ElementType.Air, ElementType.Lightning, ElementType.Chaos, ElementType.Ice };
+        const float StepSeconds = 1.8f;
+        SpriteRenderer[] parts;
+        Color[] baseColours;
+        int lastStep = -1;
 
         void Start()
         {
-            foreach (SpriteRenderer sr in GetComponentsInChildren<SpriteRenderer>(true))
-            {
-                if (sr == null) continue;
-                if (RecolorEngine.PaletteSprite(sr)) { Texture pal = sr.material.GetTexture("_Palette"); if (pal != null) originals[sr] = pal; }
-                else nonPalette = true;
-            }
-            Plugin.Log.LogInfo("TOMIX look: " + originals.Count + " palette part(s)" + (nonPalette ? ", plain sprites too" : ""));
+            parts = GetComponentsInChildren<SpriteRenderer>(true);
+            baseColours = new Color[parts.Length];
+            for (int i = 0; i < parts.Length; i++) baseColours[i] = parts[i] != null ? parts[i].color : Color.white;
         }
 
         void Update()
         {
-            if (Time.time < next) return;
-            next = Time.time + 1.6f;
-            step = (step + 1) % Ramps.Length;
-            string key = Ramps[step];
-            foreach (KeyValuePair<SpriteRenderer, Texture> kv in originals)
-            {
-                if (kv.Key == null) continue;
-                Texture2D twin = RecolorEngine.PaletteTwin(kv.Value, key);
-                if (twin != null) kv.Key.material.SetTexture("_Palette", twin);
-            }
-            if (nonPalette) { RecolorSprites rs = RecolorSprites.Attach(gameObject, key, null); if (rs != null) rs.AllowBodies = true; }
+            if (parts == null) return;
+            float t = Time.time / StepSeconds;
+            int step = Mathf.FloorToInt(t) % Cycle.Length;
+            float f = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((t - Mathf.Floor(t)) * 2.5f)); // fade in the first 40% of a step
+            Color from = Infusion.ColorOf(Cycle[(step + Cycle.Length - 1) % Cycle.Length]), to = Infusion.ColorOf(Cycle[step]);
+            Color glow = Color.Lerp(from, to, f);
+            Color tint = Color.Lerp(Color.white, glow, 0.5f + 0.08f * Mathf.Sin(Time.time * 4f));
+            for (int i = 0; i < parts.Length; i++)
+                if (parts[i] != null) parts[i].color = new Color(baseColours[i].r * tint.r, baseColours[i].g * tint.g, baseColours[i].b * tint.b, baseColours[i].a);
+            if (step == lastStep) return;
+            lastStep = step;
             Player p = Elites.Player0;
             if (p != null && Vector2.Distance(p.transform.position, transform.position) < 14f)
-            {
-                SpriteRenderer body = GetComponentInChildren<SpriteRenderer>();
-                HitFlair.Spawn(transform.position + new Vector3(0f, 0.9f, 0f), Bursts[step], body);
-            }
+                HitFlair.Spawn(transform.position + new Vector3(0f, 0.9f, 0f), Cycle[step], parts.Length > 0 ? parts[0] : null);
         }
-
         void OnGUI()
         {
             if (TomiInfusion.MenuOpen || ModifiersMenu.IsOpen || LeagueMenu.IsOpen || NocturneMenu.IsOpen) return;
@@ -164,45 +156,122 @@ namespace WolHybridBosses
                 }
             }
             if (tomi == null) { Plugin.Log.LogInfo("TOMIX: no Tomi in " + scene); yield break; }
-            Vector2 at = Opposite(tomi);
+            // The Hub's planters are built from small pieces the search can't pair, so the Hub uses the measured spot:
+            // the matching planter is about 8 units to Tomi's right. Elsewhere (your house) the search, then a fallback.
+            Vector2 at = scene == "Hub" ? (Vector2)tomi.transform.position + new Vector2(8.1f, 0f) : Opposite(tomi);
             SpellBookNpc spawned = TomiInfusion.SpawnAt(at, false);
-            if (spawned != null) Make(spawned);
+            if (spawned != null) { Make(spawned); if (scene == "Hub") BreakTree(at); CopyLight(tomi, at - (Vector2)tomi.transform.position); }
             Plugin.Log.LogInfo("TOMIX placed in " + scene + " at " + at + " (Tomi at " + (Vector2)tomi.transform.position + ")");
         }
+
+        // v1.1.2: the shaft of light that falls through the tree onto Tomi: a scenery sprite over him (not part of his
+        // object). Copied over Tomix at the same offset. Everything near and above Tomi is logged, to check in game.
+        static readonly string[] LightWords = { "light", "ray", "beam", "shaft", "sun", "god", "glow", "shine", "teleport" };
+
+        // The planter tree where Tomix lands breaks, as Tomi's did (the game's own Tree.Break: wood and leaves fly).
+        static void BreakTree(Vector2 at)
+        {
+            try
+            {
+                global::Tree best = null;
+                float bestD = 4.5f;
+                foreach (global::Tree t in UnityEngine.Object.FindObjectsOfType<global::Tree>())
+                {
+                    if (t == null || !t.gameObject.activeInHierarchy) continue;
+                    float d = Vector2.Distance(t.transform.position, at);
+                    if (d < bestD) { bestD = d; best = t; }
+                }
+                if (best == null) { Plugin.Log.LogInfo("TOMIX: no tree where he lands"); return; }
+                Traverse.Create(best).Method("Break").GetValue();
+                Plugin.Log.LogInfo("TOMIX broke the tree " + best.name + " (" + bestD.ToString("0.0") + " away)");
+            }
+            catch (Exception ex) { Plugin.Log.LogWarning("TOMIX tree: " + ex.Message); }
+        }
+
+        static void CopyLight(SpellBookNpc tomi, Vector2 delta)
+        {
+            try
+            {
+                Vector2 tp = tomi.transform.position;
+                List<string> near = new List<string>();
+                List<GameObject> copy = new List<GameObject>();
+                foreach (SpriteRenderer sr in UnityEngine.Object.FindObjectsOfType<SpriteRenderer>())
+                {
+                    if (sr == null || sr.sprite == null || !sr.enabled || sr.transform.IsChildOf(tomi.transform)) continue;
+                    if (sr.transform.root.name.StartsWith("HB_") || sr.GetComponentInParent<Entity>() != null || sr.GetComponentInParent<Canvas>() != null) continue;
+                    Bounds b = sr.bounds;
+                    if (Mathf.Abs(b.center.x - tp.x) > 3f || b.max.y < tp.y + 1f || b.min.y > tp.y + 3f) continue;
+                    string n = (sr.name + " " + sr.sprite.name).ToLowerInvariant();
+                    if (near.Count < 14) near.Add(sr.name + "/" + sr.sprite.name + " " + b.size.ToString("0.0"));
+                    bool lightish = false;
+                    foreach (string w in LightWords) if (n.Contains(w)) { lightish = true; break; }
+                    if (!lightish || b.size.x > 8f) continue;
+                    // A bare "Sprite" child of an effect: copy the effect (its animator lives on the parent).
+                    GameObject node = sr.gameObject;
+                    Transform par = node.transform.parent;
+                    if (par != null && par.childCount <= 4 && par.GetComponent<Entity>() == null && par.GetComponent<Npc>() == null) node = par.gameObject;
+                    if (!copy.Contains(node)) copy.Add(node);
+                }
+                copy.RemoveAll(go => copy.Exists(o => o != go && go.transform.IsChildOf(o.transform))); // a parent's copy brings its children
+                foreach (GameObject go in copy)
+                {
+                    // v1.1.3: outside its pool (a pooled effect's copy in the pool could be handed out or returned
+                    // by the game), and gone once it has played: the beam is Tomi's arrival effect.
+                    bool pooled = go.transform.parent != null && go.transform.parent.name.IndexOf("Pool", StringComparison.OrdinalIgnoreCase) >= 0;
+                    GameObject c = UnityEngine.Object.Instantiate(go, pooled ? null : go.transform.parent);
+                    c.name = "HB_TomixLight " + go.name;
+                    c.transform.position = go.transform.position + (Vector3)delta;
+                    c.transform.localScale = pooled ? go.transform.lossyScale : go.transform.localScale;
+                    if (pooled) UnityEngine.Object.Destroy(c, 6f);
+                }
+                List<string> names = new List<string>();
+                foreach (GameObject go in copy) names.Add(go.name + (go.transform.parent != null ? " in " + go.transform.parent.name : ""));
+                Plugin.Log.LogInfo("TOMIX light: " + (copy.Count > 0 ? "copied " + string.Join(", ", names.ToArray()) : "none found") + " | near Tomi: " + string.Join("; ", near.ToArray()));
+            }
+            catch (Exception ex) { Plugin.Log.LogWarning("TOMIX light failed: " + ex.Message); }
+        }
+
+        static readonly string[] NotStands ={ "arrow", "pickup", "shadow", "prompt", "icon", "glow", "light", "halo", "emote", "cursor", "card" };
 
         static Vector2 Opposite(SpellBookNpc tomi)
         {
             Vector2 tp = tomi.transform.position;
             try
             {
-                SpriteRenderer stand = null;
-                float bestArea = 0f;
-                foreach (SpriteRenderer sr in UnityEngine.Object.FindObjectsOfType<SpriteRenderer>())
+                SpriteRenderer[] all = UnityEngine.Object.FindObjectsOfType<SpriteRenderer>();
+                // What Tomi hovers over: big-ish scenery sprites under him (not arrows, pickups, shadows, UI bits).
+                List<SpriteRenderer> stands = new List<SpriteRenderer>();
+                foreach (SpriteRenderer sr in all)
                 {
-                    if (sr == null || sr.sprite == null || sr.transform.IsChildOf(tomi.transform) || sr.GetComponentInParent<Entity>() != null) continue;
+                    if (sr == null || sr.sprite == null || !sr.enabled || sr.transform.IsChildOf(tomi.transform) || sr.GetComponentInParent<Entity>() != null || sr.GetComponentInParent<Canvas>() != null) continue;
+                    string n = sr.sprite.name.ToLowerInvariant() + " " + sr.name.ToLowerInvariant();
+                    bool bad = false;
+                    foreach (string b in NotStands) if (n.Contains(b)) { bad = true; break; }
+                    if (bad) continue;
                     Vector3 c = sr.bounds.center;
-                    if (Mathf.Abs(c.x - tp.x) > 2.2f || c.y > tp.y + 0.5f || c.y < tp.y - 3.5f) continue;
                     float area = sr.bounds.size.x * sr.bounds.size.y;
-                    if (area > bestArea && area < 30f) { bestArea = area; stand = sr; }
+                    if (area < 1.2f || area > 30f || Mathf.Abs(c.x - tp.x) > 2.5f || c.y > tp.y + 0.3f || c.y < tp.y - 4f) continue;
+                    stands.Add(sr);
                 }
-                if (stand != null)
+                stands.Sort((a, b) => (b.bounds.size.x * b.bounds.size.y).CompareTo(a.bounds.size.x * a.bounds.size.y));
+                List<string> tried = new List<string>();
+                foreach (SpriteRenderer stand in stands)
                 {
+                    tried.Add(stand.sprite.name);
                     SpriteRenderer twin = null;
                     float bestD = float.MaxValue;
-                    foreach (SpriteRenderer sr in UnityEngine.Object.FindObjectsOfType<SpriteRenderer>())
+                    foreach (SpriteRenderer sr in all)
                     {
                         if (sr == null || sr == stand || sr.sprite == null || sr.sprite.name != stand.sprite.name) continue;
                         float dy = Mathf.Abs(sr.bounds.center.y - stand.bounds.center.y), d = Vector2.Distance(sr.bounds.center, stand.bounds.center);
-                        if (dy > 1.5f || d < 2.5f || d > 16f) continue;
+                        if (dy > 1.5f || d < 3.5f || d > 18f) continue;
                         if (d < bestD) { bestD = d; twin = sr; }
                     }
-                    if (twin != null)
-                    {
-                        Plugin.Log.LogInfo("TOMIX: Tomi stands on " + stand.sprite.name + "; its twin is " + bestD.ToString("0.0") + " away");
-                        return (Vector2)twin.bounds.center + (tp - (Vector2)stand.bounds.center);
-                    }
-                    Plugin.Log.LogInfo("TOMIX: Tomi stands on " + stand.sprite.name + ", no twin nearby");
+                    if (twin == null) continue;
+                    Plugin.Log.LogInfo("TOMIX: Tomi floats over " + stand.sprite.name + "; its twin is " + bestD.ToString("0.0") + " away (tried " + string.Join(", ", tried.ToArray()) + ")");
+                    return (Vector2)twin.bounds.center + (tp - (Vector2)stand.bounds.center);
                 }
+                Plugin.Log.LogInfo("TOMIX: no twin for what Tomi floats over (candidates: " + (tried.Count > 0 ? string.Join(", ", tried.ToArray()) : "none") + ")");
             }
             catch (Exception ex) { Plugin.Log.LogWarning("TOMIX placement: " + ex.Message); }
             return tp + new Vector2(3f, 0f);
@@ -221,7 +290,7 @@ namespace WolHybridBosses
     {
         internal static bool IsOpen { get; private set; }
         int page, scroll;
-        float openedAt;
+        float openedAt, bookSince = -1f;
         const int Rows = 9;
         static GUIStyle titleStyle, rowStyle, small;
         static Font styleFont;
@@ -237,10 +306,13 @@ namespace WolHybridBosses
 
         void Update()
         {
-            if (!TomiInfusion.TomixOpen || TomiInfusion.InRun || ModifiersMenu.IsOpen) { IsOpen = false; return; }
+            if (!TomiInfusion.TomixOpen || TomiInfusion.InRun || ModifiersMenu.IsOpen) { IsOpen = false; bookSince = -1f; return; }
+            if (bookSince < 0f) bookSince = Time.unscaledTime;
             ChaosInputDevice dev = TomiInfusion.Device;
             if (!IsOpen)
             {
+                // v1.1.2: not from the Interact press that opened his book (it popped the journal open the first time).
+                if (Time.unscaledTime - bookSince < 0.6f) return;
                 if (Input.GetKeyDown(KeyCode.J) || Pad(dev, "Interact")) { IsOpen = true; page = 0; scroll = 0; openedAt = Time.unscaledTime; }
                 return;
             }

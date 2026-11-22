@@ -45,6 +45,15 @@ namespace WolHybridBosses
             float lum = 0.3f * c.r + 0.59f * c.g + 0.11f * c.b;
             float mx = Mathf.Max(c.r, Mathf.Max(c.g, c.b));
             float t = Mathf.Clamp01((lum * 0.7f + mx * 0.3f - 0.04f) / 0.92f);
+            // v1.1.2: lightning art is mostly bright saturated yellow, which landed on the pale end of every ramp (a
+            // Fire-infused Shock Assault stayed yellow). Saturated yellows are pulled into the ramp's middle, where its
+            // colour is strongest; the ramps that are yellow themselves keep them.
+            if (t > 0.5f && key != "Thunder" && key != "Radiant")
+            {
+                float h, s, v;
+                Color.RGBToHSV(c, out h, out s, out v);
+                if (s > 0.4f && h > 0.09f && h < 0.21f) t = 0.5f + (t - 0.5f) * Mathf.Lerp(1f, 0.4f, Mathf.InverseLerp(0.4f, 0.75f, s));
+            }
             Color o = Sample(key, t);
             o.a = c.a;
             return o;
@@ -258,8 +267,9 @@ namespace WolHybridBosses
         // A whole atlas recoloured onto a ramp, cached per (atlas, ramp).
         static readonly Dictionary<string, Texture2D> atlasTwins = new Dictionary<string, Texture2D>();
 
-        static Texture2D AtlasTwin(Texture2D tex, string key)
+        internal static Texture2D AtlasTwin(Texture2D tex, string key)
         {
+            if (tex == null || !ElementRamps.Has(key)) return null;
             string k = tex.GetInstanceID() + "|" + key;
             Texture2D t;
             if (atlasTwins.TryGetValue(k, out t) && t != null) return t;

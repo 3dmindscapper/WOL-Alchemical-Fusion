@@ -25,7 +25,7 @@ A run-changing content mod for Wizard of Legend: elemental bosses, rival wizards
 ### Infusion
 - **Tomix, the Mixing Tome** (Tomi's gold cousin) comes to the arcana merchant during runs. In his spellbook, keep one arcana and sacrifice another (or buy a card off the shelf to sacrifice). The kept arcana takes the sacrificed one's element: damage type, status effect, +10% damage, and its animation, icon and card in that element's colours.
 - **Dual infusion**: later in a run, an infused arcana can take a second element. Its casts alternate between the two.
-- **Unlocks**: every infused version you make stays unlocked. In the Hub, Tomix floats beside Tomi: his book lets you choose each arcana's version: the original, a single infused version, or a dual pair (the arcana's own element counts).
+- **Unlocks**: every infused version you make stays unlocked. In the Hub, Tomix floats across from Tomi on the matching planter: his book lets you choose each arcana's version: the original, a single infused version, or a dual pair (the arcana's own element counts).
 - **Random versions**: runs sometimes roll a dual version for you, and **Nocturne's shuffle** (free, with presets: full, arcana only, robe and relic, one element, alchemist) can roll any version you've unlocked.
 - **Infusion trials**: three waves with all your arcana forced into one element, for a pre-infused reward.
 - **The arcana merchant** often sells arcana you've unlocked infused versions of as one of those versions.

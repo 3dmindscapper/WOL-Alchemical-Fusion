@@ -15,7 +15,7 @@ namespace WolHybridBosses
     [BepInDependency(MantleRobe.LegendApiGuid, BepInDependency.DependencyFlags.HardDependency)] // v1.1.1: required (the White Mantle robe, later content)
     public class Plugin : BaseUnityPlugin
     {
-        public const string Version = "1.1.2";
+        public const string Version = "1.1.3";
         internal static ManualLogSource Log;
 
         internal static ConfigEntry<bool> ElementalGiants;
@@ -663,9 +663,16 @@ namespace WolHybridBosses
             foreach (string name in ElementalGiants.GiantKind.Keys)
             {
                 Type t = AccessTools.TypeByName(name);
-                MethodInfo m = t == null ? null : AccessTools.DeclaredMethod(t, "Start");
+                MethodInfo m = t == null ? null : DeclaredStart(t);
                 if (m != null) yield return m;
             }
+        }
+
+        // v1.1.3: plain reflection (AccessTools logs a warning for every type without its own Start, on every spawn).
+        static MethodInfo DeclaredStart(Type t)
+        {
+            try { return t.GetMethod("Start", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly, null, Type.EmptyTypes, null); }
+            catch (Exception) { return null; }
         }
 
         static void Postfix(MiniBoss __instance, MethodBase __originalMethod)
@@ -674,7 +681,7 @@ namespace WolHybridBosses
             {
                 MethodInfo mostDerived = null;
                 for (Type t = __instance.GetType(); t != null && mostDerived == null; t = t.BaseType)
-                    mostDerived = AccessTools.DeclaredMethod(t, "Start");
+                    mostDerived = DeclaredStart(t);
                 if (mostDerived == null || mostDerived.DeclaringType != __originalMethod.DeclaringType) return;
                 ElementalGiants.TryMakeElemental(__instance);
             }

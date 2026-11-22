@@ -126,7 +126,7 @@ namespace WolHybridBosses
             switch (r.Element)
             {
                 case "Fire": info.burnChance = Mathf.Min(1f, info.burnChance + r.Status); break;
-                case "Water": info.slowChance = Mathf.Min(1f, info.slowChance + r.Status); if (info.freezeChance > 0f) info.freezeChance = Mathf.Min(1f, info.freezeChance + r.Status); break;
+                case "Water": info.freezeChance = Mathf.Min(1f, info.freezeChance + r.Status); break; // freeze is water's status (slow is Air's)
                 case "Earth": info.poisonChance = Mathf.Min(1f, info.poisonChance + r.Status); break;
                 case "Wind": info.slowChance = Mathf.Min(1f, info.slowChance + r.Status); break;
                 case "Thunder": info.shockChance = Mathf.Min(1f, info.shockChance + r.Status); break;

@@ -290,6 +290,7 @@ namespace WolHybridBosses
                     info.elementType = pe.Type;
                     pe.ApplyStatus(info);
                     CouncilCorruption.PreviewRecolor(atk, ElementRamps.ForElement(pe.Type));
+                    Recent(ElementRamps.ForElement(pe.Type));
                     return true;
                 }
                 if (name == "Radiant")
@@ -299,9 +300,45 @@ namespace WolHybridBosses
                 else SetStatus(info, el, chance, level);
             }
             string key = RampKey(el);
-            if (key != null) CouncilCorruption.PreviewRecolor(atk, key);
+            if (key != null) { CouncilCorruption.PreviewRecolor(atk, key); PaletteFx(atk, key); }
+            Recent(key);
             return true;
         }
+
+        // v1.1.2: some arcana draw their strike with the game's palette shader (Shock Assault's bolt: the player's
+        // palette row), which sprite twinning skips. Its material instance gets the palette on the element's ramp.
+        // Only the attack's own small object (its parent when that holds just a few parts), never a body.
+        static readonly Dictionary<Material, Texture> palOriginal = new Dictionary<Material, Texture>();
+        static readonly HashSet<string> palLogged = new HashSet<string>();
+
+        static void PaletteFx(Attack atk, string key)
+        {
+            try
+            {
+                Transform t = atk.transform;
+                Transform p = t.parent;
+                if (p != null && p.childCount <= 4 && p.GetComponent<Entity>() == null && p.GetComponentInParent<Enemy>() == null) t = p;
+                foreach (SpriteRenderer sr in t.GetComponentsInChildren<SpriteRenderer>(true))
+                {
+                    if (sr == null || !RecolorEngine.PaletteSprite(sr) || sr.GetComponentInParent<Entity>() != null) continue;
+                    Material m = sr.material;
+                    Texture pal;
+                    if (!palOriginal.TryGetValue(m, out pal)) { pal = m.GetTexture("_Palette"); if (palOriginal.Count > 512) palOriginal.Clear(); palOriginal[m] = pal; }
+                    if (pal == null) continue;
+                    Texture2D twin = RecolorEngine.PaletteTwin(pal, key);
+                    if (twin == null) continue;
+                    m.SetTexture("_Palette", twin);
+                    if (palLogged.Add(atk.atkInfo.skillID)) Plugin.Log.LogInfo("INFUSION palette strike " + atk.atkInfo.skillID + " -> " + key + " (" + sr.name + ")");
+                }
+            }
+            catch (Exception) { }
+        }
+
+        // v1.1.2: the look of the infused cast made this frame. Effects an arcana draws apart from its attack (Shock
+        // Assault's lightning line, a pooled trail emitter) take its colour from this, in the same frame.
+        internal static string RecentKey;
+        internal static int RecentFrame = -1;
+        static void Recent(string key) { RecentKey = key; RecentFrame = Time.frameCount; }
 
         internal static void SetStatus(AttackInfo info, ElementType el, float chance, int level)
         {
@@ -309,7 +346,9 @@ namespace WolHybridBosses
             switch (Name(el))
             {
                 case "Fire": info.burnChance = chance; info.burnLevel = Mathf.Max(info.burnLevel, level); break;
-                case "Water": case "Wind": info.slowChance = chance; info.slowLevel = Mathf.Max(info.slowLevel, level); break;
+                // v1.1.2: slow is the game's Air status (Health.HandleAirStatusEffect); water arcana freeze.
+                case "Wind": info.slowChance = chance; info.slowLevel = Mathf.Max(info.slowLevel, level); break;
+                case "Water": info.freezeChance = chance * 0.6f; break; // as Prism's water: freezing is strong
                 case "Ice": info.freezeChance = chance; break;
                 case "Earth": info.poisonChance = chance; info.poisonLevel = Mathf.Max(info.poisonLevel, level); break;
                 case "Thunder": info.shockChance = chance; info.shockLevel = Mathf.Max(info.shockLevel, level); break;
@@ -439,6 +478,79 @@ namespace WolHybridBosses
                 string key = icons[i] != null ? RecolorEngine.KeyOf(icons[i].sprite) : null;
                 cards[i].color = key != null ? Color.Lerp(Color.white, ElementRamps.MidOf(key), 0.55f) : Color.white; // v0.9.18: duals mix both
             }
+        }
+    }
+
+    // v1.1.2: a filtered book (a run, or Tomix's at home) can have an element tab with no cards; the card view then
+    // indexed past the end of an empty list every frame. Swallow just that error there.
+    [HarmonyPatch(typeof(SpellBookUI), "HandleInfoSelection")]
+    static class SpellBookEmptyTabGuard
+    {
+        static bool logged;
+        static Exception Finalizer(Exception __exception)
+        {
+            if (__exception is ArgumentOutOfRangeException)
+            {
+                if (!logged) { logged = true; Plugin.Log.LogInfo("INFUSION book: an empty card tab (filtered list) was skipped"); }
+                return null;
+            }
+            return __exception;
+        }
+    }
+
+    // v1.1.2: lightning lines and other sectioned trails (Shock Assault's bolt between its strikes is one, from the pool,
+    // not part of the attack) emitted in the same frame as an infused cast: the cast's element colour, when the
+    // caller didn't pick a colour itself.
+    [HarmonyPatch(typeof(SectionedTrailEmitter), "Emit")]
+    static class InfusionTrailColourPatch
+    {
+        static bool logged;
+        // The pooled emitter's own look before we touched it: its texture and colour over lifetime, put back on the next
+        // emit that isn't an infused cast (enemies share the pool).
+        class Orig { public Texture tex; public bool col; public ParticleSystem.MinMaxGradient grad; }
+        static readonly Dictionary<ParticleSystem, Orig> orig = new Dictionary<ParticleSystem, Orig>();
+
+        static void Prefix(SectionedTrailEmitter __instance, ref Color32? __8)
+        {
+            try
+            {
+                bool infused = !__8.HasValue && Infusion.RecentFrame == Time.frameCount && ElementRamps.Has(Infusion.RecentKey);
+                string key = Infusion.RecentKey;
+                bool retextured = false;
+                foreach (ParticleSystem ps in __instance.GetComponentsInChildren<ParticleSystem>(true))
+                {
+                    ParticleSystemRenderer r = ps != null ? ps.GetComponent<ParticleSystemRenderer>() : null;
+                    if (r == null || r.sharedMaterial == null) continue;
+                    Orig o;
+                    if (!infused)
+                    {
+                        if (orig.TryGetValue(ps, out o))
+                        {
+                            r.material.mainTexture = o.tex;
+                            if (o.col) { ParticleSystem.ColorOverLifetimeModule m = ps.colorOverLifetime; m.color = o.grad; }
+                            orig.Remove(ps);
+                        }
+                        continue;
+                    }
+                    if (!orig.TryGetValue(ps, out o))
+                    {
+                        o = new Orig { tex = r.sharedMaterial.mainTexture, col = ps.colorOverLifetime.enabled };
+                        if (o.col) o.grad = ps.colorOverLifetime.color;
+                        orig[ps] = o;
+                    }
+                    Texture2D twin = RecolorEngine.AtlasTwin(o.tex as Texture2D, key);
+                    if (twin != null) { r.material.mainTexture = twin; retextured = true; }
+                    if (o.col) { ParticleSystem.ColorOverLifetimeModule m = ps.colorOverLifetime; m.color = RecolorEngine.Map(o.grad, key); }
+                }
+                if (!infused) return;
+                // The emitter's own start colour on the ramp over a recoloured texture; the element's colour when it couldn't be twinned.
+                Color start = Color.white;
+                ParticleSystem first = __instance.GetComponentInChildren<ParticleSystem>(true);
+                try { if (first != null) start = first.main.startColor.color; } catch (Exception) { }
+                __8 = retextured ? (Color32)ElementRamps.Map(key, start) : (Color32)Color.Lerp(ElementRamps.Mid(key), Color.white, 0.2f);
+                if (!logged) { logged = true; Plugin.Log.LogInfo("INFUSION trail coloured " + key + (retextured ? " (texture recoloured)" : " (tint only)")); }
+            }
+            catch (Exception ex) { Plugin.Log.LogWarning("INFUSION trail colour: " + ex.Message); }
         }
     }
 
@@ -627,7 +739,10 @@ namespace WolHybridBosses
                         if (l != null) removed += l.RemoveAll(s => s == null || !owned.Contains(s.skillID));
                     }
                 }
-                if (removed > 0 && Plugin.DebugKeys.Value) Plugin.Log.LogInfo("INFUSION Tomi list: " + owned.Count + " owned arcana shown, " + removed + " others hidden");
+                // (The card view's per-element lists are left alone: the book keeps indices into them, and trimming them
+                // after it had counted crashed HandleInfoSelection. Their entries come through AddSkillToInfoSkills, which
+                // is filtered.)
+                if (removed > 0 && Plugin.DebugKeys.Value) Plugin.Log.LogInfo("INFUSION book list: " + owned.Count + " arcana shown, " + removed + " entries hidden");
             }
             catch (Exception ex) { Plugin.Log.LogWarning("INFUSION Tomi list filter failed: " + ex.Message); }
         }
@@ -969,13 +1084,21 @@ namespace WolHybridBosses
 
         void HubPress(Player.SkillState cur)
         {
+            // v1.1.2: only on Tomix's arcana pages (spells, signatures, cards), not on your loadout slots: switching
+            // from the loadout acted on the wrong arcana. Pick the version here, then equip it to try it out.
+            string focus = "";
+            try { focus = Traverse.Create(ui).Field("currentFocus").GetValue().ToString(); } catch (Exception) { }
+            if (focus == "Player" || focus == "Element" || focus == "Tab") { Say("Open one of Tomix's pages and point at an arcana to switch its version."); return; }
             if (cur == null) { Say("Point the cursor at an arcana."); return; }
             // v0.9.18: the original, each single version, then each unlocked dual pair.
             List<string> options = InfusionUnlocks.Options(cur.skillID);
             if (options.Count <= 1) { Say(IntroUI.SkillName(cur.skillID) + " has no infused versions yet. Bring it to Tomix during a run."); return; }
             int i = options.IndexOf(InfusionUnlocks.SelectedRaw(cur.skillID) ?? "");
             InfusionUnlocks.SelectRaw(cur.skillID, options[(i + 1) % options.Count]);
-            Refresh(PlayerOf());
+            Player hp = PlayerOf();
+            Refresh(hp);
+            try { if (hp != null) hp.AnnounceSkillChanged(cur); } catch (Exception) { } // the HUD's icon, if it's equipped
+            Plugin.Log.LogInfo("INFUSION version " + cur.skillID + " -> " + InfusionUnlocks.Label(InfusionUnlocks.SelectedRaw(cur.skillID)) + " (focus " + focus + ")");
             message = null; // the bar itself shows the chosen version (a second line repeated it and overlapped)
         }
 
@@ -983,8 +1106,15 @@ namespace WolHybridBosses
         void Refresh(Player p)
         {
             if (ui == null) return;
-            try { Traverse.Create(ui).Method("LoadEleSkillDict", new[] { typeof(Player) }).GetValue(p); } catch (Exception) { }
-            try { Traverse.Create(ui).Method("LoadSpellPage", new[] { typeof(bool) }).GetValue(false); } catch (Exception) { }
+            // v1.1.2: rebuilding the lists is only needed in runs (an infusion consumes an arcana). At home a version
+            // switch changes no list, and rebuilding them out of the book's own flow dropped basics into the arcana
+            // grid (a card you couldn't reach): just redraw.
+            if (InRun) try { Traverse.Create(ui).Method("LoadEleSkillDict", new[] { typeof(Player) }).GetValue(p); } catch (Exception) { }
+            // Redraw the page that's showing: the signature (Overdrive) page lists other cards than the normal one, and
+            // redrawing the normal one there showed its cards (a Stone Fist) over the signature page's cursor.
+            string focus = "";
+            try { focus = Traverse.Create(ui).Field("currentFocus").GetValue().ToString(); } catch (Exception) { }
+            if (focus != "Info") try { Traverse.Create(ui).Method("LoadSpellPage", new[] { typeof(bool) }).GetValue(focus == "Overdrive"); } catch (Exception) { }
             try { Traverse.Create(ui).Method("SetEquipSlots", new[] { typeof(Player) }).GetValue(p); } catch (Exception) { }
             try { Traverse.Create(ui).Method("LoadInfoPage").GetValue(); } catch (Exception) { }
         }

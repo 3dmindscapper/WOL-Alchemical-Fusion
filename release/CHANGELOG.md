@@ -1,7 +1,15 @@
 # Changelog
 
+## 1.1.3
+- **Tomix arrives in the Hub like Tomi did:** the planter tree where he lands breaks and Tomi's beam of light comes down on him. He sits a little further left, centred on his planter.
+- **Fixed: Water infusions froze nothing.** They applied slow, the game's wind status; they now freeze, as water arcana and Prism's water do. The Primordial Water robe boosts freezing too.
+- **Infused lightning takes its new colour:** Shock Assault's bolt between strikes and other lightning lines drawn apart from the attack. Lightning art recoloured into another element no longer stays pale yellow, so the card and icon change colour clearly too.
+- **Fixed:** switching a version on the signature page of Tomix's book drew the normal page's cards over it (a Stone Fist you couldn't select). Basics with infused versions stay in his book and switch on the normal page.
+- No more HarmonyX warnings in the log each time a giant spawns.
+
 ## 1.1.2
 - **Tomix, the Mixing Tome:** Tomi's scorch-marked cousin now does all the infusing; his pages shimmer through every element in turn. He floats across from Tomi in the Hub and your house (on the matching planter) (choose each arcana's version in his book) and comes to the arcana merchant during runs (infuse there). His journal (J, or pad Interact, with his book open) lists your infused versions and dual pairs page by page, per element. His book at home lists only arcana you've unlocked infused versions of, and reads as his ("Infusions", and per element how many arcana you've infused); Tomi's own book is back to the game's.
+- **Versions at home** are switched only on Tomix's arcana pages ([I] / pad arcana buttons), not from your loadout slots; pick one, then equip it to try it in the Hub.
 - **Conversations:** champions stay in place and you're paused while they talk; Confirm / Interact (pad) or Space / Enter / E / F finishes the line, then moves on. Lines still advance by themselves.
 - **Fixed:** the Primordial Alchemist's true form could start during its intro (cycling colours and attacking while it talked); it now waits for the fight and its second phase. The true-form card lists the elements instead of blank squares.
 - The infusion journal moved from the League board to Tomix.
@@ -49,7 +57,7 @@ The first update since 1.0.0; it includes 1.1.0 below.
 - **Rival portals** can hold a three-round tournament or a 2v2 team match with an allied wizard.
 - **Bestiary:** five new special mini-bosses, for eleven in all: Golem Gauntlet, Turret Fortress, Summoner Coven, Lancer Phalanx, Archer Volley.
 
-## 1.0.0 — first public release (as WOL Alchemical Fusion)
+## 1.0.0 â€” first public release (as WOL Alchemical Fusion)
 - Elemental giants on elemental stages, with borrowed skills, player arcana, intros and boss bars.
 - Six special mini-bosses: Giant Cyclops, Mimic King, Cyclops Eye Court, Elemental Conclave, Hive Mother and Gravewarden.
 - Elemental Coffin Knights, Cyclops, blobs and ghouls.
