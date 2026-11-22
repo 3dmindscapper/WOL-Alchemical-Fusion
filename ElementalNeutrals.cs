@@ -228,6 +228,7 @@ namespace WolHybridBosses
 
         OutlineCache outlineCache;
         Color originalOutline;
+        bool reported;
 
         string Prefix() { ElementalNeutral m = GetComponent<ElementalNeutral>(); return m != null ? m.Prefix : "Neutral"; }
 
@@ -244,7 +245,14 @@ namespace WolHybridBosses
 
         void Update()
         {
-            if (!started || enemy == null || enemy.health == null || enemy.health.CurrentHealthValue <= 0) return;
+            if (!started || enemy == null || enemy.health == null) return;
+            if (enemy.health.CurrentHealthValue <= 0)
+            {
+                // v0.9.16: a plain Giant Cyclops counts for the special mini-boss bounty (the Eye Court reports itself).
+                if (!reported && GetComponent<BossEventEnemy>() == null) Bounties.Report(BountyKind.Special, null);
+                reported = true;
+                return;
+            }
             if (armoured)
             {
                 if (hpAtArmour - enemy.health.CurrentHealthValue >= maxHp * 0.2f) Break();

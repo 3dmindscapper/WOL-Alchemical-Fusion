@@ -194,6 +194,7 @@ namespace WolHybridBosses
             string name = Infusion.Name(element);
             if (!cleared) { Plugin.Log.LogInfo("TRIAL of " + name + " left early"); return; }
             Plugin.Log.LogInfo("TRIAL of " + name + " cleared");
+            Bounties.Report(BountyKind.Trial, null); // v0.9.16
             try { LootManager.DropGold(arrival, 30 + 15 * Mathf.Max(0, GameController.tierCount)); } catch (Exception) { }
             string id = RewardArcana();
             if (id != null)

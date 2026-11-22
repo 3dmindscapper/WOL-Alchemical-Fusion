@@ -347,6 +347,7 @@ namespace WolHybridBosses
         {
             Vector2 at = transform.position;
             int tier = Mathf.Max(0, GameController.tierCount);
+            Bounties.Report(BountyKind.Elite, Trait.ToString()); // v0.9.16
             // Extra gold (Thief: plus double what it stole), and sometimes an infused arcana (not from Infused elites).
             try { LootManager.DropGold(at, Elites.GoldFor(Trait) + Stolen * 2); } catch (Exception) { }
             if (Trait != EliteTrait.Infused && UnityEngine.Random.value < Plugin.EliteInfusedDropChance.Value)

@@ -95,7 +95,12 @@ namespace WolHybridBosses
 
         internal static bool Available { get { return Plugin.EchoEnabled.Value && Last != null && !FoughtThisRun; } }
 
-        internal static void Ensure(GameObject host) { if (host.GetComponent<EchoRecorder>() == null) host.AddComponent<EchoRecorder>(); }
+        internal static void Ensure(GameObject host)
+        {
+            if (host.GetComponent<EchoRecorder>() == null) host.AddComponent<EchoRecorder>();
+            if (host.GetComponent<BountyBoard>() == null) host.AddComponent<BountyBoard>();     // v0.9.16
+            if (host.GetComponent<ModifiersMenu>() == null) host.AddComponent<ModifiersMenu>(); // v0.9.16
+        }
 
         void Update()
         {
@@ -177,6 +182,23 @@ namespace WolHybridBosses
     internal class EchoInfusions : MonoBehaviour
     {
         public Dictionary<string, ElementType> Map = new Dictionary<string, ElementType>();
+        public Dictionary<string, ElementType> Second = new Dictionary<string, ElementType>(); // v0.9.18: dual arcana
+        readonly Dictionary<string, int> count = new Dictionary<string, int>();
+
+        // The element for this cast: a dual arcana alternates between its two.
+        internal bool TryNext(string id, out ElementType el)
+        {
+            if (!Map.TryGetValue(id, out el)) return false;
+            ElementType s;
+            if (Second.TryGetValue(id, out s))
+            {
+                int n;
+                count.TryGetValue(id, out n);
+                count[id] = n + 1;
+                if (n % 2 == 1) el = s;
+            }
+            return true;
+        }
     }
 
     internal static class EchoRival
@@ -236,6 +258,11 @@ namespace WolHybridBosses
         internal static string Named(RivalMarker mk, ArcanaDef d)
         {
             ElementType? el = mk.Echo != null ? mk.Echo.InfusionOf(d.SkillID) : null;
+            ElementType inf;
+            if (!el.HasValue && mk.Infused != null && mk.Infused.TryGetValue(d.SkillID, out inf)) el = inf; // v0.9.17: rematch rivals
+            ElementType inf2;
+            if (el.HasValue && mk.InfusedSecond != null && mk.InfusedSecond.TryGetValue(d.SkillID, out inf2)) // v0.9.18: dual
+                return Infusion.Name(el.Value) + " / " + Infusion.Name(inf2) + " dual " + IntroUI.SkillName(d.SkillID);
             return el.HasValue ? Infusion.Name(el.Value) + "-infused " + IntroUI.SkillName(d.SkillID) : Variants.Named(d, mk.Prefix);
         }
     }

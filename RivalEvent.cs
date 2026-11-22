@@ -30,6 +30,8 @@ namespace WolHybridBosses
         GameObject entrance;
         RivalTier tier;
         bool echo, inStartRoom;
+        GrudgeRecord grudge;     // v0.9.16: a returning rival
+        internal bool Fled;      // (v0.9.16 flee; unused since v0.9.17 rematches)
         bool chosen;
         const float AnnounceSeconds = 7f; // v0.9.3: was 4s, too short to read what the portal holds
         Enemy rival;
@@ -42,6 +44,8 @@ namespace WolHybridBosses
             try
             {
                 if (!Plugin.RivalEvents.Value || Level.isBossRushMode) return;
+                // v0.9.17: a rival you beat that wants a rematch: 60% per later stage.
+                if (Grudges.Pending != null && UnityEngine.Random.value < Grudges.OpenChance) { Open(Level.startPosition + new Vector2(4f, 0f), Grudges.Pending.Prefix, true, true, Grudges.Pending); return; }
                 if (UnityEngine.Random.value >= Plugin.RivalEventChance.Value) return;
                 // v0.9.3: in the start room, beside where the player arrives (placed on open floor once the
                 // stage's colliders are registered, in Settle), so it never sits in another room's setup.
@@ -58,7 +62,7 @@ namespace WolHybridBosses
             Open((Vector2)p.transform.position + new Vector2(2.5f, 0f), prefix ?? Rivals.StagePrefixOrRandom(), false, false);
         }
 
-        static void Open(Vector2 entranceAt, string prefix, bool announce, bool inStartRoom)
+        static void Open(Vector2 entranceAt, string prefix, bool announce, bool inStartRoom, GrudgeRecord grudge = null)
         {
             if (Current != null) Current.Close();
             GameObject go = new GameObject("HybridBosses_RivalEvent");
@@ -69,11 +73,14 @@ namespace WolHybridBosses
             ev.echo = EchoRecorder.Available && UnityEngine.Random.value < Plugin.EchoChance.Value;
             ev.tier = ev.echo ? EchoTier : Plugin.RivalScaleWithProgress.Value ? RollTier(false) : (RivalTier)UnityEngine.Random.Range(0, 3);
             ev.inStartRoom = inStartRoom;
+            if (grudge != null) { ev.grudge = grudge; ev.echo = false; ev.tier = grudge.Tier; }
             if (!ev.Build()) { Destroy(go); return; }
             Current = ev;
             if (announce)
             {
-                if (ev.echo)
+                if (ev.grudge != null)
+                    IntroUI.Show("A rival wants a rematch", "In the starting room  ·  " + ElementalGiants.ElementColorName(prefix) + " rival  ·  " + ev.tier + "  ·  some of its arcana infused", ElementalGiants.ElementColor(prefix), null, AnnounceSeconds);
+                else if (ev.echo)
                     IntroUI.Show("The Echo of your last run has opened a portal", "In the starting room  ·  your own arcana, robe and relics, turned against you", EchoColor, null, AnnounceSeconds);
                 else
                     IntroUI.Show("A rival's portal has opened", "In the starting room  ·  " + ElementalGiants.ElementColorName(prefix) + " rival  ·  " + ev.tier,
@@ -531,7 +538,7 @@ namespace WolHybridBosses
             if (entrance != null) Destroy(entrance); // one fight per portal
 
             // The Hard portal sometimes holds an Archon (a final champion, with its half-health phase) instead.
-            bool archon = !echo && tier == RivalTier.Hard && UnityEngine.Random.value < Plugin.ArchonRivalChance.Value;
+            bool archon = !echo && grudge == null && tier == RivalTier.Hard && UnityEngine.Random.value < Plugin.ArchonRivalChance.Value;
             Vector2 rivalAt = OpenSpot(arenaRoom, arenaArrival, new Vector2(0f, 6f), new List<Vector2> { arenaArrival });
             if ((rivalAt - arenaArrival).sqrMagnitude < 4f) rivalAt = FarthestWithin(arenaArrival, 9f);
             EchoRecord record = echo ? EchoRecorder.Last : null;
@@ -545,19 +552,42 @@ namespace WolHybridBosses
                 if (mk != null) mk.Echo = record;
                 EchoRecorder.FoughtThisRun = true;
             }
+            // v0.9.17: a rematch rival (harder, some arcana infused; may drop one of its arcana when beaten).
+            if (grudge != null)
+            {
+                RivalMarker gm = rival.GetComponent<RivalMarker>();
+                if (gm != null) gm.Grudge = grudge;
+                rival.gameObject.AddComponent<GrudgeReturn>().Record = grudge;
+            }
             yield return null; // Start (and our hostile postfix) runs
             yield return null;
 
-            string title = record != null ? "Echo of your last run"
+            string title = grudge != null ? ElementalGiants.ElementColorName(prefix) + " Rival Wizard, rematch"
+                : record != null ? "Echo of your last run"
                 : archon ? (rivalPrefix == "Chaos" ? "Chaos Sovereign" : ElementalGiants.ElementColorName(rivalPrefix) + " Archon")
                 : ElementalGiants.ElementColorName(prefix) + " Rival Wizard";
             if (archon) Plugin.Log.LogInfo("RIVAL Hard portal holds an Archon: " + title);
-            string sub = record != null ? "You reached " + record.Reached + "  ·  " + tier : archon ? "Hard  ·  Archon" : tier.ToString();
+            string sub = grudge != null ? tier + "  ·  rematch  ·  some of its arcana infused" : record != null ? "You reached " + record.Reached + "  ·  " + tier : archon ? "Hard  ·  Archon" : tier.ToString();
             yield return StartCoroutine(Rivals.Intro(rival, title, sub));
+            // v0.9.20: voice lines (greeting now; half health and defeat from RivalBanter).
+            RivalVoice voice = record != null ? RivalVoice.Echo : archon ? RivalVoice.Archon : grudge != null ? RivalVoice.Rematch : RivalVoice.Rival;
+            Color voiceColour = record != null ? EchoColor : ElementalGiants.ElementColor(rivalPrefix);
+            RivalSpeech.Say(title, RivalLines.Greet(voice, rivalPrefix), voiceColour);
+            if (rival != null)
+            {
+                RivalBanter banter = rival.gameObject.AddComponent<RivalBanter>();
+                banter.Voice = voice == RivalVoice.Rematch ? RivalVoice.Rival : voice;
+                banter.Prefix = rivalPrefix;
+                banter.Speaker = title;
+                banter.Colour = voiceColour;
+            }
 
             // After the fight (and its chests): the way back to where the player came in.
             while (rival != null && rival.health != null && rival.health.CurrentHealthValue > 0) yield return new WaitForSeconds(0.25f);
+            if (!Fled) Bounties.Report(BountyKind.Rival, null); // v0.9.16
+            bool promise = grudge == null && Grudges.MaybeRecord(rivalPrefix, tier, echo, archon); // v0.9.17: maybe a rematch later this run
             yield return new WaitForSeconds(3f);
+            if (promise) RivalSpeech.Say(title, RivalLines.Promise(), voiceColour, 3.5f); // v0.9.20: after its defeat line
             OpenWayBack();
         }
 

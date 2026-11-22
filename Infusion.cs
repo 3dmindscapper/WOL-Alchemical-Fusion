@@ -21,8 +21,92 @@ namespace WolHybridBosses
         static readonly Dictionary<string, ElementType> infused = new Dictionary<string, ElementType>();
         static readonly Dictionary<string, ElementType> pending = new Dictionary<string, ElementType>(); // pre-infused drops / stock, until picked up
         static readonly HashSet<AttackInfo> done = new HashSet<AttackInfo>();
+        // v0.9.16: dual infusion (late run): a second element; the arcana's casts alternate between the two.
+        static readonly Dictionary<string, ElementType> second = new Dictionary<string, ElementType>();
+        static readonly Dictionary<AttackInfo, ElementType> dualPick = new Dictionary<AttackInfo, ElementType>();
+        static readonly Dictionary<string, int> dualCount = new Dictionary<string, int>();
 
-        internal static bool Any { get { return infused.Count > 0 || pending.Count > 0 || InfusionUnlocks.AnySelected; } }
+        // From the third section of the castle (or any later loop) on.
+        internal static bool DualAllowed { get { return GameController.tierCount >= 2 || GameController.loopCount >= 1; } }
+        internal static bool InfusedThisRun(string skillID) { return !string.IsNullOrEmpty(skillID) && infused.ContainsKey(skillID); }
+        // The second element of a dual: this run's dual infusion; else (when not infused this run) the pair chosen at
+        // Tomi in the Hub; else a dual version rolled for this run (v0.9.18).
+        internal static bool TryGetSecond(string skillID, out ElementType el)
+        {
+            el = ElementType.Neutral;
+            if (string.IsNullOrEmpty(skillID)) return false;
+            if (second.TryGetValue(skillID, out el)) return true;
+            if (infused.ContainsKey(skillID)) return false;
+            string shuffled;
+            if (runPick.TryGetValue(skillID, out shuffled)) { ElementType? s2 = PickSecond(shuffled); if (s2.HasValue) { el = s2.Value; return true; } return false; }
+            if (InfusionUnlocks.SelectedRaw(skillID) != null)
+            {
+                ElementType? s = InfusionUnlocks.SelectedSecond(skillID);
+                if (s.HasValue) { el = s.Value; return true; }
+                return false;
+            }
+            ElementType[] rolled;
+            if (runDual.TryGetValue(skillID, out rolled)) { el = rolled[1]; return true; }
+            return false;
+        }
+
+        internal static void SetSecond(string skillID, ElementType el)
+        {
+            second[skillID] = el;
+            InfusionUnlocks.Unlock(skillID, el); // the single version of that element unlocks too
+            Plugin.Log.LogInfo("INFUSION " + skillID + " dual: " + Name(infused[skillID]) + " / " + Name(el));
+        }
+
+        internal static bool Any { get { return infused.Count > 0 || pending.Count > 0 || runDual.Count > 0 || runPick.Count > 0 || InfusionUnlocks.AnySelected; } }
+
+        // v0.9.18: dual versions rolled for this run (arcana with 2+ unlocked versions and no version chosen at Tomi).
+        static readonly Dictionary<string, ElementType[]> runDual = new Dictionary<string, ElementType[]>();
+        internal const float RunDualChance = 0.15f;
+
+        // v0.9.19: versions rolled by Nocturne's shuffle (paid randomized build): skill ID -> "" (original), "Fire" or
+        // "Fire+Ice". They win over your Tomi choice for that run.
+        static readonly Dictionary<string, string> runPick = new Dictionary<string, string>();
+
+        internal static void ClearRunDuals() { runDual.Clear(); runPick.Clear(); }
+
+        internal static void RollShuffled(Player p)
+        {
+            if (p == null || p.assignedSkills == null || !Plugin.InfusionEnabled.Value) return;
+            List<string> names = new List<string>();
+            foreach (Player.SkillState s in p.assignedSkills)
+            {
+                if (s == null || string.IsNullOrEmpty(s.skillID)) continue;
+                List<string> opts = InfusionUnlocks.Options(s.skillID);
+                if (opts.Count <= 1) continue;
+                string pick = opts[UnityEngine.Random.Range(0, opts.Count)];
+                runPick[s.skillID] = pick;
+                runDual.Remove(s.skillID);
+                if (pick.Length > 0) names.Add(IntroUI.SkillName(s.skillID) + " (" + InfusionUnlocks.Label(pick) + ")");
+            }
+            Plugin.Log.LogInfo("INFUSION Nocturne's shuffle rolled versions: " + (names.Count > 0 ? string.Join(", ", names.ToArray()) : "all original"));
+            if (names.Count > 0) IntroUI.Show("Shuffled versions", string.Join("  ·  ", names.GetRange(0, Mathf.Min(3, names.Count)).ToArray()) + (names.Count > 3 ? "  ·  ..." : ""), new Color(1f, 0.82f, 0.3f), null, 4f);
+        }
+
+        static ElementType? PickFirst(string raw) { if (string.IsNullOrEmpty(raw)) return null; int plus = raw.IndexOf('+'); return InfusionUnlocks.FromName(plus >= 0 ? raw.Substring(0, plus) : raw); }
+        static ElementType? PickSecond(string raw) { int plus = raw != null ? raw.IndexOf('+') : -1; return plus >= 0 ? InfusionUnlocks.FromName(raw.Substring(plus + 1)) : null; }
+
+        internal static void RollRunDuals()
+        {
+            runDual.Clear();
+            if (!Plugin.InfusionEnabled.Value) return;
+            List<string> names = new List<string>();
+            foreach (string id in InfusionUnlocks.UnlockedIds)
+            {
+                if (InfusionUnlocks.SelectedRaw(id) != null || runPick.ContainsKey(id)) continue; // your choice at Tomi / the shuffle wins
+                List<ElementType[]> pairs = InfusionUnlocks.Pairs(id);
+                if (pairs.Count == 0 || UnityEngine.Random.value >= RunDualChance) continue;
+                runDual[id] = pairs[UnityEngine.Random.Range(0, pairs.Count)];
+                names.Add(IntroUI.SkillName(id) + " (" + Name(runDual[id][0]) + " / " + Name(runDual[id][1]) + ")");
+            }
+            if (names.Count == 0) return;
+            Plugin.Log.LogInfo("INFUSION dual versions this run: " + string.Join(", ", names.ToArray()));
+            IntroUI.Show("Dual versions this run", string.Join("  ·  ", names.GetRange(0, Mathf.Min(3, names.Count)).ToArray()) + (names.Count > 3 ? "  ·  ..." : ""), new Color(1f, 0.82f, 0.3f), null, 4f);
+        }
 
         // This run's infusion, else the version chosen at Tomi in the Hub (an unlocked infused version).
         internal static bool TryGet(string skillID, out ElementType el)
@@ -30,8 +114,12 @@ namespace WolHybridBosses
             el = ElementType.Neutral;
             if (string.IsNullOrEmpty(skillID)) return false;
             if (infused.TryGetValue(skillID, out el)) return true;
+            string shuffled;
+            if (runPick.TryGetValue(skillID, out shuffled)) { ElementType? f = PickFirst(shuffled); if (f.HasValue) { el = f.Value; return true; } return false; }
             ElementType? chosen = InfusionUnlocks.Selected(skillID);
             if (chosen.HasValue) { el = chosen.Value; return true; }
+            ElementType[] rolled;
+            if (runDual.TryGetValue(skillID, out rolled)) { el = rolled[0]; return true; }
             return false;
         }
 
@@ -67,8 +155,8 @@ namespace WolHybridBosses
 
         internal static void Clear()
         {
-            if (infused.Count == 0 && pending.Count == 0) return;
-            infused.Clear(); pending.Clear(); done.Clear();
+            if (infused.Count == 0 && pending.Count == 0 && second.Count == 0) return;
+            infused.Clear(); pending.Clear(); done.Clear(); second.Clear(); dualPick.Clear(); dualCount.Clear();
             Plugin.Log.LogInfo("INFUSION cleared (new run)");
         }
 
@@ -100,6 +188,13 @@ namespace WolHybridBosses
             if (key == "Chaos") return ElementalGiants.ElementColor("Chaos"); // v0.9.15: the same dark purple everywhere
             if (key != null) return ElementRamps.Mid(key);
             return Name(el) == "Prism" ? new Color(1f, 0.55f, 0.9f) : Color.white;
+        }
+
+        // v0.9.18: an arcana's shown colour: a dual version's is the mix of both elements.
+        internal static Color ShownColour(string skillID, ElementType el)
+        {
+            ElementType el2;
+            return TryGetSecond(skillID, out el2) ? Color.Lerp(ColorOf(el), ColorOf(el2), 0.5f) : ColorOf(el);
         }
 
         internal static string RampKey(ElementType el)
@@ -161,6 +256,22 @@ namespace WolHybridBosses
             if (forced) el = ForcedElement.Value;
             else if (!TryGet(atk.atkInfo.skillID, out el)) return false;
             AttackInfo info = atk.atkInfo;
+            // v0.9.16: a dual-infused arcana alternates its two elements cast by cast (decided once per attack info).
+            ElementType el2;
+            if (!forced && TryGetSecond(info.skillID, out el2))
+            {
+                ElementType pick;
+                if (!dualPick.TryGetValue(info, out pick))
+                {
+                    int n;
+                    dualCount.TryGetValue(info.skillID, out n);
+                    dualCount[info.skillID] = n + 1;
+                    pick = n % 2 == 0 ? el : el2;
+                    if (dualPick.Count > 8192) dualPick.Clear();
+                    dualPick[info] = pick;
+                }
+                el = pick;
+            }
             string name = Name(el);
             if (done.Add(info))
             {
@@ -244,10 +355,13 @@ namespace WolHybridBosses
         static void Postfix(string __0, ref Sprite __result)
         {
             if (__result == null || !Infusion.Any) return;
-            ElementType el;
+            ElementType el, el2;
             if (!Infusion.TryGetShown(__0, out el)) return;
             string key = Infusion.RampKey(el);
-            Sprite twin = key != null ? RecolorEngine.Twin(__result, key) : null;
+            // v0.9.18: a dual version's icon shows both elements (split gradient).
+            string key2 = Infusion.TryGetSecond(__0, out el2) ? Infusion.RampKey(el2) : null;
+            Sprite twin = key != null && key2 != null ? RecolorEngine.DualTwin(__result, key, key2) : key != null ? RecolorEngine.Twin(__result, key) : null;
+            if (key2 != null) key = key + "+" + key2;
             if (logged.Add(__0 + "|" + key)) Plugin.Log.LogInfo("INFUSION icon " + __0 + " -> " + key + (twin != null ? " (recoloured)" : " (could not recolour)"));
             if (twin != null) __result = twin;
         }
@@ -276,7 +390,7 @@ namespace WolHybridBosses
                     return;
                 }
                 Infusion.TryGetShown(__0, out el);
-                Color c = Color.Lerp(Color.white, Infusion.ColorOf(el), 0.55f);
+                Color c = Color.Lerp(Color.white, Infusion.ShownColour(__0, el), 0.55f);
                 foreach (SpriteRenderer sr in frames) if (sr != null) sr.color = c;
                 tinted.Add(__instance.GetInstanceID());
             }
@@ -321,7 +435,7 @@ namespace WolHybridBosses
             {
                 if (cards[i] == null) continue;
                 string key = icons[i] != null ? RecolorEngine.KeyOf(icons[i].sprite) : null;
-                cards[i].color = key != null ? Color.Lerp(Color.white, ElementRamps.Mid(key), 0.55f) : Color.white;
+                cards[i].color = key != null ? Color.Lerp(Color.white, ElementRamps.MidOf(key), 0.55f) : Color.white; // v0.9.18: duals mix both
             }
         }
     }
@@ -344,12 +458,20 @@ namespace WolHybridBosses
             {
                 ElementType el;
                 if (__instance == null || !Infusion.Any || !Infusion.TryGetShown(__instance.skillID, out el)) return;
-                Color c = Color.Lerp(Color.white, Infusion.ColorOf(el), 0.55f);
+                Color c = Color.Lerp(Color.white, Infusion.ShownColour(__instance.skillID, el), 0.55f); // v0.9.18: duals mix both
                 foreach (SpriteRenderer sr in __instance.GetComponentsInChildren<SpriteRenderer>(true))
                     if (sr != null && sr.name.IndexOf("Frame", StringComparison.OrdinalIgnoreCase) >= 0) sr.color = c;
             }
             catch (Exception) { }
         }
+    }
+
+    // v0.9.19: Nocturne the Cardist's paid shuffle (Player.RandomizeBuild, via RandRunMod): each shuffled arcana with
+    // unlocked versions lands on one of them at random (original, a single infused version or a dual pair) for the run.
+    [HarmonyPatch(typeof(Player), "RandomizeBuild")]
+    static class InfusionShufflePatch
+    {
+        static void Postfix(Player __instance) { try { Infusion.RollShuffled(__instance); } catch (Exception ex) { Plugin.Log.LogWarning("INFUSION shuffle roll failed: " + ex.Message); } }
     }
 
     // ---------- rare pre-infused drops and stock ----------
@@ -683,9 +805,22 @@ namespace WolHybridBosses
 
         void Say(string m) { message = m; messageUntil = Time.unscaledTime + 3f; }
 
+        // v0.9.16: for the modifiers menu (opened from Tomi's spellbook in the Hub, with its input device).
+        internal static bool MenuOpen { get { return instance != null && instance.Active; } }
+        internal static ChaosInputDevice Device
+        {
+            get
+            {
+                ChaosInputDevice d = null;
+                try { if (instance != null && instance.ui != null) d = Traverse.Create(instance.ui).Field("inputDev").GetValue() as ChaosInputDevice; } catch (Exception) { }
+                if (d == null) { Player p = Elites.Player0; if (p != null) d = p.inputDevice; }
+                return d;
+            }
+        }
+
         void Update()
         {
-            if (!Active) return;
+            if (!Active || ModifiersMenu.IsOpen) return;
             if (!Input.GetKeyDown(KeyCode.I) && !PadPressed()) return;
             Player.SkillState cur = Cursor();
             if (InRun) RunPress(cur); else HubPress(cur);
@@ -724,7 +859,9 @@ namespace WolHybridBosses
             if (cur == keep) { keep = sacrifice = null; Say("Cleared."); return; }
             if (sacrifice != cur)
             {
-                if (Infusion.Name(GiveOf(p, cur)) == Infusion.Name(Infusion.CurrentElement(keep))) { Say("That one has the same element."); return; }
+                ElementType giveEl = GiveOf(p, cur), keepSecond;
+                bool hasSecond = Infusion.TryGetSecond(keep.skillID, out keepSecond);
+                if (Infusion.Name(giveEl) == Infusion.Name(Infusion.CurrentElement(keep)) || (hasSecond && Infusion.Name(giveEl) == Infusion.Name(keepSecond))) { Say("That one has the same element."); return; }
                 if ((cur.isBasic || cur.isDash) && Equipped(p, cur)) { Say("You can't sacrifice your equipped basic or dash."); return; }
                 sacrifice = cur;
                 Say("Press [I] again to infuse for " + TotalCost(p, cur) + " gold.");
@@ -737,8 +874,12 @@ namespace WolHybridBosses
         int TotalCost(Player p, Player.SkillState sac)
         {
             SkillStoreItem item = ShelfOnly(p, sac);
-            return Cost + (item != null ? ShelfPrice(item) : 0);
+            return Cost * (Dual(keep) ? 2 : 1) + (item != null ? ShelfPrice(item) : 0);
         }
+
+        // v0.9.16: late in a run, infusing an arcana already infused this run adds a second element (dual infusion,
+        // double cost); infusing a dual one replaces its second element. Earlier, re-infusing replaces as before.
+        static bool Dual(Player.SkillState k) { return k != null && Infusion.DualAllowed && Infusion.InfusedThisRun(k.skillID); }
 
         static bool Equipped(Player p, Player.SkillState s)
         {
@@ -755,28 +896,31 @@ namespace WolHybridBosses
             if (gold < total || !Player.goldWallet.Withdraw(total)) { Say("Not enough gold (" + total + ")."); return; }
             ElementType give = GiveOf(p, sacrifice);
             string keepId = keep.skillID, sacId = sacrifice.skillID;
+            bool dual = Dual(keep);
             if (fromShelf != null) Consume(fromShelf);
             else
             {
                 try { p.RemoveSkill(sacId); } catch (Exception ex) { Plugin.Log.LogWarning("INFUSION could not remove " + sacId + ": " + ex.Message); }
             }
-            Infusion.Set(keepId, give);
+            ElementType first = Infusion.CurrentElement(keep);
+            if (dual) Infusion.SetSecond(keepId, give); else Infusion.Set(keepId, give);
             try { p.AnnounceSkillChanged(keep); } catch (Exception) { }
             keep = sacrifice = null;
             Refresh(p);
-            Say(Infusion.Name(give) + "-infused " + IntroUI.SkillName(keepId) + "!  (" + IntroUI.SkillName(sacId) + (fromShelf != null ? " was taken from the shelf)" : " was consumed)"));
+            if (dual) Say(IntroUI.SkillName(keepId) + " now alternates " + Infusion.Name(first) + " and " + Infusion.Name(give) + "!  (" + IntroUI.SkillName(sacId) + (fromShelf != null ? " was taken from the shelf)" : " was consumed)"));
+            else Say(Infusion.Name(give) + "-infused " + IntroUI.SkillName(keepId) + "!  (" + IntroUI.SkillName(sacId) + (fromShelf != null ? " was taken from the shelf)" : " was consumed)"));
+            Bounties.Report(BountyKind.Infuse, null); // v0.9.16
             Plugin.Log.LogInfo("INFUSION " + keepId + " took " + Infusion.Name(give) + " from " + sacId + (fromShelf != null ? " (from the shelf)" : "") + " for " + total + " gold");
         }
 
         void HubPress(Player.SkillState cur)
         {
             if (cur == null) { Say("Point the cursor at an arcana."); return; }
-            List<ElementType> versions = InfusionUnlocks.Versions(cur.skillID);
-            if (versions.Count == 0) { Say(IntroUI.SkillName(cur.skillID) + " has no infused versions yet. Infuse it at Tomi during a run."); return; }
-            ElementType? now = InfusionUnlocks.Selected(cur.skillID);
-            int i = now.HasValue ? versions.IndexOf(now.Value) : -1;
-            ElementType? next = i + 1 < versions.Count ? (ElementType?)versions[i + 1] : null;
-            InfusionUnlocks.Select(cur.skillID, next);
+            // v0.9.18: the original, each single version, then each unlocked dual pair.
+            List<string> options = InfusionUnlocks.Options(cur.skillID);
+            if (options.Count <= 1) { Say(IntroUI.SkillName(cur.skillID) + " has no infused versions yet. Infuse it at Tomi during a run."); return; }
+            int i = options.IndexOf(InfusionUnlocks.SelectedRaw(cur.skillID) ?? "");
+            InfusionUnlocks.SelectRaw(cur.skillID, options[(i + 1) % options.Count]);
             Refresh(PlayerOf());
             message = null; // the bar itself shows the chosen version (a second line repeated it and overlapped)
         }
@@ -799,8 +943,9 @@ namespace WolHybridBosses
             if (InRun)
             {
                 Player p = PlayerOf();
-                if (keep == null) line = "<b>[I] Infuse</b>  point at the arcana to keep  ·  cost " + Cost + " gold";
-                else if (sacrifice == null) line = "<b>Keeping " + IntroUI.SkillName(keep.skillID) + "</b>  ·  [I] on the arcana to sacrifice  ·  [I] on it again to clear";
+                if (keep == null) line = "<b>[I] Infuse</b>  point at the arcana to keep  ·  cost " + Cost + " gold" + (Infusion.DualAllowed ? "  ·  an infused arcana takes a second element" : "");
+                else if (sacrifice == null) line = "<b>Keeping " + IntroUI.SkillName(keep.skillID) + "</b>" + (Dual(keep) ? " (dual infusion)" : "") + "  ·  [I] on the arcana to sacrifice  ·  [I] on it again to clear";
+                else if (Dual(keep)) line = "<b>" + IntroUI.SkillName(keep.skillID) + "</b> alternates <b>" + Infusion.Name(Infusion.CurrentElement(keep)) + "</b> and <b>" + Infusion.Name(GiveOf(p, sacrifice)) + "</b>  ·  [I] dual infuse (" + TotalCost(p, sacrifice) + " gold)";
                 else line = "<b>" + IntroUI.SkillName(keep.skillID) + "</b> takes <b>" + Infusion.Name(GiveOf(p, sacrifice)) + "</b> from " + IntroUI.SkillName(sacrifice.skillID) + "  ·  [I] infuse (" + TotalCost(p, sacrifice) + " gold)";
                 // v0.9.6: under the cursor, a card from the merchant's shelf (sacrifice only) and what it costs.
                 SkillStoreItem onShelf = cur != null ? ShelfOnly(p, cur) : null;
@@ -809,9 +954,10 @@ namespace WolHybridBosses
             else
             {
                 List<ElementType> v = cur != null ? InfusionUnlocks.Versions(cur.skillID) : new List<ElementType>();
-                ElementType? sel = cur != null ? InfusionUnlocks.Selected(cur.skillID) : null;
+                int opts = cur != null ? InfusionUnlocks.Options(cur.skillID).Count : 1;
                 line = v.Count == 0 ? "Infused versions you unlock in runs can be chosen here with [I]"
-                    : "<b>[I] Switch version</b>  " + IntroUI.SkillName(cur.skillID) + ": " + (sel.HasValue ? Infusion.Name(sel.Value) + "-infused" : "original") + "  (" + (v.Count + 1) + " versions)";
+                    : "<b>[I] Switch version</b>  " + IntroUI.SkillName(cur.skillID) + ": " + InfusionUnlocks.Label(InfusionUnlocks.SelectedRaw(cur.skillID)) + "  (" + opts + " versions"
+                      + (InfusionUnlocks.Pairs(cur.skillID).Count > 0 ? ", " + InfusionUnlocks.Pairs(cur.skillID).Count + " dual" : "") + ")";
                 if (cur != null) line += "\n" + Memory(cur, v);
             }
             if (message != null && Time.unscaledTime < messageUntil) line += "\n<color=#ffe9a8>" + message + "</color>";
@@ -927,21 +1073,102 @@ namespace WolHybridBosses
             return res;
         }
 
+        // v0.9.18: a chosen version is "Fire" (single) or "Fire+Ice" (a dual pair: any two unlocked singles).
         internal static ElementType? Selected(string skillID)
+        {
+            string raw = SelectedRaw(skillID);
+            if (raw == null) return null;
+            int plus = raw.IndexOf('+');
+            return FromName(plus >= 0 ? raw.Substring(0, plus) : raw);
+        }
+
+        internal static ElementType? SelectedSecond(string skillID)
+        {
+            string raw = SelectedRaw(skillID);
+            int plus = raw != null ? raw.IndexOf('+') : -1;
+            return plus >= 0 ? FromName(raw.Substring(plus + 1)) : null;
+        }
+
+        internal static string SelectedRaw(string skillID)
         {
             Load();
             string n;
-            return skillID != null && selected.TryGetValue(skillID, out n) ? FromName(n) : null;
+            return skillID != null && selected.TryGetValue(skillID, out n) && n.Length > 0 ? n : null;
         }
 
-        internal static void Select(string skillID, ElementType? el)
+        internal static void Select(string skillID, ElementType? el) { SelectRaw(skillID, el.HasValue ? Infusion.Name(el.Value) : null); }
+
+        internal static void SelectRaw(string skillID, string raw)
         {
             Load();
-            if (el.HasValue) selected[skillID] = Infusion.Name(el.Value); else selected.Remove(skillID);
+            if (!string.IsNullOrEmpty(raw)) selected[skillID] = raw; else selected.Remove(skillID);
             Save();
         }
 
-        static ElementType? FromName(string n)
+        // Everything Tomi can switch an arcana to: the original (""), each single version, each dual pair.
+        internal static List<string> Options(string skillID)
+        {
+            List<string> opts = new List<string> { "" };
+            List<ElementType> v = Versions(skillID);
+            foreach (ElementType e in v) opts.Add(Infusion.Name(e));
+            foreach (ElementType[] p in Pairs(skillID)) opts.Add(Infusion.Name(p[0]) + "+" + Infusion.Name(p[1]));
+            return opts;
+        }
+
+        // Dual pairs: v0.9.19: the arcana's own element counts, so one infused version already gives a pair
+        // (Stone Fist + Fire-infused = Earth / Fire); two infused versions add a pair of those two, and so on. Prism is
+        // never part of a pair (it already cycles through the five elements). A Neutral arcana has no own element.
+        internal static List<ElementType[]> Pairs(string skillID)
+        {
+            List<ElementType> v = Versions(skillID);
+            v.RemoveAll(e => Infusion.Name(e) == "Prism");
+            List<ElementType[]> res = new List<ElementType[]>();
+            ElementType? own = OwnElement(skillID);
+            if (own.HasValue) foreach (ElementType e in v) if (Infusion.Name(e) != Infusion.Name(own.Value)) res.Add(new[] { own.Value, e });
+            for (int i = 0; i < v.Count; i++) for (int j = i + 1; j < v.Count; j++) res.Add(new[] { v[i], v[j] });
+            return res;
+        }
+
+        // The arcana's own element (the player's skill state when known, else the catalog), null for Neutral / Prism.
+        internal static ElementType? OwnElement(string skillID)
+        {
+            ElementType el = ElementType.Neutral;
+            bool found = false;
+            try
+            {
+                Player p = Elites.Player0;
+                Player.SkillState s;
+                if (p != null && p.skillsDict != null && p.skillsDict.TryGetValue(skillID, out s) && s != null) { el = s.element; found = true; }
+            }
+            catch (Exception) { }
+            if (!found)
+            {
+                ArcanaDef d = ArcanaCatalog.Get(skillID);
+                if (d != null)
+                    switch (d.Element)
+                    {
+                        case "Flame": el = ElementType.Fire; break;
+                        case "Frost": el = ElementType.Water; break;
+                        case "Earth": el = ElementType.Earth; break;
+                        case "Wind": el = ElementType.Air; break;
+                        case "Thunder": el = ElementType.Lightning; break;
+                        case "Chaos": el = ElementType.Chaos; break;
+                    }
+            }
+            string n = Infusion.Name(el);
+            if (el == ElementType.Neutral || n == "Prism" || FromName(n) == null) return null;
+            return FromName(n);
+        }
+
+        internal static IEnumerable<string> UnlockedIds { get { Load(); return new List<string>(unlocked.Keys); } }
+
+        internal static string Label(string raw)
+        {
+            if (string.IsNullOrEmpty(raw)) return "original";
+            return raw.Contains("+") ? raw.Replace("+", " / ") + " dual" : raw + "-infused";
+        }
+
+        internal static ElementType? FromName(string n)
         {
             switch (n)
             {

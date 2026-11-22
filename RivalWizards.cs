@@ -164,12 +164,13 @@ namespace WolHybridBosses
             if (echo)
             {
                 if (RivalLoadout.UseOutfit(mk.Bonus, mk.Echo.Outfit, out mk.OutfitID, out mk.RobeColor)) RivalLoadout.ApplyRobeColor(e, mk.RobeColor);
-                mk.RelicID = RivalLoadout.UseRelics(mk.Bonus, mk.Echo.Relics);
+                mk.RelicIDs = RivalLoadout.UseRelics(mk.Bonus, mk.Echo.Relics);
+                mk.RelicID = mk.RelicIDs.Count > 0 ? mk.RelicIDs[0] : null;
                 EchoRival.Infusions(e, mk);
             }
             else if (Plugin.RivalRobes.Value && RivalLoadout.PickOutfit(mk.Bonus, out mk.OutfitID, out mk.RobeColor))
                 RivalLoadout.ApplyRobeColor(e, mk.RobeColor);
-            if (!echo && Plugin.RivalRelics.Value) mk.RelicID = RivalLoadout.PickRelic(mk.Bonus);
+            if (!echo && Plugin.RivalRelics.Value) { mk.RelicID = RivalLoadout.PickRelic(mk.Bonus); if (mk.RelicID != null) mk.RelicIDs = new List<string> { mk.RelicID }; }
             mk.Bonus.Clamp();
             RivalLoadout.ApplyStats(e, mk.Bonus);
 
@@ -223,6 +224,8 @@ namespace WolHybridBosses
             }
             else mk.Arcana = PickVaried(pool, TierArcanaCount(mk.Tier), mk.Prefix == "Chaos");
             if (echo) mk.Arcana = EchoRival.Arcana(mk, pool, TierArcanaCount(mk.Tier)); // the last run's arcana
+            if (mk.Grudge != null) Grudges.InfuseKit(e, mk); // v0.9.17: a rematch rival: some of its arcana infused
+            if (!echo) Grudges.DualKit(e, mk); // v0.9.18: Archons sometimes, Hard rivals rarely, cast dual-infused arcana
             mk.Signature = PickSignature(mk, (mk.Prefix == "Chaos" && ChaosStages.Planned) ? ArcanaCatalog.PoolExact("Chaos") : pool);
             EnemyArcana.Give(e, mk.Arcana, TierCooldown(mk.Tier) * mk.Bonus.Cooldown, TierWindup(mk.Tier));
 
@@ -241,6 +244,9 @@ namespace WolHybridBosses
 
             // Unstuck watchdog: a rival that "runs" without moving while the player is out of reach dashes at them.
             e.gameObject.AddComponent<RivalUnstuck>().Owner = e;
+
+            // v0.9.21: holder-only relics run for real in the rival's own inventory (after its stats and HP are set).
+            RivalLoadout.EquipReal(e, mk.RelicIDs);
 
             Plugin.Log.LogInfo("RIVAL " + mk.Prefix + " pool: " + pool.Count + " arcana, basic " + (mk.Basic != null ? mk.Basic.SkillID : "none")
                 + ", dash " + (mk.Dash != null ? mk.Dash.SkillID : "none") + " (of " + dashes.Count + "), signature "
@@ -294,7 +300,7 @@ namespace WolHybridBosses
                 if (robe == null) ie.Tint = new Color(0.7f, 0.5f, 1f);
                 list.Add(ie);
             }
-            if (mk.RelicID != null) list.Add(new IntroEntry(IntroUI.ItemIcon(mk.RelicID), IntroUI.ItemName(mk.RelicID)));
+            foreach (string rid in mk.RelicIDs) list.Add(new IntroEntry(IntroUI.ItemIcon(rid), IntroUI.ItemName(rid) + (RivalLoadout.IsCursed(rid) ? " (cursed)" : ""))); // v0.9.21: every relic it carries
             return list;
         }
 
@@ -419,9 +425,13 @@ namespace WolHybridBosses
         public float GapMultiplier = 1f; // champions' second phase casts faster
         public string SecondPrefix;      // an Archon's second element after its phase shift
         public EchoRecord Echo;          // v0.9.0: the Echo of the player's last run (its loadout)
+        public GrudgeRecord Grudge;      // v0.9.17: a rematch rival
+        public Dictionary<string, ElementType> Infused; // v0.9.17: its arcana cast infused (skill ID -> element)
+        public Dictionary<string, ElementType> InfusedSecond; // v0.9.18: the second element of its dual arcana
         public bool ArenaArchon;         // a champion from a rival arena's Hard portal (not replacing Sura)
         public RivalBonus Bonus = new RivalBonus();
         public string OutfitID, RelicID;
+        public List<string> RelicIDs = new List<string>(); // v0.9.21: every relic it carries (the Echo up to 4)
         public int RobeColor = -1;
     }
 

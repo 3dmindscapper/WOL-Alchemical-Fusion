@@ -51,6 +51,15 @@ namespace WolHybridBosses
 
         internal static Color Mid(string key) { return Sample(key, 0.6f); }
 
+        // v0.9.18: a twin's key may be a dual pair ("Fire+Ice"): the mix of both mids.
+        internal static Color MidOf(string key)
+        {
+            if (key == null) return Color.white;
+            int plus = key.IndexOf('+');
+            if (plus < 0) return Mid(key);
+            return Color.Lerp(Mid(key.Substring(0, plus)), Mid(key.Substring(plus + 1)), 0.5f);
+        }
+
         // Ramp key for a variant (Prism attacks use their cycle element's key instead).
         internal static string ForVariant(StageVariant v)
         {
@@ -187,6 +196,62 @@ namespace WolHybridBosses
                 failed.Add(sid);
                 return null;
             }
+        }
+
+        // v0.9.18: a dual version's icon / card art: the first element's ramp on one side, the second's on the other,
+        // blended diagonally across the middle (bottom-left -> top-right), so both read at a glance. Rect sprites
+        // (icons and card art are); tightly packed ones fall back to the first element's twin. Cached per
+        // (sprite, pair); the twin's name carries "A+B" (KeyOf).
+        internal static Sprite DualTwin(Sprite src, string keyA, string keyB)
+        {
+            if (src == null || !ElementRamps.Has(keyA) || !ElementRamps.Has(keyB)) return null;
+            int sid = src.GetInstanceID();
+            if (made.Contains(sid)) return src;
+            string pair = keyA + "+" + keyB;
+            string k = sid + "|" + pair;
+            Sprite tw;
+            if (twins.TryGetValue(k, out tw)) return tw;
+            try
+            {
+                Rect probe = src.textureRect;
+            }
+            catch (Exception) { return Twin(src, keyA); }
+            try
+            {
+                Texture2D tex = src.texture;
+                if (tex == null) return null;
+                Rect r = src.textureRect;
+                int x0 = Mathf.RoundToInt(r.x), y0 = Mathf.RoundToInt(r.y), rw = Mathf.RoundToInt(r.width), rh = Mathf.RoundToInt(r.height);
+                if (rw <= 0 || rh <= 0) return null;
+                Color32[] atlas = AtlasPixels(tex);
+                Color32[] px = new Color32[rw * rh];
+                for (int y = 0; y < rh; y++)
+                    for (int x = 0; x < rw; x++)
+                    {
+                        int ai = (y0 + y) * tex.width + (x0 + x);
+                        if (ai < 0 || ai >= atlas.Length) continue;
+                        Color32 c = atlas[ai];
+                        if (c.a == 0) { px[y * rw + x] = c; continue; }
+                        float t = ((float)x / Mathf.Max(1, rw - 1) + (float)y / Mathf.Max(1, rh - 1)) * 0.5f;
+                        float blend = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.4f, 0.6f, t));
+                        Color o = Color.Lerp(ElementRamps.Map(keyA, c), ElementRamps.Map(keyB, c), blend);
+                        o.a = c.a / 255f;
+                        px[y * rw + x] = o;
+                    }
+                Texture2D outTex = new Texture2D(rw, rh, TextureFormat.RGBA32, false);
+                outTex.SetPixels32(px);
+                outTex.filterMode = tex.filterMode;
+                outTex.wrapMode = TextureWrapMode.Clamp;
+                outTex.Apply(false);
+                outTex.name = src.name + " (" + pair + ")";
+                Vector2 pivotPx = src.pivot - src.textureRectOffset;
+                tw = Sprite.Create(outTex, new Rect(0, 0, rw, rh), new Vector2(pivotPx.x / rw, pivotPx.y / rh), src.pixelsPerUnit, 0, SpriteMeshType.FullRect);
+                tw.name = src.name + " (" + pair + ")";
+                made.Add(tw.GetInstanceID());
+                twins[k] = tw;
+                return tw;
+            }
+            catch (Exception) { return Twin(src, keyA); }
         }
 
         // A whole atlas recoloured onto a ramp, cached per (atlas, ramp).

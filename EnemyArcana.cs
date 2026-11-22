@@ -176,7 +176,7 @@ namespace WolHybridBosses
             // v0.9.0: the Echo of your last run casts your infused arcana in their infused element and colours.
             EchoInfusions echo = owner != null ? owner.GetComponent<EchoInfusions>() : null;
             ElementType echoEl;
-            if (echo != null && echo.Map.TryGetValue(d.SkillID, out echoEl))
+            if (echo != null && echo.TryNext(d.SkillID, out echoEl)) // v0.9.18: dual arcana alternate
             {
                 try
                 {

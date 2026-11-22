@@ -407,6 +407,7 @@ namespace WolHybridBosses
             Vector2 at = e != null ? (Vector2)e.transform.position : (Vector2)transform.position;
             try { LootManager.DropGold(at, Mathf.RoundToInt((30 + 15 * Tier) * mult)); } catch (Exception) { }
             Plugin.Log.LogInfo("MINIBOSS " + MinibossFights.Title(Fight) + " defeated");
+            if (e == null || e.health == null || e.health.CurrentHealthValue <= 0) Bounties.Report(BountyKind.Special, null); // v0.9.16
         }
     }
 

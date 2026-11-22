@@ -71,6 +71,92 @@ Cloning the player GameObject and driving it from script failed:
 - v0.0.7 tested: summon swap works (logged EarthKnight, FlameLancer etc.). SuperCoffin goes **pink** on palettes 4–8, so its sheet has no elemental rows: keep palette 3 and tint or outline it (MiniBoss uses `_OutlineColor`/`_OutlineColor2`). The user wants the coffin (and rivals) to cast **player arcana** instead.
 - Arcana research: `Contestant : Enemy` (PvP wizard) reimplements Tornado/SwordThrow/Fireball as its own states (ctor typed to Contestant). Its FireballState instantiates the prefab and calls `Attack.SetAttackInfo("Player", "ShootFireball", level, isUltimate)`, the same call player arcana make (e.g. `UseFireBeam.CreateFireBeam`: `FireBeam.Prefab` + `ChaosInst` + `SetAttackInfo`). There are 100 `Player+Use*` arcana. Plan: our own data-driven `ArcanaState : Enemy.SkillState` (skillID, prefab, delivery type). See ROADMAP "Enemy Arcana".
 
+## v0.9.21: real relics on rivals where safe; cursed relics
+- **Relics work on any entity:** `Entity.InitComponents` gives every entity an `Inventory`. `Inventory.AddItem` sets `Item.parentEntity` and calls `Activate`.
+- **But most relics aren't holder-only.** An offline IL scan of all 367 relic classes (their own and base methods) flagged 326 as unsafe: they read `parentPlayer`, call into Player / LootManager / GameController / Wallet / GameUI, touch those classes' statics or Enemy statics, or call `StatManager` (category-wide stat data). The flagged set includes, for example, `DamageUp` → `StatManager.ModifyAllStatData(parentSkillCategory, ...)`. Rivals use the shared enemy category and cast arcana loaded from the "Player" category, so running these on a rival would buff every enemy or the player.
+- **Real relics (`RivalLoadout.RealOnRival`):** 29 classes only touch `parentEntity`; 27 of them are used (`HealthUp` / `HealthUpWithDefRelics` are left out because the rival's HP Override mod would cancel them). Those go into the rival's own inventory via `EquipReal(e, mk.RelicIDs)` (`AddItem(id, false, false)`), called at the end of `MakeHostile` after stats and HP. They aren't also translated to stats.
+- **Everything else** keeps the stat translation (`RelicEffects`, else name pattern, else category).
+- **Cursed relics:** now in the pool (`cursedIds`), with an extra trade-off of ×1.15 damage and ×0.88 HP, on top of their effect.
+- **Intro and loadout:** `RivalMarker.RelicIDs` holds every relic it carries (the Echo up to 4, from `UseRelics`, which now returns the list). The intro row lists them all, with "(cursed)" where it applies.
+
+## v0.9.20: rivals use every relic; rival voice lines; no ailment bridge
+- **Ailment bridge: not added.** The user's condition was "only if Arcanos always applies them with its arcana". Arcanos' own descriptions show the ailments are per-arcana design (e.g. one geyser arcana: "of water: soaks"; Refraction: "the reflection of that element"), not every arcana of an element, so the condition isn't met.
+- **Relics (RivalLoadout.cs):** `BuildRelicTable` now admits every relic that isn't cursed, `hubOnly`, `combineOnly` or `isGroupItem` (not just the 29 with a stat match).
+  - `relicEffectById` stores each relic's effect. The exact `RelicEffects` stay; others get `EffectFor(class, category)`:
+    - Resistance / Armor / Defense / Shield / Guard / Immune → +8% armour
+    - Evade / Parry / Invulnerable → +8% evade
+    - Crit → +10% crit
+    - Health / HP / Regen / Heal / Vampire / Resurrect → ×1.1 HP
+    - Cooldown / CD / Overdrive / Charge / Combo → ×0.92 cooldowns
+    - Speed / Dash / Move → ×1.08 speed
+    - Damage / Aura / Chance / Level / Explosion / Bomb / Stanza → ×1.08 damage
+    - anything else, by category: Offense ×1.06 damage, Defense ×1.08 HP, Misc ×0.95 cooldowns
+  - `PickRelic` / `UseRelics` (random rivals and the Echo, whose relics now all count) go through `ApplyRelic`. `RivalBonus.Clamp` still caps the totals.
+- **RivalSpeech.cs:** `RivalSpeech.Say(speaker, line, colour)` draws a typed-out dialog box at the bottom of the screen (game font, element-coloured edge, one at a time).
+  - `RivalLines` holds 3 lines × greet / half-health / defeat for each prefix (Flame, Frost, Earth, Wind, Thunder, Chaos, Radiant, Prism), plus Echo and Archon sets, rematch greetings and rematch promises.
+  - `RivalEvent.Run` says the greeting after the intro card and adds `RivalBanter`, which says the half-health line once and the defeat line on death.
+  - `Grudges.MaybeRecord` now returns bool. Its "This isn't over" card was replaced by a spoken promise 3s after the defeat line.
+
+## v0.9.19: original element pairs, no Prism pairs, Nocturne's shuffle rolls versions
+- **Pairs:** `InfusionUnlocks.Pairs` now pairs the arcana's own element with each unlocked infused version (Stone Fist + Fire-infused = Earth / Fire), plus every pair of infused versions.
+  - Prism is excluded from pairs (it already cycles the five elements); it stays a single version.
+  - `OwnElement`: the player's `skillsDict` element, else the catalog prefix; null for Neutral / Prism.
+  - Tomi's bar shows "N dual" whenever any pair exists.
+- **Nocturne the Cardist's paid shuffle** is `Player.RandomizeBuild` (called by `RandRunMod.Activate`). The `InfusionShufflePatch` postfix → `Infusion.RollShuffled`: each assigned arcana with unlocked versions picks uniformly among `Options` (original, singles, pairs) into `runPick`, shown on a "Shuffled versions" card.
+  - Lookup order: `runPick` wins over the Tomi choice and the rolled run dual (`TryGet`, `TryGetSecond`).
+  - Cleared on Hub arrival with the run duals. `RollRunDuals` skips shuffled arcana.
+- **Arcanos ailments (research):** Soaked (`Empapado`), Magnetized (`Magnetizado`), Cracked (`Agrietado`), Swirled (`Arremolinado`), Muddied (`Embarrado`), Spored (`Esporado`), Burns (`Quemaduras`), Encased (`EncerradoEnHielo`), Rusted (`Oxidado`), plus `Alteraciones` (slow / electrocute).
+  - They're applied only by Arcanos' own arcana, relics and robes (`Empapado.Empapar` has about 43 callers, all Arcanos skills), never by element type, and only to enemies.
+  - Their payoffs are stat mods on the enemy (Soaked: `modificadorRayo`; Magnetized: `masPiedra` / `masRayo`) and a freeze prefix (`ParcheEmpapado.AntesDeCongelar`). Hits of those elements from any source, including our infusions and elemental attacks, should benefit (unverified in game).
+  - We never apply them ourselves, and enemies never apply them to the player.
+
+## v0.9.18: permanent dual versions (built, not yet run in game)
+- **Unlocks (`InfusionUnlocks`):** once an arcana has 2+ unlocked single versions, every pair of them is a dual version (`Pairs`). The chosen version in osi.wol.hybridbosses.infusions.txt is now "Fire" or "Fire+Ice"; old files still read. Helpers: `SelectedRaw`/`SelectRaw`, `Selected` (first element), `SelectedSecond`, `Options` (original, singles, pairs), `Label` ("Fire / Ice dual"), and `FromName` (now internal).
+- **Hub, Tomi:** [I] / pad buttons cycle through all `Options`. The hint bar shows the choice and "N versions, M dual", or "unlock one more for duals".
+- **In runs:** `Infusion.TryGetSecond` reads, in order:
+  1. this run's dual infusion (`second`);
+  2. nothing, if the arcana was infused this run (a run infusion overrides the Hub choice);
+  3. the Hub-chosen pair;
+  4. a rolled run dual.
+
+  `ApplyToAttack` alternates through `TryGetSecond`.
+- **Random duals:** on leaving the Hub, `BountyBoard` → `Infusion.RollRunDuals`. Each unlocked arcana with pairs and no Hub choice has a 15% chance (`RunDualChance`) of a random pair for the run (`runDual`, read by `TryGet` and `TryGetSecond`), announced on a "Dual versions this run" card. They're cleared on Hub arrival. `Infusion.Any` counts them.
+- **Enemies:** `Grudges.DualKit` (in `MakeHostile`, not the Echo) makes each arcana dual at 20% for Archons / final champions (`Tier == Final` or `ArenaArchon`) and 7% for Hard rivals: two different `RandomOther` elements in `EchoInfusions.Map` / `Second`.
+  - `EchoInfusions.TryNext` alternates per attack (`MakeEnemyAttack`).
+  - The intro row reads "Fire / Ice dual X" (`RivalMarker.InfusedSecond`).
+- **Looks:**
+  - `RecolorEngine.DualTwin(src, keyA, keyB)`: rect sprites, with A's ramp bottom-left and B's top-right, smoothstep-blended across 0.4–0.6 of the diagonal. Named "(A+B)" so `KeyOf` returns the pair. Tight sprites fall back to A.
+  - The icon patch uses it when `TryGetSecond` gives a second element.
+  - Card frames, the stock frame and Tomi's card tint use `Infusion.ShownColour` / `ElementRamps.MidOf`, the mix of both elements' colours.
+
+## v0.9.17: grudges become rematches (no more stealing)
+- The v0.9.16 flee-and-steal is gone (`RivalGrudge` removed; `RivalEvent.Fled` is unused).
+- **Recording a rematch:** after a non-Echo, non-Archon rival dies, `Grudges.MaybeRecord` rolls `RivalWizards.GrudgeChance` (0.3). It records `Pending` (prefix, tier + 1, capped at Hard), with a "This isn't over" card.
+- **The return:** each later generated stage opens the rematch portal with a 60% chance (`Grudges.OpenChance`), with the card "A rival wants a rematch".
+- **The rematch rival:** `RivalMarker.Grudge` triggers `Grudges.InfuseKit` in `MakeHostile`, giving each arcana a 40% chance of `Infusion.RandomOther`. It's stored in `EchoInfusions` (`MakeEnemyAttack` converts and recolours, as for the Echo) and in `RivalMarker.Infused`, so the intro row reads "Fire-infused X" via `EchoRival.Named`.
+- **Drops on its death (`GrudgeReturn`):** 12% an infused arcana (its infused element, via `SetPending`), else 35% a regular one. Picked from its arcana that are unlocked and not held.
+- **Limits:** one pending at a time, and it ends with the run. The menu row is now "Rival rematches".
+
+## v0.9.16: dual infusion, bounties, rival grudges, modifiers menu (built, not yet run in game)
+- **Dual infusion (Infusion.cs):**
+  - From the third section (`tierCount >= 2`) or any later loop (`Infusion.DualAllowed`), infusing an arcana already infused this run adds a second element: `SetSecond`, stored in `second`, double cost (`TomiInfusion.Dual` / `TotalCost`). Infusing a dual one replaces its second element. Earlier in a run, re-infusing replaces as before.
+  - `ApplyToAttack` alternates the two elements per cast. The pick is decided once per AttackInfo (`dualPick`, `dualCount` per skill), then the usual status, recolour and +10% (once) apply.
+  - Same-element checks cover both elements. Dual versions are run-only, but the added element's single version unlocks. Cleared in the Hub.
+- **Bounties.cs:**
+  - `BountyBoard` (added by `EchoRecorder.Ensure`) rolls one bounty on Hub arrival, only from systems that are on: Elite (a given trait), Elites ×5, Special mini-boss, Rival, Trial, Infuse ×2.
+  - Shown top left in the Hub; during a run, for 6s at the start and 5s after each step. Completion drops 60 + 30/tier gold with a card.
+  - Reports come from: `EliteMark.OnDeath`, `MinibossRunner.Gold` (only when the boss actually died), a plain Giant Cyclops's death, `RivalEvent.Run` (not if the rival fled), `TrialEvent.EndTrial(true)` and `TomiInfusion.Infuse`.
+- **Grudges.cs:**
+  - **Flee:** a Medium/Hard rival (not the Echo, not an Archon, no grudge pending) rolls `RivalWizards.GrudgeChance` (0.3) to get `RivalGrudge`. At ≤30% HP it flees: it steals a random equipped standard arcana (`p.RemoveSkill`; else 60 + 30/tier gold) and records `Grudges.Pending` (prefix, tier → Hard). It's removed via `BossKit.Remove`, so no chest, and `RivalEvent.Fled` is set.
+  - **Return:** the next generated stage forces the rival portal (`OnLevelGenerated` → `Open(..., grudge)`): the same prefix, no Echo or Archon, "The rival who fled is back". `RivalMarker.Grudge` puts the stolen arcana first in its kit (if castable).
+  - **Settle:** `GrudgeReturn` drops the stolen arcana on its death (its infusion is still in the run map), or double the stolen gold.
+  - A grudge ends with the run (`BountyBoard` on Hub arrival → `Grudges.EndRun`).
+- **ModifiersMenu.cs (Hub only):**
+  - Opens with F1, or with `Modifiers.Button` (default Skill4) while Tomi's spellbook is open (`TomiInfusion.MenuOpen`, using `TomiInfusion.Device` for input). Tomi's own [I] handling pauses while it's open.
+  - Rows are config toggles, or chances stepped through presets (0 = Off). Writes go straight to the `ConfigEntry` (BepInEx saves) and apply from the next roll.
+  - Keys: Up/Down (W/S), Left/Right/Enter/Space to change, F1/Esc to close. Pad: Skill1/Skill2 move, Skill3 changes, Modifiers button or Cancel closes.
+- **New config:** `Bounties.Enabled`, `RivalWizards.GrudgeChance`, `Modifiers.Button`.
+
 ## v0.9.15: polish-pass fixes; trial portal in the start room
 - **Rewards no longer duplicate held arcana.** Trials, variant chests (`VariantRewards.PickUnlocked`) and the Council's variant / infused drops (`PickVariantArcana`) checked `LootManager.currentPlayerSkills`, which the game never fills. They use `TomiInfusion.HeldIds()` now: equipped plus stock, without the shop shelf (`OwnedIds(p, includeShelf: false)`).
 - **Giant Cyclops on Chaos stages:** `ChaosEnemies.IsChaosType` excludes giant cyclops. Since Cyclops joined `ChaosTypes`, `ChaosRegularEnemyPatch` armed the giant as a regular (1 arcana, purple row) one frame before its own setup, so `ChaosGiants.Apply` was skipped.

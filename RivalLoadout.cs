@@ -1,6 +1,7 @@
-﻿using System;
+using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 using HarmonyLib;
 using UnityEngine;
@@ -144,10 +145,69 @@ namespace WolHybridBosses
         };
 
         static Dictionary<string, string> relicClassById; // relic ID -> Item class name (eligible ones only)
+        static Dictionary<string, Action<RivalBonus>> relicEffectById; // v0.9.20: relic ID -> its effect on a rival
+
+        // v0.9.20 / v0.9.21: every relic a player can find (cursed ones too; not Hub-only, not a set piece or set) is usable
+        // by rivals. v0.9.21: the relics whose code only touches their holder (armour, evade, resistances, move speed,
+        // shields... 29 found by scanning every relic class for reads of the player, the shop / wallet / loot, global
+        // statics or the shared skill-category stats) are put in the rival's own inventory and run for real, exactly as on
+        // the player (minus the max-HP ones, which the rival's HP override would cancel). The rest would buff the player or
+        // every enemy if run on a rival, so they keep a stat translation: their exact match (RelicEffects), else a smaller
+        // bonus from what their name says they do, else from their category. Cursed relics add their trade-off: harder
+        // hits, less health.
+        static readonly HashSet<string> RealOnRival = new HashSet<string>
+        {
+            "AirResistanceUp", "ArmorHPUpWithCursedRelics", "ArmorUp", "ArmorUpWithInventoryCount", "CapDamageItem", "CritHealChanceUp",
+            "CritHealChanceUpLow", "DefenseUpOnTakeDamage", "DoctorPrescription", "EarthResistanceUp", "ElementalResistanceUp",
+            "ElementalResistanceUpOnHurt", "EvadeCrit", "EvadeUp", "EvadeUpEnemyDamageUp", "FireResistanceUp", "HeadgearItem", "IgnorePits",
+            "LightningResistanceUp", "MoveSpeedUp", "OnTakeDamageItem", "OverhealGrantsShield", "ReduceHitStun", "SequenceDefense", "ShieldUp",
+            "ShockShield", "WaterResistanceUp",
+        };
+        static HashSet<string> realIds = new HashSet<string>(), cursedIds = new HashSet<string>();
+
+        internal static bool IsReal(string id) { return id != null && realIds.Contains(id); }
+        internal static bool IsCursed(string id) { return id != null && cursedIds.Contains(id); }
+
+        static Action<RivalBonus> EffectFor(string cls, Item.Category cat, bool cursed)
+        {
+            Action<RivalBonus> baseEffect = BaseEffect(cls, cat);
+            if (!cursed) return baseEffect;
+            return b => { baseEffect(b); b.Damage *= 1.15f; b.Hp *= 0.88f; };
+        }
+
+        static Action<RivalBonus> BaseEffect(string cls, Item.Category cat)
+        {
+            Action<RivalBonus> a;
+            if (RelicEffects.TryGetValue(cls, out a)) return a;
+            string n = cls;
+            if (n.Contains("Resistance") || n.Contains("Armor") || n.Contains("Defense") || n.Contains("Shield") || n.Contains("Guard") || n.Contains("Immune")) return b => b.Armor += 0.08f;
+            if (n.Contains("Evade") || n.Contains("Parry") || n.Contains("Invulnerab")) return b => b.Evade += 0.08f;
+            if (n.Contains("Crit")) return b => b.Crit += 0.1f;
+            if (n.Contains("Health") || n.Contains("HP") || n.Contains("Regen") || n.Contains("Heal") || n.Contains("Vampir") || n.Contains("Resurrect")) return b => b.Hp *= 1.1f;
+            if (n.Contains("Cooldown") || n.Contains("CD") || n.Contains("Overdrive") || n.Contains("Charge") || n.Contains("Combo")) return b => b.Cooldown *= 0.92f;
+            if (n.Contains("Speed") || n.Contains("Dash") || n.Contains("Move")) return b => b.Speed *= 1.08f;
+            if (n.Contains("Damage") || n.Contains("Aura") || n.Contains("Chance") || n.Contains("Level") || n.Contains("Explosion") || n.Contains("Bomb") || n.Contains("Stanza")) return b => b.Damage *= 1.08f;
+            switch (cat)
+            {
+                case Item.Category.Offense: return b => b.Damage *= 1.06f;
+                case Item.Category.Defense: return b => b.Hp *= 1.08f;
+                default: return b => b.Cooldown *= 0.95f;
+            }
+        }
+
+        static void ApplyRelic(RivalBonus bonus, string id)
+        {
+            if (IsReal(id)) { if (IsCursed(id)) { bonus.Damage *= 1.15f; bonus.Hp *= 0.88f; } return; } // runs for real (EquipReal)
+            Action<RivalBonus> a;
+            if (relicEffectById != null && relicEffectById.TryGetValue(id, out a)) a(bonus);
+        }
 
         static void BuildRelicTable()
         {
             relicClassById = new Dictionary<string, string>();
+            relicEffectById = new Dictionary<string, Action<RivalBonus>>();
+            realIds = new HashSet<string>();
+            cursedIds = new HashSet<string>();
             IEnumerable ids = null;
             try { ids = Traverse.Create(typeof(LootManager)).Field("availableItemIDList").GetValue() as IEnumerable; } catch (Exception) { }
             if (ids == null || !ids.GetEnumerator().MoveNext())
@@ -166,15 +226,18 @@ namespace WolHybridBosses
                 if (string.IsNullOrEmpty(id)) continue;
                 try
                 {
-                    if (Item.IsCursedItem(id)) continue;
                     Item it = Item.CreateItem(id);
-                    if (it == null) continue;
+                    if (it == null || it.hubOnly || it.combineOnly || it.isGroupItem) continue;
                     string cls = it.GetType().Name;
-                    if (RelicEffects.ContainsKey(cls)) relicClassById[id] = cls;
+                    bool cursed = it.isCursed || Item.IsCursedItem(id);
+                    relicClassById[id] = cls;
+                    relicEffectById[id] = EffectFor(cls, it.category, cursed);
+                    if (cursed) cursedIds.Add(id);
+                    if (RealOnRival.Contains(cls)) realIds.Add(id);
                 }
                 catch (Exception) { }
             }
-            Plugin.Log.LogInfo("RIVAL relic pool: " + relicClassById.Count + " stat relics");
+            Plugin.Log.LogInfo("RIVAL relic pool: " + relicClassById.Count + " relics (" + realIds.Count + " run for real on the rival, " + cursedIds.Count + " cursed)");
         }
 
         // v0.9.0 Echo: a given robe (the player's last run), with its colour row and stat mods.
@@ -192,22 +255,32 @@ namespace WolHybridBosses
             return true;
         }
 
-        // v0.9.0 Echo: the given relics that translate to rival stats (up to 4); returns the first one, for the intro.
-        internal static string UseRelics(RivalBonus bonus, List<string> ids)
+        // v0.9.0 Echo: the given relics (up to 4); returns the ones used (the first shows on the intro).
+        internal static List<string> UseRelics(RivalBonus bonus, List<string> ids)
         {
+            List<string> used = new List<string>();
             if (relicClassById == null || relicClassById.Count == 0) BuildRelicTable();
-            if (relicClassById == null || ids == null) return null;
-            string first = null;
-            int used = 0;
+            if (relicClassById == null || ids == null) return used;
             foreach (string id in ids)
             {
-                string cls;
-                if (used >= 4 || id == null || !relicClassById.TryGetValue(id, out cls)) continue;
-                RelicEffects[cls](bonus);
-                if (first == null) first = id;
-                used++;
+                if (used.Count >= 4 || id == null || !relicClassById.ContainsKey(id) || used.Contains(id)) continue;
+                ApplyRelic(bonus, id);
+                used.Add(id);
             }
-            return first;
+            return used;
+        }
+
+        // v0.9.21: the holder-only relics go into the rival's own inventory (Entity.inventory), where the game activates
+        // them on it as it would on the player. Called once its stats and HP are set.
+        internal static void EquipReal(Enemy e, List<string> ids)
+        {
+            if (e == null || ids == null || e.inventory == null) return;
+            foreach (string id in ids)
+            {
+                if (!IsReal(id)) continue;
+                try { e.inventory.AddItem(id, false, false); Plugin.Log.LogInfo("RIVAL wears " + id + " (real relic)"); }
+                catch (Exception ex) { Plugin.Log.LogWarning("RIVAL could not wear " + id + ": " + ex.Message); }
+            }
         }
 
         internal static string PickRelic(RivalBonus bonus)
@@ -216,7 +289,7 @@ namespace WolHybridBosses
             if (relicClassById == null || relicClassById.Count == 0) return null;
             List<string> ids = new List<string>(relicClassById.Keys);
             string id = ids[UnityEngine.Random.Range(0, ids.Count)];
-            RelicEffects[relicClassById[id]](bonus);
+            ApplyRelic(bonus, id);
             return id;
         }
 

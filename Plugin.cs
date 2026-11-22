@@ -14,7 +14,7 @@ namespace WolHybridBosses
     [BepInDependency("wolarcanos.arcanos", BepInDependency.DependencyFlags.SoftDependency)] // optional: Radiant / Prism variants
     public class Plugin : BaseUnityPlugin
     {
-        public const string Version = "0.9.15";
+        public const string Version = "0.9.21";
         internal static ManualLogSource Log;
 
         internal static ConfigEntry<bool> ElementalGiants;
@@ -45,6 +45,7 @@ namespace WolHybridBosses
         internal static ConfigEntry<float> EchoChance; // v0.9.2
         internal static ConfigEntry<float> ElementalNeutralChance; // v0.9.8
         internal static ConfigEntry<bool> BossFightsEnabled; internal static ConfigEntry<float> MinibossFightChance; // v0.9.11
+        internal static ConfigEntry<bool> BountiesEnabled; internal static ConfigEntry<float> GrudgeChance; internal static ConfigEntry<string> ModifiersButton; // v0.9.16
         internal static ConfigEntry<float> EliteChanceMultiplier, EliteInfusedDropChance, TrialChance;
         internal static ConfigEntry<string> InfusionButtons;
         internal static ConfigEntry<float> InfusedDropChance, InfusedStockChance;
@@ -128,6 +129,9 @@ namespace WolHybridBosses
             ElementalNeutralChance = Config.Bind("Enemies", "ElementalCoffinCyclopsChance", 0.6f, "On an elemental stage, chance that a Coffin Knight, Cyclops, blob (any kind) or ghoul (Ghoul, Macho Ghoul) takes the stage's element: recoloured body and elemental attacks in its colours, plus one borrowed arcana for Coffin Knights and Cyclops. Blobs and ghouls also take Chaos / Radiant / Prism on those stages.");
             BossFightsEnabled = Config.Bind("BossFights", "Enabled", true, "Special mini-bosses made from regular enemies (Giant Cyclops, Mimic King, Cyclops Eye Court, Elemental Conclave, Hive Mother, Gravewarden) can take a giant's place in the mini-boss pool.");
             MinibossFightChance = Config.Bind("BossFights", "MinibossChance", 0.3f, "Chance that a giant (mini-boss) spawn becomes one of the six special mini-bosses instead, picked evenly.");
+            BountiesEnabled = Config.Bind("Bounties", "Enabled", true, "One bounty per run (rolled in the Hub, shown top left there): slay a given elite, beat a special mini-boss or a rival, clear a trial, infuse at Tomi. Completing it drops gold.");
+            GrudgeChance = Config.Bind("RivalWizards", "GrudgeChance", 0.3f, "Chance that a rival you beat (not the Echo or an Archon) wants a rematch later in the run: 60% per later stage its portal opens; it comes back a tier harder with some arcana infused, and beating it may drop one of its arcana (regular 35%, infused 12%).");
+            ModifiersButton = Config.Bind("Modifiers", "Button", "Skill4", "Controller action that opens the in-game modifiers menu while Tomi's spellbook is open in the Hub (F1 on the keyboard works anywhere in the Hub).");
             ElitesEnabled = Config.Bind("Elites", "Enabled", true, "Now and then a regular enemy is an elite with one trait (Shielded, Hasted, Splitting, Draining, Blinking, Volatile, Vengeful, Haunting, Anchored, Overcharged, Infused, Thief): a coloured outline, an Elite label, more gold and sometimes an infused arcana. Chance 4% +3% per tier, +4% from the second loop.");
             EliteChanceMultiplier = Config.Bind("Elites", "ChanceMultiplier", 1f, "Multiplies the elite chance (0 turns elites off, 2 doubles them).");
             EliteInfusedDropChance = Config.Bind("Elites", "InfusedDropChance", 0.12f, "Chance that an elite (not an Infused one) drops an arcana that is already infused.");
