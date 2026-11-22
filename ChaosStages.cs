@@ -722,6 +722,7 @@ namespace WolHybridBosses
             GameObject go = new GameObject("HybridBosses_ChaosStages");
             DontDestroyOnLoad(go);
             go.AddComponent<ChaosStageRunner>();
+            EchoRecorder.Ensure(go); // v0.9.0: notes the run's loadout for the Echo
         }
 
         void Update()

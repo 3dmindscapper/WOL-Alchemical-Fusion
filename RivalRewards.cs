@@ -23,6 +23,7 @@ namespace WolHybridBosses
             RivalRewards r = e.GetComponent<RivalRewards>() ?? e.gameObject.AddComponent<RivalRewards>();
             r.owner = e;
             r.variant = Variants.FromPrefix(mk.Prefix);
+            if (mk.Echo != null) { r.standard = 0; r.gold = 1; return; } // v0.9.0: beating your own Echo is worth a gold chest
             switch (mk.Tier)
             {
                 case RivalTier.Easy: r.standard = 1; r.gold = 0; break;

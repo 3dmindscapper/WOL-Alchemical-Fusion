@@ -112,18 +112,30 @@ namespace WolHybridBosses
             // Spread on open floor around the arrival point (rooms have only a few checkpoints, so snapping to them
             // stacked every portal on the same spot).
             List<Vector2> used = new List<Vector2> { selectorArrival };
-            for (int i = 0; i < 3; i++)
+            // v0.9.0: by default one rival portal, scaled to the run (first tier Easy, second Medium, third Hard,
+            // always Hard from the second loop), plus the Echo of your last run when there is one. The old three
+            // difficulty portals stay available (config Rivals.ScaleWithProgress = false).
+            List<KeyValuePair<RivalTier, bool>> offer = new List<KeyValuePair<RivalTier, bool>>();
+            if (Plugin.RivalScaleWithProgress.Value) offer.Add(new KeyValuePair<RivalTier, bool>(ScaledTier, false));
+            else for (int i = 0; i < 3; i++) offer.Add(new KeyValuePair<RivalTier, bool>((RivalTier)i, false));
+            if (EchoRecorder.Available) offer.Add(new KeyValuePair<RivalTier, bool>(EchoTier, true));
+            Vector2[] offsets = offer.Count == 1 ? new[] { PortalOffsets[1] } : offer.Count == 2 ? new[] { PortalOffsets[0], PortalOffsets[2] } : PortalOffsets;
+            for (int i = 0; i < offer.Count && i < offsets.Length; i++)
             {
-                RivalTier tier = (RivalTier)i;
-                Vector2 at = OpenSpot(selectorRoom, selectorArrival, PortalOffsets[i], used);
+                RivalTier tier = offer[i].Key;
+                bool isEcho = offer[i].Value;
+                Vector2 at = OpenSpot(selectorRoom, selectorArrival, offsets[i], used);
                 used.Add(at);
-                GameObject p = MakePortal(at, arenaArrival, Rivals.TierColor(tier));
+                GameObject p = MakePortal(at, arenaArrival, isEcho ? EchoColor : Rivals.TierColor(tier));
                 if (p == null) continue;
                 RivalPortal rp = p.AddComponent<RivalPortal>();
                 rp.Event = this;
                 rp.Tier = tier;
+                rp.IsEcho = isEcho;
                 tierPortals.Add(p);
             }
+            if (EchoRecorder.Available)
+                IntroUI.Show("The Echo of your last run waits here", "The pale portal  ·  your own arcana, robe and relics, turned against you", EchoColor, null, 3.5f);
             Vector2 leaveAt = OpenSpot(selectorRoom, selectorArrival, new Vector2(0f, -5f), used);
             leavePortal = MakePortal(leaveAt, entrancePos + new Vector2(0f, -1.5f), new Color(0.85f, 0.85f, 0.85f));
             Plugin.Log.LogInfo("RIVAL selector portals at " + string.Join(", ", used.ConvertAll(u => u.ToString("0.0")).ToArray()) + ", way back at " + leaveAt.ToString("0.0"));
@@ -465,15 +477,33 @@ namespace WolHybridBosses
         // ---------- the fight ----------
 
         // Portal.OnTriggerEnter2D prefix: the player stepped into a tier portal.
-        internal void Choose(RivalTier tier)
+        // v0.9.0: the rival's difficulty follows the run instead of a choice.
+        internal static RivalTier ScaledTier
+        {
+            get
+            {
+                if (GameController.loopCount >= 1) return RivalTier.Hard;
+                int t = Mathf.Max(0, GameController.tierCount);
+                return t <= 0 ? RivalTier.Easy : t == 1 ? RivalTier.Medium : RivalTier.Hard;
+            }
+        }
+
+        // The Echo is at least Medium (it's your own build).
+        static RivalTier EchoTier { get { return ScaledTier == RivalTier.Easy ? RivalTier.Medium : ScaledTier; } }
+
+        static readonly Color EchoColor = new Color(0.72f, 0.66f, 0.85f);
+
+        internal void Choose(RivalTier tier) { Choose(tier, false); }
+
+        internal void Choose(RivalTier tier, bool echo)
         {
             if (chosen) return;
             chosen = true;
-            Plugin.Log.LogInfo("RIVAL tier chosen: " + tier);
-            StartCoroutine(Run(tier));
+            Plugin.Log.LogInfo("RIVAL chosen: " + (echo ? "the Echo of your last run (" + tier + ")" : tier.ToString()));
+            StartCoroutine(Run(tier, echo));
         }
 
-        IEnumerator Run(RivalTier tier)
+        IEnumerator Run(RivalTier tier, bool echo = false)
         {
             yield return new WaitForSeconds(1.2f); // let the teleport finish
             // 0.5.10: a portal that appeared on top of the player registered the choice without teleporting. Make sure
@@ -492,20 +522,29 @@ namespace WolHybridBosses
             if (entrance != null) Destroy(entrance); // one fight per portal
 
             // The Hard portal sometimes holds an Archon (a final champion, with its half-health phase) instead.
-            bool archon = tier == RivalTier.Hard && UnityEngine.Random.value < Plugin.ArchonRivalChance.Value;
+            bool archon = !echo && tier == RivalTier.Hard && UnityEngine.Random.value < Plugin.ArchonRivalChance.Value;
             Vector2 rivalAt = OpenSpot(arenaRoom, arenaArrival, new Vector2(0f, 6f), new List<Vector2> { arenaArrival });
             if ((rivalAt - arenaArrival).sqrMagnitude < 4f) rivalAt = FarthestWithin(arenaArrival, 9f);
-            string rivalPrefix = archon ? Archons.MaybeVariant(prefix) : prefix; // sometimes a Radiant / Prism Archon (Arcanos)
+            EchoRecord record = echo ? EchoRecorder.Last : null;
+            string rivalPrefix = record != null ? EchoRival.Prefix(record) : archon ? Archons.MaybeVariant(prefix) : prefix; // sometimes a Radiant / Prism Archon (Arcanos)
             rival = Rivals.Spawn(rivalAt, rivalPrefix, archon ? RivalTier.Final : tier, archon);
             if (rival == null) { OpenWayBack(); yield break; }
+            if (record != null)
+            {
+                // Set before its Start runs (the hostile setup reads it): the last run's loadout.
+                RivalMarker mk = rival.GetComponent<RivalMarker>();
+                if (mk != null) mk.Echo = record;
+                EchoRecorder.FoughtThisRun = true;
+            }
             yield return null; // Start (and our hostile postfix) runs
             yield return null;
 
-            string title = archon
-                ? (rivalPrefix == "Chaos" ? "Chaos Sovereign" : ElementalGiants.ElementColorName(rivalPrefix) + " Archon")
+            string title = record != null ? "Echo of your last run"
+                : archon ? (rivalPrefix == "Chaos" ? "Chaos Sovereign" : ElementalGiants.ElementColorName(rivalPrefix) + " Archon")
                 : ElementalGiants.ElementColorName(prefix) + " Rival Wizard";
             if (archon) Plugin.Log.LogInfo("RIVAL Hard portal holds an Archon: " + title);
-            yield return StartCoroutine(Rivals.Intro(rival, title, archon ? "Hard  Â·  Archon" : tier.ToString()));
+            string sub = record != null ? "You reached " + record.Reached + "  ·  " + tier : archon ? "Hard  ·  Archon" : tier.ToString();
+            yield return StartCoroutine(Rivals.Intro(rival, title, sub));
 
             // After the fight (and its chests): the way back to where the player came in.
             while (rival != null && rival.health != null && rival.health.CurrentHealthValue > 0) yield return new WaitForSeconds(0.25f);

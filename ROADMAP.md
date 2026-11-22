@@ -5,7 +5,7 @@ It mostly reuses the game's own assets. Custom art is possible, but so far every
 
 Status key: ✅ done · 🧪 built, needs in-game testing · 🔜 next · 📋 planned · ❓ needs research first · 💬 dev note (idea to consider)
 
-Current version: **0.8.0**. Technical details (game internals, file layout, pitfalls) live in `CLAUDE.md`.
+Current version: **0.9.0**. Technical details (game internals, file layout, pitfalls) live in `CLAUDE.md`.
 
 **Status:** sections 1–6 are built and in the **polish phase**: in-game testing and fixes, no new scope.
 **New in v0.8.0: section 7** (infused Council, elites, infusion trials) is built and needs testing; stage hazards are set aside.
@@ -78,7 +78,9 @@ Built:
 Next:
 - 🔜 Confirm v0.5.11 in game: breakables, portal spacing, nothing in walls.
 - 💬 Limit the portal to the 2nd stage of each tier (just before the Council fight), as in the earlier dev note, if one random stage per run feels better.
-- 💬 **Evil echo of your last run:** remember the previous lost run (robe, arcana, relics) and bring it back as an evil rival.
+- 🧪 **Echo of your last run (v0.9.0):** your last run's loadout (equipped arcana with their infusions, robe, relics) is recorded. In the next runs, the rival portal's room offers a pale **Echo portal** once per run: a rival with exactly that build, in infused colours, titled "Echo of your last run". Beating it gives a gold chest. Test: Ctrl+Shift+F11 records your current loadout as the Echo.
+- 🧪 **Rivals scale with the run (v0.9.0):** the selector room offers one rival scaled to your progress (first tier Easy, second Medium, third Hard, always Hard from the second loop) instead of three difficulty portals. The choice that remains is regular rival or Echo. The three portals come back with config `RivalWizards.ScaleWithProgress = false`.
+- 🧪 **Rivals hunt you (v0.8.2):** they no longer walk back to their post when you keep your distance (the PvP wizard's leash), they track you across the arena, and they dash in to close the gap when kept out of reach.
 - ✅ **Boss health bar (v0.4.9):** the game's own boss bar (the Council's and Sura's) with the rival's name, shown when the intro ends. Champions and elemental giants get it too (`BossBar.Enabled`, `BossBar.Giants`).
 - 📋 Dropping the rival's relic, a secondary element on Hard, Sura-style attack patterns, and special relics (Resurrect, Vampire…) done for real.
 
@@ -211,6 +213,7 @@ Why it fits: the enemy side already exists. Variant stages turn arcana into anot
 
 Still to do:
 - 📋 "Fire-infused X" names in the game's own spellbook / HUD text (the hint bar already says it).
+- 🧪 **Element memory (v0.8.2):** in the Hub, Tomi shows each arcana's collected infused versions out of all the elements it can take (collected in colour, missing in grey).
 - 🧪 Controller (v0.7.3): the arcana buttons act as [I] in Tomi's spellbook (config `Infusion.Buttons`), so it works on a Steam Deck.
 - 🧪 The mod's on-screen cards and hints use the game's own font (v0.7.3).
 - 📋 Element accents for infused player attacks (enemy variants have them).
@@ -328,6 +331,7 @@ Lets any enemy cast real player arcana. Used by rivals, champions, arcana giants
 | Ctrl+F10 | Infusion look preview: your own arcana take Fire → Water → Ice → Earth → Thunder → Wind → Chaos → Radiant → off (look only) |
 | F11 | Open a rival portal beside you: selector room → arena → way back (cycles Fire → Water → Earth → Wind → Thunder → Chaos, then Radiant → Prism with Arcanos) |
 | Shift+F11 | Cycle the current stage: normal → Chaos → Radiant → Prism (the last two with Arcanos) |
+| Ctrl+Shift+F11 | Record your current loadout as the Echo of your last run (test) |
 | Ctrl+F11 | Skip to the next stage, as if through the exit portal (needs the floor's exit; a Council floor only has one after the fight) |
 | F12 | Final champion test (this final room, or spawn one here and make this run's final boss a champion) |
 | Shift+F12 | Cycle the forced Council variant: off → Chaos → Radiant → Prism → Infused (every Council fight, including the current room) |

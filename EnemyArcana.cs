@@ -173,6 +173,21 @@ namespace WolHybridBosses
             AttackInfo info = atk.SetAttackInfo("Player", d.SkillID, 1, ArcanaCaster.SignatureCast); // real arcana damage, element, status effects; signature stats only for a signature cast
             if (info == null) return;
             ReOwn(info, owner);
+            // v0.9.0: the Echo of your last run casts your infused arcana in their infused element and colours.
+            EchoInfusions echo = owner != null ? owner.GetComponent<EchoInfusions>() : null;
+            ElementType echoEl;
+            if (echo != null && echo.Map.TryGetValue(d.SkillID, out echoEl))
+            {
+                try
+                {
+                    Infusion.ConvertEnemyInfo(info, echoEl);
+                    string key = Infusion.RampKey(echoEl);
+                    if (key != null) CouncilCorruption.TintAttack(atk, true, StageVariant.Chaos, null, key);
+                }
+                catch (Exception) { }
+                if (empowered) info.damage = Mathf.RoundToInt(info.damage * 1.3f);
+                return;
+            }
             // v0.6.2: the variant applies here, once the arcana belongs to its caster (at SetAttackInfo time it still
             // reads as the player's, so VariantAttackPatch skipped it and Radiant rivals' arcana kept their own look).
             try

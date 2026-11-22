@@ -71,6 +71,28 @@ Cloning the player GameObject and driving it from script failed:
 - v0.0.7 tested: summon swap works (logged EarthKnight, FlameLancer etc.). SuperCoffin goes **pink** on palettes 4–8, so its sheet has no elemental rows: keep palette 3 and tint or outline it (MiniBoss uses `_OutlineColor`/`_OutlineColor2`). The user wants the coffin (and rivals) to cast **player arcana** instead.
 - Arcana research: `Contestant : Enemy` (PvP wizard) reimplements Tornado/SwordThrow/Fireball as its own states (ctor typed to Contestant). Its FireballState instantiates the prefab and calls `Attack.SetAttackInfo("Player", "ShootFireball", level, isUltimate)`, the same call player arcana make (e.g. `UseFireBeam.CreateFireBeam`: `FireBeam.Prefab` + `ChaosInst` + `SetAttackInfo`). There are 100 `Player+Use*` arcana. Plan: our own data-driven `ArcanaState : Enemy.SkillState` (skillID, prefab, delivery type). See ROADMAP "Enemy Arcana".
 
+## v0.9.0: Echo of your last run; rivals scaled to the run (built, not yet run in game)
+- **Echo.cs, recording:** `EchoRecorder` sits on the ChaosStageRunner object (DontDestroyOnLoad). Every 4s during a run it notes the loadout:
+  - `assignedSkills` with role basic/dash/signature/standard, plus `Infusion.TryGet` names;
+  - `equippedOutfit.outfitID`, `inventory.GetItemIDList()`, and tier/stage/loop.
+  - Arriving in the Hub commits it to `BepInEx/config/osi.wol.hybridbosses.echo.txt`, if it has at least 2 arcana. `Last` is the previous run, and `FoughtThisRun` resets in the Hub.
+  - Ctrl+Shift+F11 records the current loadout now (test).
+- **Echo.cs, the fight:** `RivalMarker.Echo` (an EchoRecord) is set right after `Rivals.Spawn`, before Start. MakeHostile then uses:
+  - `RivalLoadout.UseOutfit` (robe colour row plus mods) and `UseRelics` (stat relics, up to 4; the first one is shown);
+  - `EchoInfusions` (skillID → element);
+  - the record's basic/dash if castable, and `EchoRival.Arcana` (the record's castable standard arcana, topped up from its element).
+  - `EchoRival.Prefix` is the record's main element. Intro names read "Fire-infused X" (`EchoRival.Named`).
+  - `MakeEnemyAttack` converts and recolours its infused arcana (`ConvertEnemyInfo` plus the ramp) before the variant pass. The Echo reward is a gold chest.
+- **Selector:** with `RivalWizards.ScaleWithProgress` (default true) there's one rival portal at `ScaledTier` (tier 0 Easy, tier 1 Medium, tier 2+ Hard, Hard from loop 1). With `EchoOfLastRun` there's also an Echo portal when available, coloured pale lilac, at `EchoTier` (at least Medium). `RivalPortal.IsEcho` leads to `Choose(tier, echo)`.
+  - The Echo has no Archon roll and is titled "Echo of your last run" with the subtitle "You reached tier N". Setting `ScaleWithProgress = false` brings back the three difficulty portals.
+
+## v0.8.2: rivals hunt the player; element memory at Tomi (built, not yet run in game)
+- **Rivals:** `Contestant+ContestantChaseState.Update` only looks for a target within `Enemy.escapeRadius`. With none, it calls ChangeState("GoBack") (the PvP leash back to its post), so a player sniping from range was never chased.
+  - RivalAttackRedirectPatch turns "GoBack" into "Chase" for rivals.
+  - `RivalUnstuck.Start` raises escapeRadius / alertRadius / maxAlertDistance to 60 and sets `forceChaseState`.
+  - `RivalUnstuck.GapClose`: if the player stays at 7+ units for over 2.2s while the rival is chasing, it does `CalculateDashVector(player)` then Dash. It has a 3.5s cooldown and logs `RIVAL closing in`. Champions get it too, since they're rivals.
+- **Element memory:** in the Hub, Tomi's hint bar adds a second line, `TomiInfusion.Memory`: every element the arcana can take (Fire, Water, Ice, Earth, Wind, Thunder, Chaos, plus Radiant/Prism with Arcanos, minus its own). Collected versions show in their colour, missing ones in grey, as "Collected n / m".
+
 ## v0.8.1: trial spawns; Council body recolour (built, not yet run in game)
 - **Trials:** the v0.8.0 wave keys were raw object names ("FrostMage(!)", "Knight (1)", "OrbChargeFamiliar (3)", "FrostZoneEnemy(!)"). Only "Summoner" spawned, and an empty wave counted as cleared.
   - Keys now come only from humanoid kinds (`ChaosEnemies.IsChaosType`), using `CleanName` (cut at "(") and the type name, plus a Fallback list (Knight, Archer, Rogue, Mage, Lancer, Summoner).

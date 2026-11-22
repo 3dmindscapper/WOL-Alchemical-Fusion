@@ -159,9 +159,17 @@ namespace WolHybridBosses
             if (!SignatureAllowed(mk, "SummonBlizzard") && e.availableEnemySkillsDict != null) e.availableEnemySkillsDict.Remove(BlizzardSkill);
 
             // Robe (colour + stat mods) and relic (stat effect), like a player's loadout.
-            if (Plugin.RivalRobes.Value && RivalLoadout.PickOutfit(mk.Bonus, out mk.OutfitID, out mk.RobeColor))
+            // v0.9.0: an Echo wears the last run's robe and relics.
+            bool echo = mk.Echo != null;
+            if (echo)
+            {
+                if (RivalLoadout.UseOutfit(mk.Bonus, mk.Echo.Outfit, out mk.OutfitID, out mk.RobeColor)) RivalLoadout.ApplyRobeColor(e, mk.RobeColor);
+                mk.RelicID = RivalLoadout.UseRelics(mk.Bonus, mk.Echo.Relics);
+                EchoRival.Infusions(e, mk);
+            }
+            else if (Plugin.RivalRobes.Value && RivalLoadout.PickOutfit(mk.Bonus, out mk.OutfitID, out mk.RobeColor))
                 RivalLoadout.ApplyRobeColor(e, mk.RobeColor);
-            if (Plugin.RivalRelics.Value) mk.RelicID = RivalLoadout.PickRelic(mk.Bonus);
+            if (!echo && Plugin.RivalRelics.Value) mk.RelicID = RivalLoadout.PickRelic(mk.Bonus);
             mk.Bonus.Clamp();
             RivalLoadout.ApplyStats(e, mk.Bonus);
 
@@ -187,6 +195,8 @@ namespace WolHybridBosses
             basics.RemoveAll(d => d.Family != ArcanaFamily.Melee);
             if (basics.Count == 0) { basics = new List<ArcanaDef>(pool); basics.RemoveAll(d => d.Family != ArcanaFamily.Melee); }
             if (basics.Count == 0 && exotic) { basics = ArcanaCatalog.Pool("Chaos"); basics.RemoveAll(d => d.Family != ArcanaFamily.Melee); } // converted when swung
+            ArcanaDef echoBasic = echo ? EchoRival.Def(mk.Echo.Basic) : null;
+            if (echoBasic != null && echoBasic.Family == ArcanaFamily.Melee) basics = new List<ArcanaDef> { echoBasic }; // the last run's basic
             if (basics.Count > 0)
             {
                 ArcanaDef b = basics[UnityEngine.Random.Range(0, basics.Count)].Scaled(1f, 1f);
@@ -212,11 +222,14 @@ namespace WolHybridBosses
                     if (mk.Arcana.Count < TierArcanaCount(mk.Tier) && !mk.Arcana.Contains(d)) mk.Arcana.Add(d);
             }
             else mk.Arcana = PickVaried(pool, TierArcanaCount(mk.Tier), mk.Prefix == "Chaos");
+            if (echo) mk.Arcana = EchoRival.Arcana(mk, pool, TierArcanaCount(mk.Tier)); // the last run's arcana
             mk.Signature = PickSignature(mk, (mk.Prefix == "Chaos" && ChaosStages.Planned) ? ArcanaCatalog.PoolExact("Chaos") : pool);
             EnemyArcana.Give(e, mk.Arcana, TierCooldown(mk.Tier) * mk.Bonus.Cooldown, TierWindup(mk.Tier));
 
             // Dash arcana: fired from its own dashes, like the player's.
             List<ArcanaDef> dashes = exotic ? Variants.DashPool(variant) : ArcanaCatalog.DashPool(mk.Prefix);
+            ArcanaDef echoDash = echo ? EchoRival.Def(mk.Echo.Dash) : null;
+            if (echoDash != null && echoDash.Family == ArcanaFamily.Dash) dashes = new List<ArcanaDef> { echoDash }; // the last run's dash
             if (dashes.Count > 0)
             {
                 mk.Dash = dashes[UnityEngine.Random.Range(0, dashes.Count)].Scaled(TierCooldown(mk.Tier) * mk.Bonus.Cooldown, 1f);
@@ -248,19 +261,19 @@ namespace WolHybridBosses
             foreach (ArcanaDef d in mk.Arcana)
             {
                 bool isSig = mk.Signature != null && mk.Signature.SkillID == d.SkillID;
-                IntroEntry ie = new IntroEntry(IntroUI.SkillIcon(d.SkillID), Variants.Named(d, mk.Prefix) + (isSig ? " (signature)" : ""));
+                IntroEntry ie = new IntroEntry(IntroUI.SkillIcon(d.SkillID), EchoRival.Named(mk, d) + (isSig ? " (signature)" : ""));
                 if (ie.Icon == null) ie.Tint = el;
                 list.Add(ie);
             }
             if (mk.Basic != null)
             {
-                IntroEntry be = new IntroEntry(IntroUI.SkillIcon(mk.Basic.SkillID), Variants.Named(mk.Basic, mk.Prefix) + " (basic)");
+                IntroEntry be = new IntroEntry(IntroUI.SkillIcon(mk.Basic.SkillID), EchoRival.Named(mk, mk.Basic) + " (basic)");
                 if (be.Icon == null) be.Tint = el;
                 list.Add(be);
             }
             if (mk.Dash != null)
             {
-                IntroEntry de = new IntroEntry(IntroUI.SkillIcon(mk.Dash.SkillID), Variants.Named(mk.Dash, mk.Prefix) + " (dash)");
+                IntroEntry de = new IntroEntry(IntroUI.SkillIcon(mk.Dash.SkillID), EchoRival.Named(mk, mk.Dash) + " (dash)");
                 if (de.Icon == null) de.Tint = el;
                 list.Add(de);
             }
@@ -405,6 +418,7 @@ namespace WolHybridBosses
         public ArcanaDef Signature; // the one arcana that spends a full signature meter (its signature version)
         public float GapMultiplier = 1f; // champions' second phase casts faster
         public string SecondPrefix;      // an Archon's second element after its phase shift
+        public EchoRecord Echo;          // v0.9.0: the Echo of the player's last run (its loadout)
         public bool ArenaArchon;         // a champion from a rival arena's Hard portal (not replacing Sura)
         public RivalBonus Bonus = new RivalBonus();
         public string OutfitID, RelicID;
@@ -416,6 +430,7 @@ namespace WolHybridBosses
     {
         public RivalEvent Event;
         public RivalTier Tier;
+        public bool IsEcho;              // v0.9.0: the selector's Echo portal
     }
 
     // ---------- patches ----------
@@ -459,7 +474,7 @@ namespace WolHybridBosses
             RivalPortal rp = __instance.GetComponent<RivalPortal>();
             if (rp == null || rp.Event == null || col == null) return;
             if (col.GetComponentInParent<Player>() == null) return;
-            rp.Event.Choose(rp.Tier);
+            rp.Event.Choose(rp.Tier, rp.IsEcho);
         }
     }
 

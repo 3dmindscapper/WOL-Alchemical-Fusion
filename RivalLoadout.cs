@@ -177,6 +177,39 @@ namespace WolHybridBosses
             Plugin.Log.LogInfo("RIVAL relic pool: " + relicClassById.Count + " stat relics");
         }
 
+        // v0.9.0 Echo: a given robe (the player's last run), with its colour row and stat mods.
+        internal static bool UseOutfit(RivalBonus bonus, string id, out string outfitID, out int colorIndex)
+        {
+            outfitID = null; colorIndex = -1;
+            if (string.IsNullOrEmpty(id)) return false;
+            Outfit o = null;
+            try { if (Outfit.OutfitDict != null && Outfit.OutfitDict.ContainsKey(id)) o = Outfit.OutfitDict[id]; } catch (Exception) { }
+            if (o == null) try { foreach (Outfit x in Outfit.OutfitList) if (x != null && x.outfitID == id) { o = x; break; } } catch (Exception) { }
+            if (o == null) return false;
+            outfitID = o.outfitID;
+            colorIndex = o.outfitColorIndex;
+            if (o.modList != null) foreach (OutfitModStat m in o.modList) ApplyOutfitMod(bonus, m);
+            return true;
+        }
+
+        // v0.9.0 Echo: the given relics that translate to rival stats (up to 4); returns the first one, for the intro.
+        internal static string UseRelics(RivalBonus bonus, List<string> ids)
+        {
+            if (relicClassById == null || relicClassById.Count == 0) BuildRelicTable();
+            if (relicClassById == null || ids == null) return null;
+            string first = null;
+            int used = 0;
+            foreach (string id in ids)
+            {
+                string cls;
+                if (used >= 4 || id == null || !relicClassById.TryGetValue(id, out cls)) continue;
+                RelicEffects[cls](bonus);
+                if (first == null) first = id;
+                used++;
+            }
+            return first;
+        }
+
         internal static string PickRelic(RivalBonus bonus)
         {
             if (relicClassById == null || relicClassById.Count == 0) BuildRelicTable();

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
@@ -14,7 +14,7 @@ namespace WolHybridBosses
     [BepInDependency("wolarcanos.arcanos", BepInDependency.DependencyFlags.SoftDependency)] // optional: Radiant / Prism variants
     public class Plugin : BaseUnityPlugin
     {
-        public const string Version = "0.8.1";
+        public const string Version = "0.9.0";
         internal static ManualLogSource Log;
 
         internal static ConfigEntry<bool> ElementalGiants;
@@ -41,7 +41,7 @@ namespace WolHybridBosses
         internal static ConfigEntry<float> ChaosStageChance;
         internal static ConfigEntry<float> ChaosStageRewards;
         internal static ConfigEntry<float> VariantChaosShare, VariantRadiantShare, VariantPrismShare, VariantArchonChance, RadiantHealthDropChance;
-        internal static ConfigEntry<bool> InfusionEnabled, InfusedCouncil, ElitesEnabled, TrialsEnabled;
+        internal static ConfigEntry<bool> InfusionEnabled, InfusedCouncil, ElitesEnabled, TrialsEnabled, EchoEnabled, RivalScaleWithProgress;
         internal static ConfigEntry<float> EliteChanceMultiplier, EliteInfusedDropChance, TrialChance;
         internal static ConfigEntry<string> InfusionButtons;
         internal static ConfigEntry<float> InfusedDropChance, InfusedStockChance;
@@ -119,6 +119,8 @@ namespace WolHybridBosses
             VariantArchonChance = Config.Bind("StageVariants", "ArchonChance", 0.25f, "With WoL Arcanos installed, chance that an elemental Archon (final champion or arena Archon) is a Radiant or Prism Archon instead.");
             InfusionEnabled = Config.Bind("Infusion", "Enabled", true, "An Infusion Altar stands beside the arcana merchant: keep one arcana, sacrifice another, and the kept one takes the sacrificed one's element (+10% damage). Run only.");
             InfusedCouncil = Config.Bind("Infusion", "InfusedCouncil", true, "A Council member (2nd and 3rd tier, when the tier has no Chaos/Radiant/Prism member) may have infused their element with another: same moveset, the other element's damage, status and colours, new lines, and a reward of that element. 15% / 25%, +20% from the second loop.");
+            RivalScaleWithProgress = Config.Bind("RivalWizards", "ScaleWithProgress", true, "The rival portal's room offers one rival scaled to the run (first tier Easy, second Medium, third Hard, always Hard from the second loop) instead of three difficulty portals.");
+            EchoEnabled = Config.Bind("RivalWizards", "EchoOfLastRun", true, "The rival portal's room also offers the Echo of your last run (your arcana with their infusions, robe and stat relics), once per run. Beating it gives a gold chest.");
             ElitesEnabled = Config.Bind("Elites", "Enabled", true, "Now and then a regular enemy is an elite with one trait (Shielded, Hasted, Splitting, Draining, Blinking): a coloured outline, an Elite label, more gold and sometimes an infused arcana. Chance 4% +3% per tier, +4% from the second loop.");
             EliteChanceMultiplier = Config.Bind("Elites", "ChanceMultiplier", 1f, "Multiplies the elite chance (0 turns elites off, 2 doubles them).");
             EliteInfusedDropChance = Config.Bind("Elites", "InfusedDropChance", 0.12f, "Chance that an elite drops an arcana that is already infused.");
@@ -187,7 +189,8 @@ namespace WolHybridBosses
             else if (Input.GetKeyDown(KeyCode.F10)) Debug.RerollNearestGiant();
             bool shift = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
             bool ctrl = Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl);
-            if (Input.GetKeyDown(KeyCode.F11) && ctrl) Debug.SkipToNextStage();
+            if (Input.GetKeyDown(KeyCode.F11) && ctrl && shift) EchoRecorder.RecordNow();
+            else if (Input.GetKeyDown(KeyCode.F11) && ctrl) Debug.SkipToNextStage();
             else if (Input.GetKeyDown(KeyCode.F11) && shift) ChaosStages.ToggleOnCurrentStage();
             else if (Input.GetKeyDown(KeyCode.F11)) Debug.OpenRivalArenaHere();
             if (Input.GetKeyDown(KeyCode.F12) && ctrl && shift) Debug.JumpToFinal();

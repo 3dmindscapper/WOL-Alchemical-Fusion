@@ -675,6 +675,7 @@ namespace WolHybridBosses
                 ElementType? sel = cur != null ? InfusionUnlocks.Selected(cur.skillID) : null;
                 line = v.Count == 0 ? "Infused versions you unlock in runs can be chosen here with [I]"
                     : "<b>[I] Switch version</b>  " + IntroUI.SkillName(cur.skillID) + ": " + (sel.HasValue ? Infusion.Name(sel.Value) + "-infused" : "original") + "  (" + (v.Count + 1) + " versions)";
+                if (cur != null) line += "\n" + Memory(cur, v);
             }
             if (message != null && Time.unscaledTime < messageUntil) line += "\n<color=#ffe9a8>" + message + "</color>";
             line = line.Replace("<b>", "").Replace("</b>", "").Replace("[I]", Key);
@@ -696,6 +697,29 @@ namespace WolHybridBosses
 
         static GUIStyle hintStyle;
         static Font hintFont;
+
+        // v0.8.2: element memory. Every element this arcana can be infused with (all but its own; Radiant and Prism
+        // with Arcanos): collected versions in their colour, missing ones in grey, and the count.
+        static string Memory(Player.SkillState s, List<ElementType> have)
+        {
+            List<ElementType> all = new List<ElementType> { ElementType.Fire, ElementType.Water, ElementType.Ice, ElementType.Earth, ElementType.Air, ElementType.Lightning, ElementType.Chaos };
+            ElementType? ra = ArcanosBridge.ElementFor(StageVariant.Radiant), pr = ArcanosBridge.ElementFor(StageVariant.Prism);
+            if (ra.HasValue) all.Add(ra.Value);
+            if (pr.HasValue) all.Add(pr.Value);
+            string own = Infusion.Name(s.element);
+            all.RemoveAll(e => Infusion.Name(e) == own);
+            HashSet<string> got = new HashSet<string>();
+            foreach (ElementType e in have) got.Add(Infusion.Name(e));
+            List<string> parts = new List<string>();
+            int n = 0;
+            foreach (ElementType e in all)
+            {
+                string name = Infusion.Name(e);
+                if (got.Contains(name)) { n++; parts.Add("<color=#" + ColorUtility.ToHtmlStringRGB(Infusion.ColorOf(e)) + ">" + name + "</color>"); }
+                else parts.Add("<color=#5a5560>" + name + "</color>");
+            }
+            return "Collected " + n + " / " + all.Count + ":  " + string.Join("  ", parts.ToArray());
+        }
     }
 
     // Infused versions the player has unlocked (kept between runs) and which one is chosen for each arcana.

@@ -449,6 +449,18 @@ namespace WolHybridBosses
         static bool Prefix(FSM __instance, ref string __0)
         {
             if (__0 == null) return true;
+            // v0.8.2: a rival never walks back to its post (the PvP wizard's GoBack leash, triggered when the player
+            // is beyond its escape radius): it keeps hunting the player instead.
+            if (__0 == "GoBack")
+            {
+                Enemy r = RivalBasics.RivalOf(__instance);
+                if (r != null)
+                {
+                    if (__instance.currentStateName == "Chase") return false;
+                    __0 = "Chase";
+                    return true;
+                }
+            }
             string own;
             if (OwnSpells.TryGetValue(__0, out own))
             {
@@ -514,6 +526,41 @@ namespace WolHybridBosses
             return false;
         }
 
+        float farSince = -1f, nextGapClose;
+
+        // v0.8.2: rivals hunt across the whole arena. The PvP wizard only looks for a target within its escape radius
+        // (beyond it, it walked back to its post), so a player sniping from range was never chased.
+        void Start()
+        {
+            if (Owner == null) return;
+            Traverse t = Traverse.Create(Owner);
+            foreach (string f in new[] { "escapeRadius", "alertRadius", "maxAlertDistance" })
+            {
+                try { if (t.Field(f).GetValue<float>() < 60f) t.Field(f).SetValue(60f); } catch (Exception) { }
+            }
+            try { t.Field("forceChaseState").SetValue(true); } catch (Exception) { }
+        }
+
+        // Kept out of reach (far for over 2.2s while it's chasing): a dash at the player to close the gap.
+        void GapClose(Vector2 pos, string state)
+        {
+            Player p = GameController.playerScripts != null && GameController.playerScripts.Length > 0 ? GameController.playerScripts[0] : null;
+            if (p == null || p.IsDead) { farSince = -1f; return; }
+            float d = Vector2.Distance(p.transform.position, pos);
+            if (d < 7f) { farSince = -1f; return; }
+            if (farSince < 0f) farSince = Time.time;
+            if (!state.Contains("Chase") || Time.time - farSince < 2.2f || Time.time < nextGapClose) return;
+            nextGapClose = Time.time + 3.5f;
+            farSince = Time.time;
+            try
+            {
+                Traverse.Create(Owner).Method("CalculateDashVector", new object[] { p.transform }).GetValue();
+                Owner.fsm.ChangeState("Dash", false);
+                Plugin.Log.LogInfo("RIVAL closing in on the player (" + d.ToString("0") + " away)");
+            }
+            catch (Exception) { }
+        }
+
         void Update()
         {
             if (Owner == null || !Owner.enabled || Owner.fsm == null || Owner.health == null || Owner.health.CurrentHealthValue <= 0) return;
@@ -521,6 +568,7 @@ namespace WolHybridBosses
             if (sn.StartsWith("WolArcanos") || ArcanosBridge.Incapacitated(Owner)) { stillSince = Time.time; return; } // Arcanos ailment: leave it be
             FixAnimation(sn);
             Vector2 pos = Owner.transform.position;
+            GapClose(pos, sn);
             if ((pos - lastPos).sqrMagnitude > 0.04f) { lastPos = pos; stillSince = Time.time; return; }
             string state = Owner.fsm.currentStateName ?? "";
             if (!state.Contains("Chase")) { stillSince = Time.time; return; }
