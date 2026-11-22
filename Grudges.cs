@@ -56,7 +56,7 @@ namespace WolHybridBosses
         internal static void DualKit(Enemy e, RivalMarker mk)
         {
             if (e == null || mk == null || mk.Arcana == null || !Plugin.InfusionEnabled.Value) return;
-            float chance = (mk.Tier == RivalTier.Final || mk.ArenaArchon) ? 0.2f : mk.Tier == RivalTier.Hard ? 0.07f : 0f;
+            float chance = mk.Alchemist ? 1f : (mk.Tier == RivalTier.Final || mk.ArenaArchon) ? 0.2f : mk.Tier == RivalTier.Hard ? 0.07f : 0f; // v1.1.0: the White Alchemist: all of them
             if (chance <= 0f) return;
             EchoInfusions ei = null;
             foreach (ArcanaDef d in mk.Arcana)

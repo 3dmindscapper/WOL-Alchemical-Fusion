@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
@@ -12,9 +12,10 @@ namespace WolHybridBosses
 {
     [BepInPlugin("osi.wol.hybridbosses", "WOL Alchemical Fusion", Version)] // the ID stays (config, unlocks and Echo files carry over)
     [BepInDependency("wolarcanos.arcanos", BepInDependency.DependencyFlags.SoftDependency)] // optional: Radiant / Prism variants
+    [BepInDependency(MantleRobe.LegendApiGuid, BepInDependency.DependencyFlags.SoftDependency)] // optional: the White Mantle as a wardrobe robe
     public class Plugin : BaseUnityPlugin
     {
-        public const string Version = "1.0.0";
+        public const string Version = "1.1.1";
         internal static ManualLogSource Log;
 
         internal static ConfigEntry<bool> ElementalGiants;
@@ -46,6 +47,7 @@ namespace WolHybridBosses
         internal static ConfigEntry<float> ElementalNeutralChance; // v0.9.8
         internal static ConfigEntry<bool> BossFightsEnabled; internal static ConfigEntry<float> MinibossFightChance; // v0.9.11
         internal static ConfigEntry<bool> BountiesEnabled; internal static ConfigEntry<float> GrudgeChance; internal static ConfigEntry<string> ModifiersButton; // v0.9.16
+        internal static ConfigEntry<bool> NocturneFree, LeagueEnabled; internal static ConfigEntry<int> NocturnePreset; internal static ConfigEntry<float> AlchemistChance, TournamentChance, TeamMatchChance; // v1.1.0
         internal static ConfigEntry<float> EliteChanceMultiplier, EliteInfusedDropChance, TrialChance;
         internal static ConfigEntry<string> InfusionButtons;
         internal static ConfigEntry<float> InfusedDropChance, InfusedStockChance;
@@ -132,6 +134,12 @@ namespace WolHybridBosses
             BountiesEnabled = Config.Bind("Bounties", "Enabled", true, "One bounty per run (rolled in the Hub, shown top left there): slay a given elite, beat a special mini-boss or a rival, clear a trial, infuse at Tomi. Completing it drops gold.");
             GrudgeChance = Config.Bind("RivalWizards", "GrudgeChance", 0.3f, "Chance that a rival you beat (not the Echo or an Archon) wants a rematch later in the run: 60% per later stage its portal opens; it comes back a tier harder with some arcana infused, and beating it may drop one of its arcana (regular 35%, infused 12%).");
             ModifiersButton = Config.Bind("Modifiers", "Button", "Skill4", "Controller action that opens the in-game modifiers menu while Tomi's spellbook is open in the Hub (F1 on the keyboard works anywhere in the Hub).");
+            NocturneFree = Config.Bind("Nocturne", "Free", true, "Nocturne the Cardist's shuffle costs nothing (the game charges 10 gems).");
+            NocturnePreset = Config.Bind("Nocturne", "Preset", 0, "Which shuffle Nocturne deals (chosen in her menu): 0 full shuffle, 1 arcana only, 2 robe and relic, 3 element build, 4 alchemist.");
+            AlchemistChance = Config.Bind("FinalBoss", "AlchemistChance", 0.25f, "When the final room holds a champion: chance it is the Primordial Alchemist (white wizard, every arcana dual-infused). Beating it teaches an infused version; the first win gives the White Mantle.");
+            LeagueEnabled = Config.Bind("RivalWizards", "League", true, "The Rival League: each element's rival is a named wizard who remembers your record; wins give league points and a rank (shown in the Hub) that makes rivals tougher and pays a gold bonus.");
+            TournamentChance = Config.Bind("RivalWizards", "TournamentChance", 0.12f, "Chance that a rival portal holds a three-round tournament (one prize at the end) instead of a duel.");
+            TeamMatchChance = Config.Bind("RivalWizards", "TeamMatchChance", 0.12f, "Chance that a rival portal holds a team match (you and an allied wizard against two rivals) instead of a duel.");
             ElitesEnabled = Config.Bind("Elites", "Enabled", true, "Now and then a regular enemy is an elite with one trait (Shielded, Hasted, Splitting, Draining, Blinking, Volatile, Vengeful, Haunting, Anchored, Overcharged, Infused, Thief): a coloured outline, an Elite label, more gold and sometimes an infused arcana. Chance 4% +3% per tier, +4% from the second loop.");
             EliteChanceMultiplier = Config.Bind("Elites", "ChanceMultiplier", 1f, "Multiplies the elite chance (0 turns elites off, 2 doubles them).");
             EliteInfusedDropChance = Config.Bind("Elites", "InfusedDropChance", 0.12f, "Chance that an elite (not an Infused one) drops an arcana that is already infused.");
@@ -149,6 +157,7 @@ namespace WolHybridBosses
                 "Test hotkeys (F5-F12 with Ctrl / Shift / Alt; the full list is in the README). Off for normal play.");
 
             Log.LogInfo("WOL Alchemical Fusion " + Version + " starting; patches wait for the game's asset bundles.");
+            MantleRobe.TryRegister(); // v1.1.0: the White Mantle robe via LegendAPI (data only: no patches, no assets)
             StartCoroutine(PatchWhenGameReady());
         }
 

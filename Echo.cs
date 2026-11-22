@@ -100,6 +100,7 @@ namespace WolHybridBosses
             if (host.GetComponent<EchoRecorder>() == null) host.AddComponent<EchoRecorder>();
             if (host.GetComponent<BountyBoard>() == null) host.AddComponent<BountyBoard>();     // v0.9.16
             if (host.GetComponent<ModifiersMenu>() == null) host.AddComponent<ModifiersMenu>(); // v0.9.16
+            if (host.GetComponent<WhiteMantle>() == null) host.AddComponent<WhiteMantle>();     // v1.1.0
         }
 
         void Update()

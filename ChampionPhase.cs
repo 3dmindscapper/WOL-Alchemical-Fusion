@@ -43,12 +43,19 @@ namespace WolHybridBosses
             if (owner.movement != null) owner.movement.EndMovement();
             if (owner.health != null) owner.health.SetInvulnerabilityDuration(FreezeSeconds + 1f, false);
             try { CameraController.ShakeCamera(2f, true); } catch (Exception) { }
-            Burst(owner, ElementalGiants.ElementColor(mk.Prefix));
+            Burst(owner, mk.Alchemist ? WhiteAlchemist.White : ElementalGiants.ElementColor(mk.Prefix));
 
             string second = null;
             List<ArcanaDef> gained;
             string newTitle;
-            if (mk.Prefix == "Chaos")
+            if (mk.Alchemist)
+            {
+                // v1.1.0: the White Alchemist transmutes: 2 more arcana, both dual-infused, and faster casts.
+                gained = Rivals.PickVaried(Others(ArcanaCatalog.Pool("Chaos")), 2, true);
+                newTitle = WhiteAlchemist.Name + ", Transmuted";
+                mk.GapMultiplier = 0.7f;
+            }
+            else if (mk.Prefix == "Chaos")
             {
                 gained = Rivals.PickVaried(Others(ArcanaCatalog.Pool("Chaos")), 2, true);
                 newTitle = title + ", Unbound";
@@ -81,6 +88,7 @@ namespace WolHybridBosses
 
             EnemyArcana.Give(owner, gained, Rivals.TierCooldown(mk.Tier) * mk.Bonus.Cooldown, Rivals.TierWindup(mk.Tier));
             mk.Arcana.AddRange(gained);
+            if (mk.Alchemist) Grudges.DualKit(owner, mk); // the new ones fused too (already-fused ones are re-rolled, harmless)
 
             // A new signature arcana if the old one was dropped (or a better fit is now there).
             if (mk.Signature == null || !mk.Arcana.Exists(a => a.SkillID == mk.Signature.SkillID))

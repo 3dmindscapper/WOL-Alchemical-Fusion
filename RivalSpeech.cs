@@ -8,7 +8,7 @@ namespace WolHybridBosses
     // out in the game's font: when the fight starts (after the intro card), once at half health, and on defeat. Each
     // element has its own personality (Fire hot-headed, Water cool, Earth steady, Wind playful, Thunder loud, Chaos
     // gleeful, Radiant noble, Prism whimsical); the Echo of your last run, Archons and rematches have their own lines.
-    internal enum RivalVoice { Rival, Echo, Archon, Rematch }
+    internal enum RivalVoice { Rival, Echo, Archon, Rematch, Primordial }
 
     internal static class RivalLines
     {
@@ -72,8 +72,8 @@ namespace WolHybridBosses
         }
 
         internal static string Greet(RivalVoice voice, string prefix) { return voice == RivalVoice.Rematch ? Pick(RematchGreet) : Pick(Set(voice, prefix)[0]); }
-        internal static string Hurt(RivalVoice voice, string prefix) { return Pick(Set(voice, prefix)[1]); }
-        internal static string Defeat(RivalVoice voice, string prefix) { return Pick(Set(voice, prefix)[2]); }
+        internal static string Hurt(RivalVoice voice, string prefix) { return voice == RivalVoice.Primordial ? WhiteAlchemist.HurtLine() : Pick(Set(voice, prefix)[1]); }
+        internal static string Defeat(RivalVoice voice, string prefix) { return voice == RivalVoice.Primordial ? WhiteAlchemist.DefeatLine() : Pick(Set(voice, prefix)[2]); }
         internal static string Promise() { return Pick(RematchPromise); }
     }
 

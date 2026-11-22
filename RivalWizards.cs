@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Text;
@@ -168,6 +168,8 @@ namespace WolHybridBosses
                 mk.RelicID = mk.RelicIDs.Count > 0 ? mk.RelicIDs[0] : null;
                 EchoRival.Infusions(e, mk);
             }
+            else if (mk.League != null && RivalLoadout.UseOutfit(mk.Bonus, League.OutfitFor(mk.League), out mk.OutfitID, out mk.RobeColor))
+                RivalLoadout.ApplyRobeColor(e, mk.RobeColor); // v1.1.0: a named league rival always wears its own robe
             else if (Plugin.RivalRobes.Value && RivalLoadout.PickOutfit(mk.Bonus, out mk.OutfitID, out mk.RobeColor))
                 RivalLoadout.ApplyRobeColor(e, mk.RobeColor);
             if (!echo && Plugin.RivalRelics.Value) { mk.RelicID = RivalLoadout.PickRelic(mk.Bonus); if (mk.RelicID != null) mk.RelicIDs = new List<string> { mk.RelicID }; }
@@ -247,6 +249,7 @@ namespace WolHybridBosses
 
             // v0.9.21: holder-only relics run for real in the rival's own inventory (after its stats and HP are set).
             RivalLoadout.EquipReal(e, mk.RelicIDs);
+            if (mk.Alchemist) WhiteAlchemist.Setup(e); // v1.1.0: white body and aura (after its robe colour)
 
             Plugin.Log.LogInfo("RIVAL " + mk.Prefix + " pool: " + pool.Count + " arcana, basic " + (mk.Basic != null ? mk.Basic.SkillID : "none")
                 + ", dash " + (mk.Dash != null ? mk.Dash.SkillID : "none") + " (of " + dashes.Count + "), signature "
@@ -429,6 +432,9 @@ namespace WolHybridBosses
         public Dictionary<string, ElementType> Infused; // v0.9.17: its arcana cast infused (skill ID -> element)
         public Dictionary<string, ElementType> InfusedSecond; // v0.9.18: the second element of its dual arcana
         public bool ArenaArchon;         // a champion from a rival arena's Hard portal (not replacing Sura)
+        public bool Alchemist;           // v1.1.0: the White Alchemist (final champion)
+        public bool NoChest;             // v1.1.0: no chest of its own (tournament rounds; the tournament pays at the end)
+        public LeagueRival League;       // v1.1.0: a named league rival
         public RivalBonus Bonus = new RivalBonus();
         public string OutfitID, RelicID;
         public List<string> RelicIDs = new List<string>(); // v0.9.21: every relic it carries (the Echo up to 4)

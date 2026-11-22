@@ -17,13 +17,13 @@ namespace WolHybridBosses
     // The enemy the game gets back from its spawn is the one that has to die last (the Conclave's Archon waits
     // hidden while the other four fight), so the room's mini-boss logic still works. Each drops the mini-boss chest.
     // Ctrl+F5 spawns the next one beside you.
-    internal enum MinibossFight { GiantCyclops, MimicKing, EyeCourt, Conclave, HiveMother, Gravewarden }
+    internal enum MinibossFight { GiantCyclops, MimicKing, EyeCourt, Conclave, HiveMother, Gravewarden, GolemGauntlet, TurretFortress, SummonerCoven, LancerPhalanx, ArcherVolley }
 
     internal static class MinibossFights
     {
         static readonly string[] Zoners = { "FlameZoneEnemy", "FrostZoneEnemy", "EarthZoneEnemy", "WindZoneEnemy", "ThunderZoneEnemy" };
         static string conclaveKey;
-        internal const int Count = 6;
+        internal const int Count = 11;
 
         internal static string Title(MinibossFight f)
         {
@@ -34,6 +34,11 @@ namespace WolHybridBosses
                 case MinibossFight.EyeCourt: return "The Cyclops Eye Court";
                 case MinibossFight.HiveMother: return "The Hive Mother";
                 case MinibossFight.Gravewarden: return "The Gravewarden";
+                case MinibossFight.GolemGauntlet: return "The Golem Gauntlet";
+                case MinibossFight.TurretFortress: return "The Turret Fortress";
+                case MinibossFight.SummonerCoven: return "The Summoner Coven";
+                case MinibossFight.LancerPhalanx: return "The Lancer Phalanx";
+                case MinibossFight.ArcherVolley: return "The Archer Volley";
                 default: return "The Elemental Conclave";
             }
         }
@@ -46,10 +51,26 @@ namespace WolHybridBosses
                 case MinibossFight.MimicKing: return "MimicEnemyLarge";
                 case MinibossFight.HiveMother: return "SuperBlob";
                 case MinibossFight.Gravewarden: return "GhoulLarge";
+                case MinibossFight.GolemGauntlet: return "SuperMovingStatue";
+                case MinibossFight.TurretFortress: return "EnemyTurret";
+                case MinibossFight.SummonerCoven: return ElementKey("Summoner");
+                case MinibossFight.LancerPhalanx: return ElementKey("Lancer");
+                case MinibossFight.ArcherVolley: return ElementKey("Archer");
                 case MinibossFight.Conclave: conclaveKey = Zoners[UnityEngine.Random.Range(0, Zoners.Length)]; return conclaveKey; // the Archon
                 default: return "Cyclops";
             }
         }
+
+        // v1.1.0: a humanoid of the stage's element ("FlameLancer"), the plain one on neutral and variant stages (the
+        // variant stage's own conversion arms those).
+        internal static string ElementKey(string kind, string prefix = null)
+        {
+            string pre = prefix ?? (ChaosStages.Planned ? null : ElementalGiants.StagePrefix());
+            return pre != null ? pre + kind : kind;
+        }
+
+        // The prefix a humanoid fight shows on its card (the stage's element or variant).
+        internal static string StageShown() { return ChaosStages.Planned ? Variants.Info(ChaosStages.PlannedVariant).Prefix : ElementalGiants.StagePrefix(); }
 
         internal static void Begin(Enemy e, MinibossFight f)
         {
@@ -196,6 +217,11 @@ namespace WolHybridBosses
                 case MinibossFight.Conclave: yield return StartCoroutine(Conclave()); break;
                 case MinibossFight.HiveMother: yield return StartCoroutine(HiveMother()); break;
                 case MinibossFight.Gravewarden: yield return StartCoroutine(Gravewarden()); break;
+                case MinibossFight.GolemGauntlet: yield return StartCoroutine(GolemGauntlet()); break;
+                case MinibossFight.TurretFortress: yield return StartCoroutine(TurretFortress()); break;
+                case MinibossFight.SummonerCoven: yield return StartCoroutine(SummonerCoven()); break;
+                case MinibossFight.LancerPhalanx: yield return StartCoroutine(LancerPhalanx()); break;
+                case MinibossFight.ArcherVolley: yield return StartCoroutine(ArcherVolley()); break;
             }
             Destroy(gameObject, 1f);
         }
@@ -392,6 +418,182 @@ namespace WolHybridBosses
             yield return null;
             yield return null;
             if (e != null) MinibossFights.MatchStage(e, false, 0, ChaosStages.Planned ? null : prefix);
+        }
+
+        // ---------- v1.1.0 Bestiary ----------
+
+        // Living escorts of a fight, topped back up to `max` (counting the ones still standing).
+        List<Enemy> TopUp(List<Enemy> list, Func<string> key, int max, Vector2 around, float radius, string follow)
+        {
+            list.RemoveAll(x => x == null || x.health == null || x.health.CurrentHealthValue <= 0);
+            int missing = max - list.Count;
+            for (int i = 0; i < missing; i++)
+            {
+                Enemy x = MinibossFights.Spawn(key(), around + ArcanaCaster.Rotate(Vector2.right * radius, UnityEngine.Random.value * 360f));
+                if (x == null) continue;
+                list.Add(x);
+                if (follow != null || ChaosStages.Planned) Follow(x, follow);
+            }
+            return list;
+        }
+
+        static bool AnyAlive(List<Enemy> l) { l.RemoveAll(x => x == null || x.health == null || x.health.CurrentHealthValue <= 0); return l.Count > 0; }
+
+        // The Golem Gauntlet: the Crush Colossus, armoured; each armour break shakes two Golems loose (up to four).
+        IEnumerator GolemGauntlet()
+        {
+            yield return null;
+            yield return null;
+            if (Boss == null) yield break;
+            Enemy colossus = Boss;
+            Color stone = new Color(0.75f, 0.68f, 0.58f);
+            string pre = MinibossFights.MatchStage(colossus, true, 2);
+            BossKit.Setup(colossus, Mathf.RoundToInt((1200 + 420 * Tier) * Loop), MinibossFights.Title(MinibossFight.GolemGauntlet), MinibossFights.Sub(pre, "every crack shakes more golems loose"), MinibossFights.TitleColour(pre, stone));
+            List<Enemy> golems = new List<Enemy>();
+            BossArmour.Attach(colossus, 0.2f, 3.5f, n =>
+            {
+                if (colossus == null) return;
+                int before = golems.Count;
+                TopUp(golems, () => "MovingStatue", Mathf.Min(4, golems.Count + 2), colossus.transform.position, 3f, pre);
+                if (golems.Count > before) IntroUI.Show("Golems shake loose", "Two more join the gauntlet", stone, null, 2f);
+            });
+            yield return StartCoroutine(UntilDead(colossus));
+            foreach (Enemy g in golems) if (g != null && g.health != null && g.health.CurrentHealthValue > 0) BossKit.Remove(g);
+            Gold(colossus, 1.4f);
+        }
+
+        // The Turret Fortress: a great turret ringed by four; each armour break rebuilds the fallen ones.
+        IEnumerator TurretFortress()
+        {
+            yield return null;
+            yield return null;
+            if (Boss == null) yield break;
+            Enemy core = Boss;
+            core.transform.localScale = core.transform.localScale * 1.8f;
+            Color steel = new Color(0.7f, 0.8f, 0.9f);
+            string pre = MinibossFights.MatchStage(core, true, 0);
+            BossKit.Setup(core, Mathf.RoundToInt((900 + 350 * Tier) * Loop), MinibossFights.Title(MinibossFight.TurretFortress), MinibossFights.Sub(pre, "its ring of turrets rebuilds when its armour breaks"), MinibossFights.TitleColour(pre, steel));
+            List<Enemy> ring = new List<Enemy>();
+            for (int i = 0; i < 4; i++)
+            {
+                Enemy t = MinibossFights.Spawn("EnemyTurret", (Vector2)core.transform.position + ArcanaCaster.Rotate(Vector2.right * 4.5f, i * 90f + 45f));
+                if (t != null) { ring.Add(t); Follow(t, pre); }
+            }
+            BossArmour.Attach(core, 0.2f, 3.5f, n =>
+            {
+                if (core == null) return;
+                ring.RemoveAll(x => x == null || x.health == null || x.health.CurrentHealthValue <= 0);
+                int missing = 4 - ring.Count;
+                for (int i = 0; i < missing; i++)
+                {
+                    Enemy t = MinibossFights.Spawn("EnemyTurret", (Vector2)core.transform.position + ArcanaCaster.Rotate(Vector2.right * 4.5f, UnityEngine.Random.value * 360f));
+                    if (t != null) { ring.Add(t); Follow(t, pre); }
+                }
+                if (missing > 0) IntroUI.Show("The fortress rebuilds", missing + " turret(s) back up", steel, null, 2f);
+            });
+            yield return StartCoroutine(UntilDead(core));
+            foreach (Enemy t in ring) if (t != null && t.health != null && t.health.CurrentHealthValue > 0) BossKit.Remove(t);
+            Gold(core, 1.3f);
+        }
+
+        // The Summoner Coven: a high summoner shielded by two coven summoners of other elements; its armour only
+        // breaks once both are down, and each break calls two new ones.
+        IEnumerator SummonerCoven()
+        {
+            yield return null;
+            yield return null;
+            if (Boss == null) yield break;
+            Enemy high = Boss;
+            high.transform.localScale = high.transform.localScale * 1.5f;
+            Color violet = new Color(0.8f, 0.6f, 1f);
+            string pre = MinibossFights.StageShown();
+            BossKit.Setup(high, Mathf.RoundToInt((1000 + 380 * Tier) * Loop), MinibossFights.Title(MinibossFight.SummonerCoven), MinibossFights.Sub(pre, "bring down its coven to break its armour"), MinibossFights.TitleColour(pre, violet));
+            List<Enemy> coven = new List<Enemy>();
+            Func<string> covenKey = () =>
+            {
+                if (ChaosStages.Planned) return "Summoner";
+                List<string> others = new List<string>(ElementalGiants.Prefixes);
+                string stage = ElementalGiants.StagePrefix();
+                if (stage != null) others.Remove(stage);
+                return MinibossFights.ElementKey("Summoner", others[UnityEngine.Random.Range(0, others.Count)]);
+            };
+            TopUp(coven, covenKey, 2, high.transform.position, 3.5f, null);
+            bool told = false;
+            BossArmour armour = BossArmour.Attach(high, 0.2f, 3.5f, n => { if (high != null) TopUp(coven, covenKey, 2, high.transform.position, 3.5f, null); });
+            armour.CanBreak = () =>
+            {
+                if (!AnyAlive(coven)) return true;
+                if (!told) { told = true; IntroUI.Show("The coven shields its leader", "Bring both coven summoners down", violet, null, 2f); }
+                return false;
+            };
+            yield return StartCoroutine(UntilDead(high));
+            foreach (Enemy c in coven) if (c != null && c.health != null && c.health.CurrentHealthValue > 0) BossKit.Remove(c);
+            Gold(high, 1.4f);
+        }
+
+        // The Lancer Phalanx: a captain with four lancers; each armour break sends the phalanx charging (faster for
+        // a few seconds) and calls two more lancers (up to four).
+        IEnumerator LancerPhalanx()
+        {
+            yield return null;
+            yield return null;
+            if (Boss == null) yield break;
+            Enemy captain = Boss;
+            captain.transform.localScale = captain.transform.localScale * 1.5f;
+            Color bronze = new Color(0.95f, 0.75f, 0.45f);
+            string pre = MinibossFights.StageShown();
+            BossKit.Setup(captain, Mathf.RoundToInt((1050 + 400 * Tier) * Loop), MinibossFights.Title(MinibossFight.LancerPhalanx), MinibossFights.Sub(pre, "break its armour and the phalanx charges"), MinibossFights.TitleColour(pre, bronze));
+            List<Enemy> phalanx = new List<Enemy>();
+            Func<string> key = () => MinibossFights.ElementKey("Lancer");
+            TopUp(phalanx, key, 4, captain.transform.position, 3f, null);
+            BossArmour.Attach(captain, 0.2f, 3.5f, n =>
+            {
+                if (captain == null) return;
+                TopUp(phalanx, key, Mathf.Min(4, phalanx.Count + 2), captain.transform.position, 3f, null);
+                StartCoroutine(Charge(phalanx));
+                IntroUI.Show("The phalanx charges!", "Lancers rush in", bronze, null, 2f);
+            });
+            yield return StartCoroutine(UntilDead(captain));
+            foreach (Enemy l in phalanx) if (l != null && l.health != null && l.health.CurrentHealthValue > 0) BossKit.Remove(l);
+            Gold(captain, 1.4f);
+        }
+
+        static IEnumerator Charge(List<Enemy> group)
+        {
+            NumVarStatMod haste = new NumVarStatMod("HB_PhalanxCharge", 1.4f, 10, VarStatModType.Multiplicative, false);
+            List<Enemy> charged = new List<Enemy>();
+            foreach (Enemy e in group) if (e != null && e.movement != null) { try { e.movement.moveSpeedStat.AddMod(haste); charged.Add(e); } catch (Exception) { } }
+            yield return new WaitForSeconds(4f);
+            foreach (Enemy e in charged) if (e != null && e.movement != null) try { e.movement.moveSpeedStat.Modify(haste, false); } catch (Exception) { }
+        }
+
+        // The Archer Volley: a marksman and three Blinking archers that keep repositioning around you; each armour
+        // break brings two more (up to five).
+        IEnumerator ArcherVolley()
+        {
+            yield return null;
+            yield return null;
+            if (Boss == null) yield break;
+            Enemy marksman = Boss;
+            marksman.transform.localScale = marksman.transform.localScale * 1.5f;
+            Color leaf = new Color(0.7f, 0.95f, 0.6f);
+            string pre = MinibossFights.StageShown();
+            BossKit.Setup(marksman, Mathf.RoundToInt((950 + 360 * Tier) * Loop), MinibossFights.Title(MinibossFight.ArcherVolley), MinibossFights.Sub(pre, "its archers never stay put"), MinibossFights.TitleColour(pre, leaf));
+            List<Enemy> archers = new List<Enemy>();
+            Func<string> key = () => MinibossFights.ElementKey("Archer");
+            Action blink = () => { foreach (Enemy a in archers) if (a != null && a.GetComponent<EliteMark>() == null) Elites.Make(a, EliteTrait.Blinking); };
+            TopUp(archers, key, 3, marksman.transform.position, 5f, null);
+            blink();
+            BossArmour.Attach(marksman, 0.2f, 3.5f, n =>
+            {
+                if (marksman == null) return;
+                TopUp(archers, key, Mathf.Min(5, archers.Count + 2), marksman.transform.position, 5f, null);
+                blink();
+                IntroUI.Show("More archers take aim", "The volley grows", leaf, null, 2f);
+            });
+            yield return StartCoroutine(UntilDead(marksman));
+            foreach (Enemy a in archers) if (a != null && a.health != null && a.health.CurrentHealthValue > 0) BossKit.Remove(a);
+            Gold(marksman, 1.3f);
         }
 
         static float Loop { get { return GameController.loopCount >= 1 ? 1.5f : 1f; } }

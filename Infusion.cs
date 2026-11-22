@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using HarmonyLib;
@@ -69,7 +69,7 @@ namespace WolHybridBosses
 
         internal static void ClearRunDuals() { runDual.Clear(); runPick.Clear(); }
 
-        internal static void RollShuffled(Player p)
+        internal static void RollShuffled(Player p, bool preferInfused = false)
         {
             if (p == null || p.assignedSkills == null || !Plugin.InfusionEnabled.Value) return;
             List<string> names = new List<string>();
@@ -78,7 +78,8 @@ namespace WolHybridBosses
                 if (s == null || string.IsNullOrEmpty(s.skillID)) continue;
                 List<string> opts = InfusionUnlocks.Options(s.skillID);
                 if (opts.Count <= 1) continue;
-                string pick = opts[UnityEngine.Random.Range(0, opts.Count)];
+                // v1.1.0: Nocturne's Alchemist preset lands on an infused / dual version whenever there is one.
+                string pick = preferInfused ? opts[UnityEngine.Random.Range(1, opts.Count)] : opts[UnityEngine.Random.Range(0, opts.Count)];
                 runPick[s.skillID] = pick;
                 runDual.Remove(s.skillID);
                 if (pick.Length > 0) names.Add(IntroUI.SkillName(s.skillID) + " (" + InfusionUnlocks.Label(pick) + ")");
@@ -281,6 +282,7 @@ namespace WolHybridBosses
                 if (chance <= 0f) chance = 0.15f; // a move without a status still gets a little of its new element's
                 info.burnChance = info.slowChance = info.poisonChance = info.shockChance = info.freezeChance = info.chaosChance = 0f;
                 if (!forced) info.damage = Mathf.Max(1, Mathf.RoundToInt(info.damage * DamageBonus));
+                if (!forced && WhiteMantle.Active) info.damage = Mathf.Max(1, Mathf.RoundToInt(info.damage * WhiteMantle.DamageBonus)); // v1.1.0
                 if (name == "Prism")
                 {
                     // Prism, like Arcanos' own: each cast is the next of the five base elements, with its status.
@@ -471,7 +473,11 @@ namespace WolHybridBosses
     [HarmonyPatch(typeof(Player), "RandomizeBuild")]
     static class InfusionShufflePatch
     {
-        static void Postfix(Player __instance) { try { Infusion.RollShuffled(__instance); } catch (Exception ex) { Plugin.Log.LogWarning("INFUSION shuffle roll failed: " + ex.Message); } }
+        static void Postfix(Player __instance, bool __2)
+        {
+            if (!__2) return; // v1.1.0: arcana weren't shuffled (Nocturne's "Robe and relic")
+            try { Infusion.RollShuffled(__instance, NocturneShuffle.PreferInfused); } catch (Exception ex) { Plugin.Log.LogWarning("INFUSION shuffle roll failed: " + ex.Message); }
+        }
     }
 
     // ---------- rare pre-infused drops and stock ----------

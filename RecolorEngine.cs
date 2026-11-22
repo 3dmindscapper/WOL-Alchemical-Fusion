@@ -23,6 +23,7 @@ namespace WolHybridBosses
             { "Thunder", new[] { C(0.25f, 0.22f, 0.03f), C(0.6f, 0.52f, 0.05f), C(0.98f, 0.85f, 0.15f), C(1f, 0.96f, 0.55f), C(1f, 1f, 0.92f) } },
             { "Wind",    new[] { C(0.05f, 0.25f, 0.22f), C(0.2f, 0.55f, 0.45f), C(0.5f, 0.85f, 0.7f), C(0.8f, 0.98f, 0.88f), C(0.97f, 1f, 0.97f) } },
             { "Chaos",   new[] { C(0.08f, 0.02f, 0.14f), C(0.3f, 0.08f, 0.48f), C(0.62f, 0.35f, 0.95f), C(0.85f, 0.72f, 1f) } },
+            { "Pure",    new[] { C(0.32f, 0.32f, 0.4f), C(0.6f, 0.6f, 0.7f), C(0.84f, 0.85f, 0.92f), C(0.96f, 0.97f, 1f), C(1f, 1f, 1f) } }, // v1.1.0: the White Alchemist / White Mantle
             { "Radiant", new[] { C(0.55f, 0.38f, 0.12f), C(0.95f, 0.72f, 0.25f), C(1f, 0.93f, 0.65f), C(1f, 1f, 0.96f) } },
         };
 

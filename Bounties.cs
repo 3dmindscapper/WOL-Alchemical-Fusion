@@ -64,6 +64,7 @@ namespace WolHybridBosses
                 if (!match) return;
                 Have++;
                 ShowUntil = Time.unscaledTime + 5f;
+                if (Have < Need) BountyBoard.Announce("Bounty progress", Text + "  ·  " + Have + " / " + Need, 0f, 3f); // v1.1.1
                 Plugin.Log.LogInfo("BOUNTY progress " + Have + "/" + Need);
                 if (Have >= Need) Complete();
             }
@@ -85,6 +86,25 @@ namespace WolHybridBosses
     internal class BountyBoard : MonoBehaviour
     {
         bool wasInHub;
+
+        // v1.1.1: bounty news as a centred card, like the portal announcements. It waits for any card already on
+        // screen (a rival / trial portal), then stays long enough to read.
+        static string cardTitle, cardText;
+        static float cardAt = -1f, cardSeconds;
+        static int Reward { get { return 60 + 30 * Mathf.Max(0, GameController.tierCount); } }
+
+        internal static void Announce(string title, string text, float delay, float seconds)
+        {
+            cardTitle = title; cardText = text; cardSeconds = seconds;
+            cardAt = Time.time + delay;
+        }
+
+        void LateUpdate()
+        {
+            if (cardAt < 0f || Time.time < cardAt || IntroUI.Busy || ModifiersMenu.IsOpen || NocturneMenu.IsOpen) return;
+            cardAt = -1f;
+            IntroUI.Show(cardTitle, cardText, new Color(1f, 0.85f, 0.45f), null, cardSeconds);
+        }
         static GUIStyle style;
         static Font styleFont;
 
@@ -95,13 +115,14 @@ namespace WolHybridBosses
             if (inHub && !wasInHub)
             {
                 Bounties.Roll();
+                if (Bounties.Active) Announce("Bounty for your next run", Bounties.Text + "  ·  reward " + Reward + " gold", 2.5f, 6f); // v1.1.1
                 Grudges.EndRun();
                 Infusion.ClearRunDuals(); // v0.9.18
             }
             if (!inHub && wasInHub)
             {
                 // The run begins.
-                if (Bounties.Active) Bounties.ShowUntil = Time.unscaledTime + 6f;
+                if (Bounties.Active && !Bounties.Done) Announce("Bounty", Bounties.Text + (Bounties.Need > 1 ? "  ·  " + Bounties.Have + " / " + Bounties.Need : "") + "  ·  reward " + Reward + " gold", 1.5f, 5f); // v1.1.1
                 try { Infusion.RollRunDuals(); } catch (Exception ex) { Plugin.Log.LogWarning("INFUSION dual roll failed: " + ex.Message); } // v0.9.18
             }
             wasInHub = inHub;
@@ -109,9 +130,17 @@ namespace WolHybridBosses
 
         void OnGUI()
         {
-            if (!Bounties.Active || !Plugin.BountiesEnabled.Value || ModifiersMenu.IsOpen) return;
+            if (ModifiersMenu.IsOpen || NocturneMenu.IsOpen) return;
             bool inHub = !TomiInfusion.InRun;
-            if (!inHub && (Bounties.Done || Time.unscaledTime > Bounties.ShowUntil)) return;
+            // v1.1.0: the league rank, in the Hub under the bounty.
+            if (inHub && League.On && UnityEngine.SceneManagement.SceneManager.GetActiveScene().name == "Hub")
+            {
+                if (style == null || GameFont.Changed(ref styleFont)) style = GameFont.Style(GUI.skin.label, 15, TextAnchor.UpperLeft, false, true);
+                GameFont.Shadowed(new Rect(16f, 38f, 620f, 24f), "Rival League:  " + League.RankName + "  ·  " + League.Points + " pts  ·  " + League.NextRankText
+                    + (WhiteMantle.Unlocked ? "  ·  White Mantle " + (WhiteMantle.Worn ? "worn" : "off") : ""), style, new Color(0.8f, 0.85f, 1f));
+            }
+            if (!Bounties.Active || !Plugin.BountiesEnabled.Value) return;
+            if (!inHub) return; // v1.1.1: in runs the bounty shows as centred cards instead (Announce)
             if (style == null || GameFont.Changed(ref styleFont)) style = GameFont.Style(GUI.skin.label, 15, TextAnchor.UpperLeft, false, true);
             string line = (inHub ? "Next run's bounty:  " : "Bounty:  ") + Bounties.Text + (Bounties.Need > 1 ? "  (" + Bounties.Have + "/" + Bounties.Need + ")" : "")
                 + "  ·  " + (60 + 30 * Mathf.Max(0, GameController.tierCount)) + "+ gold";

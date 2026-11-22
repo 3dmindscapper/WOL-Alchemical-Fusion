@@ -19,7 +19,7 @@ namespace WolHybridBosses
 
         internal static void Attach(Enemy e, RivalMarker mk)
         {
-            if (e == null || mk == null) return;
+            if (e == null || mk == null || mk.NoChest) return;
             RivalRewards r = e.GetComponent<RivalRewards>() ?? e.gameObject.AddComponent<RivalRewards>();
             r.owner = e;
             r.variant = Variants.FromPrefix(mk.Prefix);
@@ -56,6 +56,8 @@ namespace WolHybridBosses
             }
             Plugin.Log.LogInfo("RIVAL reward: " + standard + " standard chest(s), " + gold + " gold chest(s)");
         }
+
+        internal static void SpawnChest(Vector2 pos, bool goldChest, StageVariant variant) { Spawn(pos, goldChest, variant); } // v1.1.0: the tournament prize
 
         static void Spawn(Vector2 pos, bool goldChest, StageVariant variant)
         {

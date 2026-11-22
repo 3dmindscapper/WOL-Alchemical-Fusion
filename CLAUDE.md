@@ -71,6 +71,56 @@ Cloning the player GameObject and driving it from script failed:
 - v0.0.7 tested: summon swap works (logged EarthKnight, FlameLancer etc.). SuperCoffin goes **pink** on palettes 4–8, so its sheet has no elemental rows: keep palette 3 and tint or outline it (MiniBoss uses `_OutlineColor`/`_OutlineColor2`). The user wants the coffin (and rivals) to cast **player arcana** instead.
 - Arcana research: `Contestant : Enemy` (PvP wizard) reimplements Tornado/SwordThrow/Fireball as its own states (ctor typed to Contestant). Its FireballState instantiates the prefab and calls `Attack.SetAttackInfo("Player", "ShootFireball", level, isUltimate)`, the same call player arcana make (e.g. `UseFireBeam.CreateFireBeam`: `FireBeam.Prefab` + `ChaosInst` + `SetAttackInfo`). There are 100 `Player+Use*` arcana. Plan: our own data-driven `ArcanaState : Enemy.SkillState` (skillID, prefab, delivery type). See ROADMAP "Enemy Arcana".
 
+## v1.1.0: Nocturne overhaul, White Alchemist + Mantle, Rival League, tournaments, team matches, Bestiary (built, not yet run in game)
+- **Progress.cs:** `BepInEx/config/osi.wol.hybridbosses.progress.txt`, key=value lines (`GetInt`/`SetInt`/`AddInt`/`GetBool`/`SetBool`). Keys:
+  - `league.points`, `league.<Prefix>.wins` / `.losses`
+  - `alchemist.wins`, `mantle.unlocked`, `mantle.on`
+- **Nocturne.cs:** the game's flow:
+  - `RandomBuildNpc.HandleConditionalInteraction` checks `Player.platWallet` against its `cost` field, withdraws, and adds `GameController.runModifier` "RandomRun".
+  - `RandRunMod.Activate` then calls `Player.RandomizeBuild(randOutfit = outfitID != "Pride", randRelic, randArcana)`.
+  - `RandomizeBuild` builds the arcana pool with `UpdateRandSkillsDict(ElementType)`: Neutral (5) means all elements, and the Seven Flush relics pass an element. It returns false if the pool can't fill the slots, and then the game rerolls relics and falls back to Neutral.
+
+  Our patches:
+  - Interact prefix sets `cost` to 0 (`Nocturne.Free`). The postfix opens `NocturneMenu` when "RandomRun" is active (1.5s debounce).
+  - `RandRunMod.Activate` prefix/postfix/finalizer set `NocturneShuffle.Shuffling`, plus `ForcedElement` (preset 3, a random one of the 5 base elements) and `PreferInfused` (preset 4).
+  - `RandomizeBuild` prefix (`Priority.First`, ref `__0..__2`): preset 1 = arcana only, preset 2 = no arcana.
+  - `UpdateRandSkillsDict` prefix swaps Neutral for the forced element. Its postfix retries with Neutral via reflection (`retrying` guard) when the element can't fill the slots.
+  - `InfusionShufflePatch` skips when arcana weren't shuffled (`__2`) and passes `PreferInfused` to `RollShuffled(p, preferInfused)` (picks options[1..]).
+  - The menu (Hub; keys / pad like ModifiersMenu) writes `Nocturne.Preset`.
+- **Alchemist.cs:**
+  - `FinalRun.Alchemist`: `Pick` rolls `FinalBoss.AlchemistChance` (0.25) first, giving prefix "Chaos" with the title `WhiteAlchemist.Name`. `ForceAlchemist()` is the Alt+F12 test.
+  - Board: white portrait/ring, ChaosIcon hidden.
+  - `FinalChampion.Swap` sets `RivalMarker.Alchemist` before Start. `Grudges.DualKit` chance is 1 for it. The end of `MakeHostile` calls `WhiteAlchemist.Setup`: `RecolorBody(e, "Pure", false)` (new `Pure` ramp in ElementRamps) plus `WhiteAura.Attach`, which is `OverdriveEffects` with `Initialize` and `ToggleAura(true)`.
+  - `ChampionPhase`: the Alchemist branch "…, Transmuted" adds 2 arcana and re-runs `DualKit`.
+  - `FinalChampion.Finish` calls `WhiteAlchemist.Rewards`:
+    - `TeachInfusion` unlocks a random not-yet-unlocked element (not its own) for an equipped non-signature arcana.
+    - It counts `alchemist.wins`; the first win sets `mantle.unlocked` and `mantle.on`.
+  - **`WhiteMantle`** (on the runner via `EchoRecorder.Ensure`) checks once a second while worn:
+    - The player's palette-shader materials get `PaletteTwin(_, "Pure")`, with originals kept and restored.
+    - It adds a white aura on the player.
+    - Infused equipped skills get `StatManager.GetSkillData("Player", id).ModifyMod(StatData.cdStr, ×0.85 mod, add)`, removed when no longer infused or when the mantle comes off.
+    - `Infusion.ApplyToAttack` gives ×1.15 damage when `WhiteMantle.Active`.
+
+    It's toggled from a ModifiersMenu row. No game Outfit is added: a modded wardrobe entry could break save data if the mod were removed.
+- **MantleRobe.cs (wardrobe robe via LegendAPI, optional):**
+  - Setup: the csproj references `LegendApi.dll` (Private false), and Plugin has a soft `BepInDependency` on `xyz.yekoc.wizardoflegend.LegendAPI`.
+  - Registration: `MantleRobe.TryRegister()` runs in Awake (data only; `Outfit` has no static constructor, so it's safe early). When LegendAPI is loaded (`Chainloader.PluginInfos`), `RegisterWithLegendApi` builds `new Outfit("AlchemicalWhiteMantle", 0, [OutfitModStat(LegendAPI.Outfits.CustomModType, …)], false, false)` and calls `LegendAPI.Outfits.Register(OutfitInfo { name "White Mantle", unlockCondition = Progress mantle.unlocked, customMod sets MantleRobe.Wearing, customDesc })`. The method is only JIT-compiled when LegendAPI is present.
+  - Effect: when registered, `WhiteMantle.Worn` = robe equipped, the modifiers row is read-only, and the reward card says "a new robe in the wardrobe". Otherwise the old menu toggle applies.
+  - Wardrobe preview: colour row 0. The white look comes from our palette recolour while it's worn.
+- **League.cs:** named rivals per prefix, with `LeagueRival` (`Wins`/`Losses`/`Record`) and `League.For(prefix)` (config `RivalWizards.League`).
+  - Points: Easy 1, Medium 2, Hard 3, Final 4, +1 in a tournament. Ranks Novice/Adept/Duelist/Champion/Grandmaster at 0/6/16/32/55.
+  - Rank effects: `RecordWin` gold bonus = rank × 10 × (min(tier, 2) + 1), with a rank-up card. `HardWeightBonus` = rank × 6 is added to `RivalEvent.RollTier`'s Hard weight.
+  - Looks and lines: `OutfitFor` is a deterministic robe from `Outfit.OutfitList` by name hash; `MakeHostile` uses it when `mk.League` is set. `Greet` depends on the record.
+  - Duel integration: `league` is set for non-Echo, non-Archon rivals (rematches included). The title is "Name, Element Rival[, rematch]" and the subtitle adds the record. A loss is recorded if the player is down while the rival lives; a win after it dies.
+  - The Hub shows rank, points, next rank and mantle status under the bounty.
+- **RivalEvent modes (`RivalMode` Duel / Tournament / Team):** rolled in `Open` for non-Echo, non-rematch portals (`TournamentChance` 0.12, `TeamMatchChance` 0.12), with their own portal colours and announcements. `OpenModeHere` handles the Alt+F9 / Alt+F11 tests.
+  - **`RunTournament`:** 3 rounds of `Challenger` (spawn, `mk.NoChest`, league, intro, greeting, banter), with tiers Down/base/Up and elements base plus 2 others. Each win records a league win (+1) and a bounty report; between rounds the player heals 20% of max over a 5s breather. The prize is `RivalRewards.SpawnChest(gold)` plus a 50% `PrizeArcana` (pre-infused, unlocked, not held).
+  - **`RunTeam`:** `SpawnAlly` is a plain "Contestant" with no RivalMarker, so it stays the game's friendly AI. It gets an element palette, `BossEventEnemy` (never elite) and Hard tier HP. Two rivals one tier down follow, each introduced. Every rival patch checks `Rivals.IsRival`, so the ally's spells aren't re-owned. The ally is removed after the win.
+- **BossFights.cs Bestiary** (`MinibossFight` is now 11): Golem Gauntlet ("SuperMovingStatue"), Turret Fortress ("EnemyTurret"), Summoner Coven / Lancer Phalanx / Archer Volley (`ElementKey(kind)` = stage prefix + kind, plain on neutral and variant stages; the variant conversion arms them).
+  - Shared helpers: `TopUp(list, key, max, …)`, `AnyAlive`, `Charge` (phalanx +40% speed for 4s), and Blinking elites on archers via `Elites.Make`.
+- **New config:** `Nocturne.Free`, `Nocturne.Preset`, `FinalBoss.AlchemistChance`, `RivalWizards.League`, `RivalWizards.TournamentChance`, `RivalWizards.TeamMatchChance`. Modifiers menu rows were added for these and for the White Mantle.
+- **Test keys:** Alt+F9 tournament, Alt+F11 team match, Alt+F12 Primordial Alchemist final.
+
 ## v1.0.0 rename: released as **WOL Alchemical Fusion**
 - **What changed:** the Thunderstore package name (`WOL_Alchemical_Fusion`), the BepInPlugin display name ("WOL Alchemical Fusion"; the log source shows it), the startup log lines, the modifiers menu title, the README / ROADMAP / CHANGELOG titles, and the icon ("AF" / "ALCHEMICAL FUSION"). The zip is now `release/WOL_Alchemical_Fusion-1.0.0.zip`.
 - **Kept on purpose:** the plugin GUID `osi.wol.hybridbosses` (so the config file, the unlocks file and the Echo file carry over), `WolHybridBosses.dll`, the namespace, the internal `HybridBosses_*` object names, and the GitHub repo name.
@@ -801,3 +851,7 @@ Cloning the player GameObject and driving it from script failed:
 - `Plugin.cs`, `WolHybridBosses.csproj`: current plugin and build
 - `reference/decompiled_FinalBoss_Boss_MiniBoss_EnemyFactory.cs.txt`: **missing from the folder** (never saved, as was the earlier v0.0.5 draft). Re-export from ILSpy if needed. Was: ILSpy output (FinalBoss ~lines 1-3200, Boss ~3210, MiniBoss ~4103, EnemyFactory ~4502). Strip CRLF before grepping.
 - Decompiling: ILSpy -> expand `Assembly-CSharp` -> `-` namespace -> right-click class -> Save Code.
+
+## v1.1.1: centred bounty cards, the Primordial Alchemist (built, not yet run in game)
+- **Bounties:** BountyBoard.Announce queues a centred IntroUI card (waits while IntroUI.Busy or a menu is open): Hub arrival (2.5s delay, 6s), run start (1.5s, 5s), each progress step (3s). The in-run top-left line is gone; the Hub keeps its line.
+- **Primordial Alchemist:** WhiteAlchemist.Name is now "The Primordial Alchemist" (class names unchanged). WhiteAlchemist.Monologue runs in FinalChampion.Swap before Rivals.Intro: a self-introduction, a line on the player's dual-infused arcana (else single infused, else none), a line on the most-carried element (Infusion.CurrentElement over assignedSkills), and a challenge; boss frozen, invulnerable, camera on it. Then a RivalBanter with RivalVoice.Primordial gives half-health and defeat lines.

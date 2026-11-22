@@ -71,6 +71,11 @@ namespace WolHybridBosses
                     Toggle("Infused Council", Plugin.InfusedCouncil),
                     Toggle("Final champions", Plugin.FinalChampions),
                     Toggle("Bounties", Plugin.BountiesEnabled),
+                    Toggle("Nocturne's shuffle is free", Plugin.NocturneFree),
+                    Steps("Primordial Alchemist (of final champions)", Plugin.AlchemistChance, new[] { 0f, 0.15f, 0.25f, 0.5f }, true),
+                    Steps("Rival tournaments", Plugin.TournamentChance, new[] { 0f, 0.1f, 0.15f, 0.3f }, true),
+                    Steps("Rival team matches", Plugin.TeamMatchChance, new[] { 0f, 0.1f, 0.15f, 0.3f }, true),
+                    new Item { Label = "White Mantle", Value = () => !WhiteMantle.Unlocked ? "Locked (beat the Primordial Alchemist)" : MantleRobe.Registered ? (WhiteMantle.Worn ? "Worn (wardrobe robe)" : "In the wardrobe") : WhiteMantle.Worn ? "Worn" : "Off", Change = d => WhiteMantle.Toggle() },
                 };
                 return items;
             }

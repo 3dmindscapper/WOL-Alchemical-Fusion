@@ -36,6 +36,11 @@
     <Reference Include="$(ManagedDir)\UnityEngine*.dll">
       <Private>false</Private>
     </Reference>
+    <!-- Optional (soft dependency): LegendAPI registers the White Mantle as a wardrobe robe when it's installed -->
+    <Reference Include="LegendApi">
+      <HintPath>$(BepInDir)\BepInEx\plugins\RandomlyAwesome-LegendAPI\LegendApi.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
   </ItemGroup>
 
   <!-- Copies the built plugin into the r2modman profile's plugins folder after each build -->

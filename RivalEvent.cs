@@ -14,6 +14,8 @@ namespace WolHybridBosses
     // (floor, walls, pits, decorations and checkpoints under the room's own transform), so it all happens in the same
     // scene: nothing reloads and the stage's progress is untouched. Checkpoints (safe floor spots) place the arrival
     // point and the rival.
+    internal enum RivalMode { Duel, Tournament, Team } // v1.1.0
+
     internal class RivalEvent : MonoBehaviour
     {
         static readonly Vector2 ArenaOffset = new Vector2(0f, -780f);
@@ -30,6 +32,7 @@ namespace WolHybridBosses
         GameObject entrance;
         RivalTier tier;
         bool echo, inStartRoom;
+        RivalMode mode;          // v1.1.0: a duel, a three-round tournament or a 2v2 team match
         GrudgeRecord grudge;     // v0.9.16: a returning rival
         internal bool Fled;      // (v0.9.16 flee; unused since v0.9.17 rematches)
         bool chosen;
@@ -82,7 +85,15 @@ namespace WolHybridBosses
             Open((Vector2)p.transform.position + new Vector2(2.5f, 0f), g.Prefix, true, false, g);
         }
 
-        static void Open(Vector2 entranceAt, string prefix, bool announce, bool inStartRoom, GrudgeRecord grudge = null, bool forceEcho = false)
+        // v1.1.0 test keys: Alt+F9 a tournament portal, Alt+F11 a team match portal, beside you.
+        internal static void OpenModeHere(RivalMode m)
+        {
+            Player p = Elites.Player0;
+            if (p == null) return;
+            Open((Vector2)p.transform.position + new Vector2(2.5f, 0f), Rivals.StagePrefixOrRandom(), true, false, null, false, m);
+        }
+
+        static void Open(Vector2 entranceAt, string prefix, bool announce, bool inStartRoom, GrudgeRecord grudge = null, bool forceEcho = false, RivalMode? forceMode = null)
         {
             if (Current != null) Current.Close();
             GameObject go = new GameObject("HybridBosses_RivalEvent");
@@ -94,11 +105,23 @@ namespace WolHybridBosses
             ev.tier = ev.echo ? EchoTier : Plugin.RivalScaleWithProgress.Value ? RollTier(false) : (RivalTier)UnityEngine.Random.Range(0, 3);
             ev.inStartRoom = inStartRoom;
             if (grudge != null) { ev.grudge = grudge; ev.echo = false; ev.tier = grudge.Tier; }
+            // v1.1.0: some portals hold a tournament or a team match instead of a duel.
+            if (forceMode.HasValue) { ev.mode = forceMode.Value; if (ev.mode != RivalMode.Duel) ev.echo = false; }
+            else if (!ev.echo && grudge == null)
+            {
+                float r = UnityEngine.Random.value;
+                if (r < Plugin.TournamentChance.Value) ev.mode = RivalMode.Tournament;
+                else if (r < Plugin.TournamentChance.Value + Plugin.TeamMatchChance.Value) ev.mode = RivalMode.Team;
+            }
             if (!ev.Build()) { Destroy(go); return; }
             Current = ev;
             if (announce)
             {
-                if (ev.grudge != null)
+                if (ev.mode == RivalMode.Tournament)
+                    IntroUI.Show("A rival tournament has opened", "In the starting room  ·  three rounds, one prize", TournamentColor, null, AnnounceSeconds);
+                else if (ev.mode == RivalMode.Team)
+                    IntroUI.Show("A team match has opened", "In the starting room  ·  you and an ally against two rivals", TeamColor, null, AnnounceSeconds);
+                else if (ev.grudge != null)
                     IntroUI.Show("A rival wants a rematch", "In the starting room  ·  " + ElementalGiants.ElementColorName(prefix) + " rival  ·  " + ev.tier + "  ·  some of its arcana infused", ElementalGiants.ElementColor(prefix), null, AnnounceSeconds);
                 else if (ev.echo)
                     IntroUI.Show("The Echo of your last run has opened a portal", "In the starting room  ·  your own arcana, robe and relics, turned against you", EchoColor, null, AnnounceSeconds);
@@ -119,7 +142,7 @@ namespace WolHybridBosses
                 return false;
             }
             arenaArrival = Central(arenaRoom, arenaSpots);
-            entrance = MakePortal(entrancePos, arenaArrival, echo ? EchoColor : ElementalGiants.ElementColor(prefix));
+            entrance = MakePortal(entrancePos, arenaArrival, mode == RivalMode.Tournament ? TournamentColor : mode == RivalMode.Team ? TeamColor : echo ? EchoColor : ElementalGiants.ElementColor(prefix));
             if (entrance != null)
             {
                 RivalPortal rp = entrance.AddComponent<RivalPortal>();
@@ -522,7 +545,8 @@ namespace WolHybridBosses
         {
             int[] w = CurrentWeights;
             int easy = atLeastMedium ? 0 : w[0];
-            int roll = UnityEngine.Random.Range(0, easy + w[1] + w[2]);
+            int hard = w[2] + League.HardWeightBonus; // v1.1.0: league rank makes Hard rivals likelier
+            int roll = UnityEngine.Random.Range(0, easy + w[1] + hard);
             return roll < easy ? RivalTier.Easy : roll < easy + w[1] ? RivalTier.Medium : RivalTier.Hard;
         }
 
@@ -556,6 +580,8 @@ namespace WolHybridBosses
                 }
             }
             if (entrance != null) Destroy(entrance); // one fight per portal
+            if (mode == RivalMode.Tournament) { yield return StartCoroutine(RunTournament()); if (!PlayerDown()) OpenWayBack(); yield break; }
+            if (mode == RivalMode.Team) { yield return StartCoroutine(RunTeam()); if (!PlayerDown()) OpenWayBack(); yield break; }
 
             // The Hard portal sometimes holds an Archon (a final champion, with its half-health phase) instead.
             bool archon = !echo && grudge == null && tier == RivalTier.Hard && UnityEngine.Random.value < Plugin.ArchonRivalChance.Value;
@@ -572,6 +598,9 @@ namespace WolHybridBosses
                 if (mk != null) mk.Echo = record;
                 EchoRecorder.FoughtThisRun = true;
             }
+            // v1.1.0: the league's named rival for this element (not the Echo, not an Archon).
+            LeagueRival league = (record == null && !archon) ? League.For(rivalPrefix) : null;
+            if (league != null) { RivalMarker lm = rival.GetComponent<RivalMarker>(); if (lm != null) lm.League = league; }
             // v0.9.17: a rematch rival (harder, some arcana infused; may drop one of its arcana when beaten).
             if (grudge != null)
             {
@@ -582,17 +611,19 @@ namespace WolHybridBosses
             yield return null; // Start (and our hostile postfix) runs
             yield return null;
 
-            string title = grudge != null ? ElementalGiants.ElementColorName(prefix) + " Rival Wizard, rematch"
+            string title = league != null ? league.Name + ", " + ElementalGiants.ElementColorName(rivalPrefix) + " Rival" + (grudge != null ? ", rematch" : "")
+                : grudge != null ? ElementalGiants.ElementColorName(prefix) + " Rival Wizard, rematch"
                 : record != null ? "Echo of your last run"
                 : archon ? (rivalPrefix == "Chaos" ? "Chaos Sovereign" : ElementalGiants.ElementColorName(rivalPrefix) + " Archon")
                 : ElementalGiants.ElementColorName(prefix) + " Rival Wizard";
             if (archon) Plugin.Log.LogInfo("RIVAL Hard portal holds an Archon: " + title);
             string sub = grudge != null ? tier + "  ·  rematch  ·  some of its arcana infused" : record != null ? "You reached " + record.Reached + "  ·  " + tier : archon ? "Hard  ·  Archon" : tier.ToString();
+            if (league != null) sub += "  ·  " + league.Record;
             yield return StartCoroutine(Rivals.Intro(rival, title, sub));
             // v0.9.20: voice lines (greeting now; half health and defeat from RivalBanter).
             RivalVoice voice = record != null ? RivalVoice.Echo : archon ? RivalVoice.Archon : grudge != null ? RivalVoice.Rematch : RivalVoice.Rival;
             Color voiceColour = record != null ? EchoColor : ElementalGiants.ElementColor(rivalPrefix);
-            RivalSpeech.Say(title, RivalLines.Greet(voice, rivalPrefix), voiceColour);
+            RivalSpeech.Say(title, league != null && grudge == null ? League.Greet(league) : RivalLines.Greet(voice, rivalPrefix), voiceColour);
             if (rival != null)
             {
                 RivalBanter banter = rival.gameObject.AddComponent<RivalBanter>();
@@ -603,7 +634,14 @@ namespace WolHybridBosses
             }
 
             // After the fight (and its chests): the way back to where the player came in.
-            while (rival != null && rival.health != null && rival.health.CurrentHealthValue > 0) yield return new WaitForSeconds(0.25f);
+            bool lost = false;
+            while (rival != null && rival.health != null && rival.health.CurrentHealthValue > 0)
+            {
+                if (!lost && PlayerDown()) { lost = true; League.RecordLoss(league); } // v1.1.0: it beat you
+                yield return new WaitForSeconds(0.25f);
+            }
+            if (lost) yield break;
+            if (league != null) League.RecordWin(league, archon ? RivalTier.Final : tier, rival != null ? (Vector2)rival.transform.position : arenaArrival);
             if (!Fled) Bounties.Report(BountyKind.Rival, null); // v0.9.16
             bool promise = grudge == null && Grudges.MaybeRecord(rivalPrefix, tier, echo, archon); // v0.9.17: maybe a rematch later this run
             yield return new WaitForSeconds(3f);
@@ -611,8 +649,183 @@ namespace WolHybridBosses
             OpenWayBack();
         }
 
-        Vector2 FarthestWithin(Vector2 from, float max)
+        // ---------- v1.1.0: tournaments and team matches ----------
+
+        static readonly Color TournamentColor = new Color(1f, 0.82f, 0.3f), TeamColor = new Color(0.55f, 0.9f, 1f);
+
+        static bool PlayerDown() { Player p = Elites.Player0; return p == null || p.IsDead; }
+        static RivalTier Down(RivalTier t) { return t == RivalTier.Hard ? RivalTier.Medium : RivalTier.Easy; }
+        static RivalTier Up(RivalTier t) { return t == RivalTier.Easy ? RivalTier.Medium : RivalTier.Hard; }
+
+        Vector2 RivalSpot(Vector2 offset)
         {
+            Vector2 at = OpenSpot(arenaRoom, arenaArrival, offset, new List<Vector2> { arenaArrival });
+            if ((at - arenaArrival).sqrMagnitude < 4f) at = FarthestWithin(arenaArrival, 9f);
+            return at;
+        }
+
+        // Other elements for extra rivals / the ally, shuffled (Chaos included).
+        List<string> OtherPrefixes()
+        {
+            List<string> l = new List<string>(ElementalGiants.Prefixes) { "Chaos" };
+            l.Remove(prefix);
+            for (int i = l.Count - 1; i > 0; i--) { int j = UnityEngine.Random.Range(0, i + 1); string t = l[i]; l[i] = l[j]; l[j] = t; }
+            return l;
+        }
+
+        static string NameOf(LeagueRival lg, string pfx) { return lg != null ? lg.Name : ElementalGiants.ElementColorName(pfx) + " Rival Wizard"; }
+
+        static void AddBanter(Enemy r, string pfx, string speaker, Color c)
+        {
+            if (r == null) return;
+            RivalBanter b = r.gameObject.AddComponent<RivalBanter>();
+            b.Voice = RivalVoice.Rival;
+            b.Prefix = pfx;
+            b.Speaker = speaker;
+            b.Colour = c;
+        }
+
+        // A rival for a round / a side: spawned, named, introduced, greeting said.
+        IEnumerator Challenger(Enemy r, string pfx, RivalTier t, string subtitle, bool noChest)
+        {
+            RivalMarker mk = r.GetComponent<RivalMarker>();
+            LeagueRival lg = League.For(pfx);
+            if (mk != null) { mk.NoChest = noChest; mk.League = lg; }
+            yield return null;
+            yield return null;
+            string title = NameOf(lg, pfx);
+            yield return StartCoroutine(Rivals.Intro(r, title, subtitle + (lg != null ? "  ·  " + lg.Record : "")));
+            Color c = ElementalGiants.ElementColor(pfx);
+            RivalSpeech.Say(title, lg != null ? League.Greet(lg) : RivalLines.Greet(RivalVoice.Rival, pfx), c);
+            AddBanter(r, pfx, title, c);
+        }
+
+        static bool Alive(Enemy e) { return e != null && e.health != null && e.health.CurrentHealthValue > 0; }
+
+        // Three rounds against three rivals of different elements, one difficulty step apart; a short breather and a
+        // little health between rounds; no chests until the end: then a gold chest, and half the time a pre-infused arcana.
+        IEnumerator RunTournament()
+        {
+            IntroUI.Show("Rival Tournament", "Three rounds, one prize  ·  no chests until the end", TournamentColor, null, 3f);
+            yield return new WaitForSeconds(2.5f);
+            List<string> others = OtherPrefixes();
+            string[] order = { prefix, others[0], others[1] };
+            RivalTier[] tiers = { Down(tier), tier, Up(tier) };
+            for (int i = 0; i < 3; i++)
+            {
+                Enemy r = Rivals.Spawn(RivalSpot(new Vector2(0f, 6f)), order[i], tiers[i]);
+                if (r == null) continue;
+                rival = r;
+                yield return StartCoroutine(Challenger(r, order[i], tiers[i], "Round " + (i + 1) + " of 3  ·  " + tiers[i], true));
+                LeagueRival lg = League.For(order[i]);
+                bool lost = false;
+                while (Alive(r))
+                {
+                    if (!lost && PlayerDown()) { lost = true; League.RecordLoss(lg); }
+                    yield return new WaitForSeconds(0.25f);
+                }
+                if (lost || PlayerDown()) yield break;
+                League.RecordWin(lg, tiers[i], r != null ? (Vector2)r.transform.position : arenaArrival, true);
+                Bounties.Report(BountyKind.Rival, null);
+                if (i < 2)
+                {
+                    Player p = Elites.Player0;
+                    if (p != null && p.health != null) try { p.health.RestoreHealth(Mathf.Max(1, Mathf.RoundToInt(p.health.healthStat.CurrentValue * 0.2f)), false, false, false, false); } catch (Exception) { }
+                    IntroUI.Show("Round " + (i + 1) + " won", "A breather and a little health  ·  the next challenger enters in 5s", TournamentColor, null, 3f);
+                    yield return new WaitForSeconds(5f);
+                }
+            }
+            Vector2 prize = arenaArrival + new Vector2(0f, 2f);
+            RivalRewards.SpawnChest(prize, true, StageVariant.None);
+            string arcana = UnityEngine.Random.value < 0.5f ? PrizeArcana(prize + new Vector2(2f, 0f)) : null;
+            IntroUI.Show("Tournament champion!", "A gold chest" + (arcana != null ? "  ·  and " + arcana : ""), TournamentColor, null, 4f);
+            Plugin.Log.LogInfo("RIVAL tournament won" + (arcana != null ? " (prize " + arcana + ")" : ""));
+        }
+
+        // A pre-infused arcana you've unlocked and don't hold.
+        static string PrizeArcana(Vector2 at)
+        {
+            HashSet<string> held = TomiInfusion.HeldIds();
+            List<string> ids = new List<string>();
+            foreach (ArcanaDef d in ArcanaCatalog.Pool("Chaos"))
+                if (d.Port == ArcanosPort.None && !d.Basic && !held.Contains(d.SkillID) && ArcanosBridge.Unlocked(d.SkillID) && !ids.Contains(d.SkillID)) ids.Add(d.SkillID);
+            if (ids.Count == 0) return null;
+            string id = ids[UnityEngine.Random.Range(0, ids.Count)];
+            ElementType el = Infusion.RandomOther(id);
+            Infusion.SetPending(id, el);
+            try { LootManager.DropSkill(at, 1, id, 0f, 0f, null, false, false); } catch (Exception) { return null; }
+            return "a " + Infusion.Name(el) + "-infused " + IntroUI.SkillName(id);
+        }
+
+        static readonly string[] AllyHello = { "Stay close, I'll cover you!", "Two on two? I like those odds.", "Let's show them how it's done!" };
+        static readonly string[] AllyThanks = { "Good teamwork! Call me anytime.", "We make a scary pair, you know.", "That was fun. Same time next run?" };
+
+        // You and an allied wizard (a league rival of another element, on your side) against two rivals, each a step
+        // below the portal's difficulty. Their chests drop as usual.
+        IEnumerator RunTeam()
+        {
+            List<string> others = OtherPrefixes();
+            string allyPrefix = others[0], second = others[1];
+            LeagueRival allyLg = League.For(allyPrefix);
+            string allyName = allyLg != null ? allyLg.Name : ElementalGiants.ElementColorName(allyPrefix) + " wizard";
+            Enemy ally = SpawnAlly(RivalSpot(new Vector2(-2.5f, -1.5f)), allyPrefix);
+            IntroUI.Show("Team match", "You and " + allyName + " against two rivals", TeamColor, null, 3f);
+            if (ally != null) RivalSpeech.Say(allyName + " (ally)", AllyHello[UnityEngine.Random.Range(0, AllyHello.Length)], ElementalGiants.ElementColor(allyPrefix), 3f);
+            yield return new WaitForSeconds(2.5f);
+            RivalTier t = Down(tier);
+            Enemy a = Rivals.Spawn(RivalSpot(new Vector2(-3f, 6f)), prefix, t);
+            if (a != null) { rival = a; yield return StartCoroutine(Challenger(a, prefix, t, "Team match  ·  " + t, false)); }
+            Enemy b = Rivals.Spawn(RivalSpot(new Vector2(3f, 6f)), second, t);
+            if (b != null) yield return StartCoroutine(Challenger(b, second, t, "Team match  ·  " + t, false));
+            LeagueRival la = League.For(prefix), lb = League.For(second);
+            bool doneA = !Alive(a), doneB = !Alive(b), lost = false;
+            while (!doneA || !doneB)
+            {
+                if (!lost && PlayerDown()) { lost = true; if (Alive(a)) League.RecordLoss(la); if (Alive(b)) League.RecordLoss(lb); }
+                if (lost) yield break;
+                if (!doneA && !Alive(a)) { doneA = true; League.RecordWin(la, t, a != null ? (Vector2)a.transform.position : arenaArrival); Bounties.Report(BountyKind.Rival, null); }
+                if (!doneB && !Alive(b)) { doneB = true; League.RecordWin(lb, t, b != null ? (Vector2)b.transform.position : arenaArrival); Bounties.Report(BountyKind.Rival, null); }
+                yield return new WaitForSeconds(0.25f);
+            }
+            yield return new WaitForSeconds(1.5f);
+            if (Alive(ally))
+            {
+                RivalSpeech.Say(allyName + " (ally)", AllyThanks[UnityEngine.Random.Range(0, AllyThanks.Length)], ElementalGiants.ElementColor(allyPrefix), 3f);
+                yield return new WaitForSeconds(2f);
+            }
+            if (ally != null)
+            {
+                ArcanosBridge.Fx("Teletransporte", ally.transform.position);
+                try { GameController.allies.Remove(ally.gameObject); } catch (Exception) { }
+                Destroy(ally.gameObject);
+            }
+            Plugin.Log.LogInfo("RIVAL team match won");
+        }
+
+        // The game's own wizard AI on your side: a Contestant left as it spawns (friendly), in an element's colours.
+        Enemy SpawnAlly(Vector2 at, string pfx)
+        {
+            Enemy a = null;
+            try { a = Enemy.Spawn("Contestant", at, null, false, true, false, false, false); } catch (Exception) { a = null; }
+            if (a == null) { Plugin.Log.LogWarning("RIVAL team match: no ally"); return null; }
+            ElementType el;
+            if (ElementalGiants.TryGetElement(a, pfx, out el)) a.element = el;
+            a.gameObject.AddComponent<BossEventEnemy>(); // never an elite, never re-elemented
+            StartCoroutine(AllyHealth(a));
+            Plugin.Log.LogInfo("RIVAL team match ally: " + pfx);
+            return a;
+        }
+
+        static IEnumerator AllyHealth(Enemy a)
+        {
+            yield return null;
+            yield return null;
+            if (a == null || a.health == null) yield break;
+            float hp = Rivals.TierHP(RivalTier.Hard);
+            try { a.health.healthStat.AddMod(new NumVarStatMod("HB_AllyHP", hp, 10, VarStatModType.Override, true)); a.health.CurrentHealthValue = Mathf.RoundToInt(hp); } catch (Exception) { }
+        }
+
+        Vector2 FarthestWithin(Vector2 from, float max)        {
             Vector2 best = from;
             float bd = -1f;
             foreach (Vector2 s in arenaSpots)

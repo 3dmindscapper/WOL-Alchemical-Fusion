@@ -23,6 +23,9 @@ namespace WolHybridBosses
 
         static IntroUI current;
 
+        // v1.1.1: a card is on screen (so a less urgent one, like the bounty, can wait its turn).
+        internal static bool Busy { get { return current != null && Time.time < current.start + current.duration; } }
+
         internal static float Show(string title, string subtitle, Color titleColor, List<IntroEntry> entries, float minDuration)
         {
             if (current != null) Destroy(current.gameObject);

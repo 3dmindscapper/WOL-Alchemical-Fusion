@@ -85,9 +85,21 @@ namespace WolHybridBosses
                 yield break;
             }
             championSpawned = true;
+            bool alchemist = FinalRun.Alchemist;
+            RivalMarker cm = champion.GetComponent<RivalMarker>();
+            if (cm != null) cm.Alchemist = alchemist; // v1.1.0: set before its Start (the hostile setup reads it)
             yield return null; // its Start + hostile setup
             yield return null;
-            yield return StartCoroutine(Rivals.Intro(champion, title, "Final Champion"));
+            if (alchemist) yield return StartCoroutine(WhiteAlchemist.Monologue(champion)); // v1.1.1: it introduces itself
+            if (champion == null) yield break;
+            yield return StartCoroutine(Rivals.Intro(champion, title, alchemist ? "Final Champion  ·  the essence of every element" : "Final Champion"));
+            if (alchemist && champion != null)
+            {
+                RivalBanter b = champion.gameObject.AddComponent<RivalBanter>(); // half-health and defeat lines
+                b.Voice = RivalVoice.Primordial;
+                b.Speaker = WhiteAlchemist.Name;
+                b.Colour = WhiteAlchemist.White;
+            }
         }
 
         // Sura stays in the scene as the room's boss, but out of the fight: no AI, no sprites, no hitboxes, no bar.
@@ -122,6 +134,7 @@ namespace WolHybridBosses
             Plugin.Log.LogInfo("FINAL champion defeated: handing the victory to the room (normal ending, Chaos arcana unlock)");
             yield return new WaitForSeconds(1.5f); // let the champion's death play
             FinalChampionBadge.Hide();
+            if (FinalRun.Alchemist) try { WhiteAlchemist.Rewards(); } catch (Exception ex) { Plugin.Log.LogWarning("ALCHEMIST rewards failed: " + ex.Message); }
             if (sura == null) yield break;
             Traverse ts = Traverse.Create(sura);
             ts.Field("chaosMode").SetValue(true);      // her death state takes the final ("DeadHoodless") branch
@@ -141,6 +154,7 @@ namespace WolHybridBosses
         static bool needRoll = true, wasInHub;
 
         internal static string ChampionPrefix { get; private set; }
+        internal static bool Alchemist { get; private set; } // v1.1.0: the White Alchemist (prefix "Chaos": every element)
 
         // Per-run seed: other per-run decisions (which stages are Chaos) are derived from it, so the loading-screen
         // board and the stage generator always agree.
@@ -151,6 +165,7 @@ namespace WolHybridBosses
             get
             {
                 if (ChampionPrefix == null) return null;
+                if (Alchemist) return WhiteAlchemist.Name;
                 return ChampionPrefix == "Chaos" ? "Chaos Sovereign" : ElementalGiants.ElementColorName(ChampionPrefix) + " Archon";
             }
         }
@@ -178,8 +193,16 @@ namespace WolHybridBosses
             runKey = key;
             Seed = UnityEngine.Random.Range(1, int.MaxValue);
             if (Plugin.FinalChampions.Value && UnityEngine.Random.value < Plugin.FinalChampionChance.Value) Pick();
-            else ChampionPrefix = null;
+            else { ChampionPrefix = null; Alchemist = false; }
             Plugin.Log.LogInfo("FINAL run roll (" + key + "): " + (ChampionPrefix == null ? "Sura" : ChampionTitle));
+        }
+
+        // v1.1.0 test key (Alt+F12): the White Alchemist in the next final room.
+        internal static void ForceAlchemist()
+        {
+            Tick();
+            Alchemist = true;
+            ChampionPrefix = "Chaos";
         }
 
         internal static void ForceChampion()
@@ -190,6 +213,8 @@ namespace WolHybridBosses
 
         static void Pick()
         {
+            Alchemist = UnityEngine.Random.value < Plugin.AlchemistChance.Value;
+            if (Alchemist) { ChampionPrefix = "Chaos"; return; }
             ChampionPrefix = UnityEngine.Random.value < Plugin.FinalChaosChance.Value ? "Chaos" : Archons.MaybeVariant(ElementalGiants.RandomPrefix());
         }
     }
@@ -225,7 +250,7 @@ namespace WolHybridBosses
                 if (existing != null) UnityEngine.Object.Destroy(existing.gameObject);
                 string prefix = FinalRun.ChampionPrefix;
                 bool champion = prefix != null;
-                Color el = champion ? ElementalGiants.ElementColor(prefix) : Color.white;
+                Color el = champion ? (FinalRun.Alchemist ? WhiteAlchemist.White : ElementalGiants.ElementColor(prefix)) : Color.white;
                 foreach (Image img in circle.GetComponentsInChildren<Image>(true))
                 {
                     if (img == dimmer || img.name.Contains("Dimmer")) continue;
@@ -242,7 +267,7 @@ namespace WolHybridBosses
                             BoardMarksFor(__instance).Add(img, img.color, null, true); // keep it shown if the board toggles it
                             break;
                         case "BossCircleInner": img.color = Multiply(o.Key, Color.Lerp(el, Color.black, 0.35f)); break;
-                        case "ChaosIcon": img.enabled = prefix == "Chaos"; break;
+                        case "ChaosIcon": img.enabled = prefix == "Chaos" && !FinalRun.Alchemist; break;
                         default: if (img.transform == circle) img.color = Multiply(o.Key, el); break;              // the ring
                     }
                 }

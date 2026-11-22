@@ -11,6 +11,8 @@ namespace WolHybridBosses
     //   Alt+F8   infusion test pack: each equipped arcana unlocks one random infused version for good (so dual pairs
     //            exist), then Nocturne's shuffle is rolled on your loadout as if you had paid for it
     //   Alt+F10  the Echo of your last run, beside you (records your current loadout first if there's no Echo yet)
+    //   Alt+F9   a rival tournament portal beside you;  Alt+F11  a team match portal beside you
+    //   Alt+F12  jump to the final fight against the Primordial Alchemist
     internal static class TestKeys
     {
         internal static void Update()
@@ -23,6 +25,9 @@ namespace WolHybridBosses
                 else if (Input.GetKeyDown(KeyCode.F7)) Gold(500);
                 else if (Input.GetKeyDown(KeyCode.F8)) InfusionPack();
                 else if (Input.GetKeyDown(KeyCode.F10)) RivalEvent.OpenEchoHere();
+                else if (Input.GetKeyDown(KeyCode.F9)) RivalEvent.OpenModeHere(RivalMode.Tournament);  // v1.1.0
+                else if (Input.GetKeyDown(KeyCode.F11)) RivalEvent.OpenModeHere(RivalMode.Team);        // v1.1.0
+                else if (Input.GetKeyDown(KeyCode.F12)) { FinalRun.ForceAlchemist(); Debug.JumpToFinal(); } // v1.1.0
             }
             catch (Exception ex) { Plugin.Log.LogWarning("TEST key failed: " + ex.Message); }
         }
