@@ -17,6 +17,7 @@ namespace WolHybridBosses
     internal static class Infusion
     {
         internal const float DamageBonus = 1.10f;
+        internal static ElementType? ForcedElement; // v0.8.0: set while an infusion trial runs (TrialEvent)
         static readonly Dictionary<string, ElementType> infused = new Dictionary<string, ElementType>();
         static readonly Dictionary<string, ElementType> pending = new Dictionary<string, ElementType>(); // pre-infused drops / stock, until picked up
         static readonly HashSet<AttackInfo> done = new HashSet<AttackInfo>();
@@ -151,9 +152,13 @@ namespace WolHybridBosses
         // damage (once per attack info: re-infusing never stacks it) and the element's look.
         internal static bool ApplyToAttack(Attack atk)
         {
-            if (!Any || !IsPlayersAttack(atk)) return false;
+            bool forced = ForcedElement.HasValue;
+            if ((!Any && !forced) || !IsPlayersAttack(atk)) return false;
             ElementType el;
-            if (!TryGet(atk.atkInfo.skillID, out el)) return false;
+            // v0.8.0: an infusion trial forces every arcana into its element (no damage bonus); otherwise the
+            // arcana's own infusion.
+            if (forced) el = ForcedElement.Value;
+            else if (!TryGet(atk.atkInfo.skillID, out el)) return false;
             AttackInfo info = atk.atkInfo;
             string name = Name(el);
             if (done.Add(info))
@@ -163,7 +168,7 @@ namespace WolHybridBosses
                 int level = Mathf.Max(1, Mathf.Max(Mathf.Max(info.burnLevel, info.slowLevel), Mathf.Max(info.poisonLevel, info.shockLevel)));
                 if (chance <= 0f) chance = 0.15f; // a move without a status still gets a little of its new element's
                 info.burnChance = info.slowChance = info.poisonChance = info.shockChance = info.freezeChance = info.chaosChance = 0f;
-                info.damage = Mathf.Max(1, Mathf.RoundToInt(info.damage * DamageBonus));
+                if (!forced) info.damage = Mathf.Max(1, Mathf.RoundToInt(info.damage * DamageBonus));
                 if (name == "Prism")
                 {
                     // Prism, like Arcanos' own: each cast is the next of the five base elements, with its status.
@@ -177,23 +182,54 @@ namespace WolHybridBosses
                 {
                     if (!ArcanosBridge.SetElement(atk, el)) info.elementType = el; // Arcanos' own element on a player attack, as its arcana do
                 }
-                else
-                {
-                    info.elementType = el;
-                    switch (name)
-                    {
-                        case "Fire": info.burnChance = chance; info.burnLevel = Mathf.Max(info.burnLevel, level); break;
-                        case "Water": case "Wind": info.slowChance = chance; info.slowLevel = Mathf.Max(info.slowLevel, level); break;
-                        case "Ice": info.freezeChance = chance; break;
-                        case "Earth": info.poisonChance = chance; info.poisonLevel = Mathf.Max(info.poisonLevel, level); break;
-                        case "Thunder": info.shockChance = chance; info.shockLevel = Mathf.Max(info.shockLevel, level); break;
-                        case "Chaos": info.chaosChance = chance; info.chaosLevel = Mathf.Max(info.chaosLevel, level); break;
-                    }
-                }
+                else SetStatus(info, el, chance, level);
             }
             string key = RampKey(el);
             if (key != null) CouncilCorruption.PreviewRecolor(atk, key);
             return true;
+        }
+
+        static void SetStatus(AttackInfo info, ElementType el, float chance, int level)
+        {
+            info.elementType = el;
+            switch (Name(el))
+            {
+                case "Fire": info.burnChance = chance; info.burnLevel = Mathf.Max(info.burnLevel, level); break;
+                case "Water": case "Wind": info.slowChance = chance; info.slowLevel = Mathf.Max(info.slowLevel, level); break;
+                case "Ice": info.freezeChance = chance; break;
+                case "Earth": info.poisonChance = chance; info.poisonLevel = Mathf.Max(info.poisonLevel, level); break;
+                case "Thunder": info.shockChance = chance; info.shockLevel = Mathf.Max(info.shockLevel, level); break;
+                case "Chaos": info.chaosChance = chance; info.chaosLevel = Mathf.Max(info.chaosLevel, level); break;
+            }
+        }
+
+        // v0.8.0: an enemy's attack (an infused Council member's) converted to a base element: damage type and its
+        // status (the strongest existing status chance moves over), no damage bonus. Once per attack info.
+        static readonly HashSet<AttackInfo> enemyDone = new HashSet<AttackInfo>();
+
+        internal static void ConvertEnemyInfo(AttackInfo info, ElementType el)
+        {
+            if (info == null || !enemyDone.Add(info)) return;
+            if (enemyDone.Count > 8192) enemyDone.Clear();
+            float chance = Mathf.Max(Mathf.Max(info.burnChance, info.slowChance), Mathf.Max(Mathf.Max(info.poisonChance, info.shockChance), Mathf.Max(info.freezeChance, info.chaosChance)));
+            int level = Mathf.Max(1, Mathf.Max(Mathf.Max(info.burnLevel, info.slowLevel), Mathf.Max(info.poisonLevel, info.shockLevel)));
+            info.burnChance = info.slowChance = info.poisonChance = info.shockChance = info.freezeChance = info.chaosChance = 0f;
+            if (chance > 0f) SetStatus(info, el, chance, level); else info.elementType = el;
+        }
+
+        // The game prefix for a base element ("Flame", "Frost", "Earth", "Wind", "Thunder").
+        internal static string Prefix(ElementType el)
+        {
+            switch (Name(el))
+            {
+                case "Fire": return "Flame";
+                case "Water": case "Ice": return "Frost";
+                case "Earth": return "Earth";
+                case "Wind": return "Wind";
+                case "Thunder": return "Thunder";
+                case "Chaos": return "Chaos";
+            }
+            return null;
         }
     }
 
@@ -323,10 +359,11 @@ namespace WolHybridBosses
     static class InfusionDropPatch
     {
         internal static bool infusedDrop;
+        internal static bool ForceNext; // an elite's drop: always infused
         internal static string candidate;
         static void Prefix(string __2)
         {
-            infusedDrop = Plugin.InfusionEnabled.Value && UnityEngine.Random.value < Plugin.InfusedDropChance.Value;
+            infusedDrop = Plugin.InfusionEnabled.Value && (ForceNext || UnityEngine.Random.value < Plugin.InfusedDropChance.Value);
             candidate = null;
             if (infusedDrop && !string.IsNullOrEmpty(__2)) { candidate = __2; Infusion.SetPending(__2, Infusion.RandomOther(__2)); }
         }

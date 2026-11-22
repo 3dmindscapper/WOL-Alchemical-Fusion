@@ -145,11 +145,11 @@ namespace WolHybridBosses
         }
 
         // visualOnly: tiles, decorations and lights only (the Corrupted Council's room): no reward bonus, no enemies armed.
-        internal static void Apply(bool visualOnly = false, StageVariant which = StageVariant.None)
+        internal static void Apply(bool visualOnly = false, StageVariant which = StageVariant.None, ChaosVariant tilesOverride = null)
         {
             Revert();
             if (which == StageVariant.None) which = plannedVariant;
-            ChaosVariant v = Variants.Info(which).Tiles;
+            ChaosVariant v = tilesOverride ?? Variants.Info(which).Tiles; // v0.8.0: an infused Council room passes its element's tiles
             activeVariant = which;
             Active = v;
             float t0 = Time.realtimeSinceStartup;
@@ -632,8 +632,9 @@ namespace WolHybridBosses
                     {
                         if (circle == null || circle == finalCircle || circle == startCircle) continue;
                         StageVariant cv = CouncilCorruption.CouncilVariant(t);
-                        bool corrupted = cv != StageVariant.None;
-                        plan.Add(circle.name + "=" + (corrupted ? cv.ToString() : "-"));
+                        ElementType? infusedEl = cv == StageVariant.None ? CouncilCorruption.CouncilInfusion(t, circle.name) : null; // v0.8.0
+                        bool corrupted = cv != StageVariant.None || infusedEl.HasValue;
+                        plan.Add(circle.name + "=" + (cv != StageVariant.None ? cv.ToString() : infusedEl.HasValue ? Infusion.Name(infusedEl.Value) + "-infused" : "-"));
                         t++;
                         if (!corrupted) continue;
                         List<Image> portraits = new List<Image>();
@@ -643,7 +644,8 @@ namespace WolHybridBosses
                             foreach (Image img in circle.GetComponentsInChildren<Image>(true))
                                 if (!skip.Contains(img) && !squareImages.Contains(img) && img.transform != circle && !img.name.Contains("Dimmer") && !img.name.Contains("Circle"))
                                     portraits.Add(img);
-                        foreach (Image img in portraits) marks.Add(img, Color.Lerp(img.color, Variants.Info(cv).Color, 0.6f), null);
+                        Color markColor = infusedEl.HasValue ? Infusion.ColorOf(infusedEl.Value) : Variants.Info(cv).Color;
+                        foreach (Image img in portraits) marks.Add(img, Color.Lerp(img.color, markColor, 0.6f), null);
                         plan[plan.Count - 1] += "(" + string.Join("/", portraits.ConvertAll(i => i.name).ToArray()) + ")";
                         councilMarked++;
                     }

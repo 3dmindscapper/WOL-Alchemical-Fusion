@@ -14,7 +14,7 @@ namespace WolHybridBosses
     [BepInDependency("wolarcanos.arcanos", BepInDependency.DependencyFlags.SoftDependency)] // optional: Radiant / Prism variants
     public class Plugin : BaseUnityPlugin
     {
-        public const string Version = "0.7.4";
+        public const string Version = "0.8.1";
         internal static ManualLogSource Log;
 
         internal static ConfigEntry<bool> ElementalGiants;
@@ -41,7 +41,8 @@ namespace WolHybridBosses
         internal static ConfigEntry<float> ChaosStageChance;
         internal static ConfigEntry<float> ChaosStageRewards;
         internal static ConfigEntry<float> VariantChaosShare, VariantRadiantShare, VariantPrismShare, VariantArchonChance, RadiantHealthDropChance;
-        internal static ConfigEntry<bool> InfusionEnabled;
+        internal static ConfigEntry<bool> InfusionEnabled, InfusedCouncil, ElitesEnabled, TrialsEnabled;
+        internal static ConfigEntry<float> EliteChanceMultiplier, EliteInfusedDropChance, TrialChance;
         internal static ConfigEntry<string> InfusionButtons;
         internal static ConfigEntry<float> InfusedDropChance, InfusedStockChance;
         internal static ConfigEntry<int> ChaosGiantPalette;
@@ -117,6 +118,12 @@ namespace WolHybridBosses
             VariantPrismShare = Config.Bind("StageVariants", "PrismShare", 0.15f, "With WoL Arcanos installed, the share of variant stages that are Prism (Arcanos' Prisma element).");
             VariantArchonChance = Config.Bind("StageVariants", "ArchonChance", 0.25f, "With WoL Arcanos installed, chance that an elemental Archon (final champion or arena Archon) is a Radiant or Prism Archon instead.");
             InfusionEnabled = Config.Bind("Infusion", "Enabled", true, "An Infusion Altar stands beside the arcana merchant: keep one arcana, sacrifice another, and the kept one takes the sacrificed one's element (+10% damage). Run only.");
+            InfusedCouncil = Config.Bind("Infusion", "InfusedCouncil", true, "A Council member (2nd and 3rd tier, when the tier has no Chaos/Radiant/Prism member) may have infused their element with another: same moveset, the other element's damage, status and colours, new lines, and a reward of that element. 15% / 25%, +20% from the second loop.");
+            ElitesEnabled = Config.Bind("Elites", "Enabled", true, "Now and then a regular enemy is an elite with one trait (Shielded, Hasted, Splitting, Draining, Blinking): a coloured outline, an Elite label, more gold and sometimes an infused arcana. Chance 4% +3% per tier, +4% from the second loop.");
+            EliteChanceMultiplier = Config.Bind("Elites", "ChanceMultiplier", 1f, "Multiplies the elite chance (0 turns elites off, 2 doubles them).");
+            EliteInfusedDropChance = Config.Bind("Elites", "InfusedDropChance", 0.12f, "Chance that an elite drops an arcana that is already infused.");
+            TrialsEnabled = Config.Bind("Trials", "Enabled", true, "Sometimes a trial portal opens on a stage: three waves with all your arcana forced into one element; clearing it drops an arcana already infused with that element.");
+            TrialChance = Config.Bind("Trials", "Chance", 0.12f, "Chance per stage that a trial portal opens.");
             InfusionButtons = Config.Bind("Infusion", "Buttons", "Skill1,Skill2,Skill3", "Controller actions (the game's own input action names) that act as the infuse key [I] in Tomi's spellbook. Tomi's menu only uses Confirm and Cancel, so the arcana buttons are free. Other names: Interact, EquipMenu, Slide, Skill0..Skill5.");
             InfusedDropChance = Config.Bind("Infusion", "InfusedDropChance", 0.04f, "Chance that a dropped arcana comes already infused with another element.");
             InfusedStockChance = Config.Bind("Infusion", "InfusedStockChance", 0.08f, "Chance that an arcana in the merchant's stock is already infused (25% pricier).");
@@ -167,9 +174,12 @@ namespace WolHybridBosses
         {
             if (!DebugKeys.Value) return;
             if (Input.GetKeyDown(KeyCode.F5)) Debug.ListEnemies();
-            if (Input.GetKeyDown(KeyCode.F6)) Debug.CyclePalette();
-            if (Input.GetKeyDown(KeyCode.F7)) Debug.DumpNearestEnemy();
-            if (Input.GetKeyDown(KeyCode.F8) && (Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl))) TomiInfusion.SpawnHere();
+            if (Input.GetKeyDown(KeyCode.F6) && !(Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl))) Debug.CyclePalette();
+            if (Input.GetKeyDown(KeyCode.F7) && !(Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl))) Debug.DumpNearestEnemy();
+            bool ctrlKey = Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl);
+            if (Input.GetKeyDown(KeyCode.F6) && ctrlKey) TrialEvent.OpenHere();
+            if (Input.GetKeyDown(KeyCode.F7) && ctrlKey) Elites.TestNearest();
+            if (Input.GetKeyDown(KeyCode.F8) && ctrlKey) TomiInfusion.SpawnHere();
             else if (Input.GetKeyDown(KeyCode.F8)) Debug.SpawnNextTestGiant();
             if (Input.GetKeyDown(KeyCode.F9) && (Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl))) Debug.DumpArcanaVisuals();
             else if (Input.GetKeyDown(KeyCode.F9)) Debug.DumpElementPalette();

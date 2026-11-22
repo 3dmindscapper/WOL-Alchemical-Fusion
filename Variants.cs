@@ -193,6 +193,8 @@ namespace WolHybridBosses
         internal static void Apply(Attack atk, StageVariant v, bool stage = true)
         {
             if (atk == null || v == StageVariant.None) return;
+            // v0.8.0: in an infused Council fight every enemy attack takes the infused element instead.
+            if (CouncilCorruption.Infused.HasValue && CouncilCorruption.CurrentBoss != null) { CouncilCorruption.InfuseAttack(atk); return; }
             // v0.7.4: an attack that already is Chaos (a Chaos arcana) keeps its own look: recolouring it onto the
             // Chaos ramp only turned it into a murky blob, and accents on it left a sparking, noisy trail.
             if (v == StageVariant.Chaos && atk.atkInfo != null && atk.atkInfo.elementType == ElementType.Chaos) return;

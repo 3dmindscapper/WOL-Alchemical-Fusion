@@ -5,10 +5,10 @@ It mostly reuses the game's own assets. Custom art is possible, but so far every
 
 Status key: ✅ done · 🧪 built, needs in-game testing · 🔜 next · 📋 planned · ❓ needs research first · 💬 dev note (idea to consider)
 
-Current version: **0.7.4**. Technical details (game internals, file layout, pitfalls) live in `CLAUDE.md`.
+Current version: **0.8.0**. Technical details (game internals, file layout, pitfalls) live in `CLAUDE.md`.
 
 **Status:** sections 1–6 are built and in the **polish phase**: in-game testing and fixes, no new scope.
-**Next new features: section 7** (elites, infusion trials, stage hazards, infused Council).
+**New in v0.8.0: section 7** (infused Council, elites, infusion trials) is built and needs testing; stage hazards are set aside.
 
 ---
 
@@ -258,11 +258,11 @@ Pieces to build:
 5. 🧪 Rare infused drops and merchant stock (v0.7.0).
 6. Arcanos: Radiant/Prism infusions only from arcana the player has unlocked.
 7. Edge cases: signature versions, basics and dash arcana, co-op, mid-run saves, arcana whose element can't be read.
-## 7. Next features 📋
+## 7. Next features 🧪 v0.8.0 (stage hazards set aside)
 
-Planned, not started. Each one builds on systems that already exist.
+Built in v0.8.0 (except 7c), not yet tested in game. Test keys: Ctrl+F7 (elite), Ctrl+F6 (trial), Shift+F12 (cycles to Infused Council).
 
-### 7a. Elite enemies 📋
+### 7a. Elite enemies 🧪
 Now and then a regular enemy spawns with **one trait** that changes how you fight it:
 
 | Trait | Effect | Look |
@@ -277,21 +277,24 @@ Now and then a regular enemy spawns with **one trait** that changes how you figh
 - A small "Elite <enemy>" name above it. Rewards: more gold, a better chance at an infused arcana drop (fits the "rare infused drops" rule).
 - Tuning: rare on the first tier, more common later. Never stacked with a variant giant.
 
-### 7b. Infusion trials 📋
+### 7b. Infusion trials 🧪
+*Built with the pre-infused arcana reward (an unlocked arcana of another element, already infused with the trial's) plus gold. The "free infusion at Tomi" token is left out for now.*
 A portal (like the rival portal) that sometimes opens on a stage and leads to a **trial room**:
 - All your arcana are temporarily forced into one element, chosen by the trial ("Trial of Frost"). You fight a few waves with that element.
 - Clear it: **one free infusion** at Tomi (no gold, no sacrifice), or a pre-infused arcana of that element.
 - Leave or fail: back through the way-back portal, nothing lost but the time.
 - Reuses: the rival event's room building and portals, infusion's attack conversion (a run-wide "forced element" mode), and the recolour engine so your spells visibly change.
 
-### 7c. Variant stage hazards 📋
+### 7c. Variant stage hazards ⏸ set aside
+*Set aside: stages are built around their own hazards, and ours would be placed automatically, not by hand, so they'd likely clash with the layouts. Revisit only with a placement approach that respects each room's design.*
 Each variant stage plays differently, not just looks different:
 - **Radiant:** light pillars that flare on a telegraphed timer. Standing in one dazzles you (the existing glare) and also dazzles enemies, so they're a tool too.
 - **Prism:** floor patches that cycle through the five elements. Stepping on one applies that element's status, to enemies as well.
 - **Chaos:** rifts that sometimes spit out an extra enemy unless you close them by hitting them.
 - Built from the tile and room code (hazard spots on open floor, like the rival portal placement), Arcanos effects where installed, and the game's own status effects.
 
-### 7d. Infused Council members 📋
+### 7d. Infused Council members 🧪
+*Built: never on the first tier; 15% on the second, 25% on the third, +20% from the second loop; marked on the board.*
 A Council member who has infused their own element with another, for example "Flame Empress, Frost-infused". It's separate from the Chaos/Radiant/Prism variant Council:
 - Their whole moveset stays, but their attacks take the infused element's damage, status and look (the recolour engine on their attacks, like player infusion).
 - Boss bar "<Element>-infused <name>", a few new voicelines (they've been experimenting with a classmate's element), and a recoloured room.
@@ -319,13 +322,15 @@ Lets any enemy cast real player arcana. Used by rivals, champions, arcana giants
 | F9 | Dump the element → palette table and the current stage element |
 | Ctrl+F9 | Dump every arcana prefab's makeup (sprites, shaders, animators, particles, trails, lights) for infusion research |
 | F10 | Cycle the nearest giant through all five elements |
+| Ctrl+F6 | Open an infusion trial portal beside you (elements in turn) |
+| Ctrl+F7 | Make the nearest enemy an elite (traits in turn) |
 | Ctrl+F8 | Bring Tomi beside you (infusing in his spellbook with [I]) |
 | Ctrl+F10 | Infusion look preview: your own arcana take Fire → Water → Ice → Earth → Thunder → Wind → Chaos → Radiant → off (look only) |
 | F11 | Open a rival portal beside you: selector room → arena → way back (cycles Fire → Water → Earth → Wind → Thunder → Chaos, then Radiant → Prism with Arcanos) |
 | Shift+F11 | Cycle the current stage: normal → Chaos → Radiant → Prism (the last two with Arcanos) |
 | Ctrl+F11 | Skip to the next stage, as if through the exit portal (needs the floor's exit; a Council floor only has one after the fight) |
 | F12 | Final champion test (this final room, or spawn one here and make this run's final boss a champion) |
-| Shift+F12 | Cycle the forced Council variant: off → Chaos → Radiant → Prism (every Council fight, including the current room) |
+| Shift+F12 | Cycle the forced Council variant: off → Chaos → Radiant → Prism → Infused (every Council fight, including the current room) |
 | Ctrl+Shift+F12 | Jump straight to the final fight (Sura or this run's champion), from any stage of a run |
 | Ctrl+F12 | Jump straight to this tier's Council floor, corrupted for that fight (from any regular stage of a run) |
 

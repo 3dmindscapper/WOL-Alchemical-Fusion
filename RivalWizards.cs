@@ -447,6 +447,7 @@ namespace WolHybridBosses
         {
             try { handlers.SetValue(null, Delegate.Remove(handlers.GetValue(null) as Delegate, oneShot)); } catch (Exception) { }
             RivalEvent.OnLevelGenerated();
+            TrialEvent.OnLevelGenerated(); // v0.8.0: infusion trials
         }
     }
 

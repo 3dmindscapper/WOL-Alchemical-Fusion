@@ -20,7 +20,137 @@ namespace WolHybridBosses
 
         // The variant of the current fight (Chaos when none is running, for the old callers).
         internal static StageVariant Variant = StageVariant.Chaos;
-        static VariantInfo Info { get { return Variants.Info(Variant); } }
+        static VariantInfo Info { get { return CurrentInfo; } }
+
+        // ---------- v0.8.0: infused Council members ----------
+        // A member who has infused their own element with another one ("Flame Empress, Frost-infused"): whole moveset,
+        // attacks in the other element (damage type, status, colours), its room recoloured, echoes and lines of it,
+        // and a reward of it. Only when the tier has no variant member. Deterministic from the run seed (board and
+        // fight agree): never on the first tier, 15% on the second, 25% on the third, +20% from the second loop.
+        internal static ElementType? Infused;
+        internal static bool ForcedInfused; // Shift+F12 cycle: every Council fight infused (random other element)
+        static VariantInfo infusedInfo;
+        internal static bool InfusedFight { get { return Infused.HasValue && Room != null; } }
+        internal static VariantInfo CurrentInfo { get { return Infused.HasValue && infusedInfo != null ? infusedInfo : Variants.Info(Variant); } }
+
+        static readonly ElementType[] InfusionElements = { ElementType.Fire, ElementType.Water, ElementType.Earth, ElementType.Air, ElementType.Lightning };
+
+        // The Council member's own element from its key ("FireBoss", or a circle name "FireBossCircle").
+        internal static ElementType? OwnElement(string key)
+        {
+            if (string.IsNullOrEmpty(key)) return null;
+            if (key.StartsWith("Fire")) return ElementType.Fire;
+            if (key.StartsWith("Ice")) return ElementType.Water;
+            if (key.StartsWith("Earth")) return ElementType.Earth;
+            if (key.StartsWith("Air")) return ElementType.Air;
+            if (key.StartsWith("Lightning")) return ElementType.Lightning;
+            return null;
+        }
+
+        // Which element this tier's member is infused with (null = not infused).
+        internal static ElementType? CouncilInfusion(int tier, string bossKey)
+        {
+            if (!Plugin.InfusedCouncil.Value || Level.isBossRushMode || tier <= 0) return null;
+            if (CouncilVariant(tier) != StageVariant.None) return null; // never stacks with a variant member
+            ElementType? own = OwnElement(bossKey);
+            float chance = (tier == 1 ? 0.15f : 0.25f) + (GameController.loopCount >= 1 ? 0.2f : 0f);
+            unchecked
+            {
+                int h = FinalRun.Seed ^ 0x51f15e;
+                h = h * 41 + tier * 7907;
+                h ^= h >> 13; h *= 0x5bd1e995; h ^= h >> 15;
+                if (((h & 0x7fffffff) % 10000) / 10000f >= chance) return null;
+                List<ElementType> options = new List<ElementType>(InfusionElements);
+                if (own.HasValue) options.Remove(own.Value);
+                return options[((h >> 7) & 0x7fffffff) % options.Count];
+            }
+        }
+
+        internal static ElementType RandomOtherFor(string bossKey) { return RandomOtherThan(OwnElement(bossKey)); }
+
+        static ElementType RandomOtherThan(ElementType? own)
+        {
+            List<ElementType> options = new List<ElementType>(InfusionElements);
+            if (own.HasValue) options.Remove(own.Value);
+            return options[UnityEngine.Random.Range(0, options.Count)];
+        }
+
+        // Tiles of the infused element: pulled to its hue (fire red-orange, water blue, earth brown, wind mint, thunder gold).
+        static ChaosVariant InfusedTiles(ElementType el)
+        {
+            string key = ElementRamps.ForElement(el) ?? "Fire";
+            Color m = ElementRamps.Mid(key);
+            ChaosVariant v = new ChaosVariant("Infused" + key, Color.Lerp(Color.white, m, 0.25f), m) { Value = 0.85f, HueSpread = 0.15f, Saturation = 0.65f, SatFloor = 0.12f };
+            switch (key)
+            {
+                case "Fire": v.TargetHue = 0.04f; break;
+                case "Water": v.TargetHue = 0.6f; break;
+                case "Earth": v.TargetHue = 0.08f; v.Saturation = 0.45f; v.Value = 0.7f; break;
+                case "Wind": v.TargetHue = 0.42f; v.Saturation = 0.45f; v.Value = 0.95f; v.ValueLift = 0.05f; break;
+                case "Thunder": v.TargetHue = 0.14f; v.Value = 0.95f; break;
+            }
+            return v;
+        }
+
+        static VariantInfo BuildInfusedInfo(ElementType el)
+        {
+            string key = ElementRamps.ForElement(el) ?? "Fire";
+            Color mid = ElementRamps.Mid(key);
+            return new VariantInfo
+            {
+                Variant = StageVariant.Chaos, Prefix = Infusion.Prefix(el), StageTitle = Infusion.Name(el), CouncilTitle = Infusion.Name(el) + "-infused",
+                ArcanosElement = Infusion.Name(el), Color = mid, RampDark = ElementRamps.Sample(key, 0.15f), RampBright = ElementRamps.Sample(key, 0.9f),
+                BodyTint = Color.Lerp(Color.white, mid, 0.35f), AttackTint = mid, LightTint = mid, BoardSquare = mid, BoardIcon = mid, Tiles = InfusedTiles(el),
+            };
+        }
+
+        internal static void BeginInfused(BossRoomEventHandler room, ElementType el)
+        {
+            Begin(room, StageVariant.Chaos);
+            Infused = el;
+            infusedInfo = BuildInfusedInfo(el);
+            Plugin.Log.LogInfo("COUNCIL infused with " + Infusion.Name(el) + " this fight (tier " + GameController.tierCount + ")");
+        }
+
+        // One of the infused member's attacks: the element's damage type and status, and its colours.
+        internal static void InfuseAttack(Attack atk)
+        {
+            if (atk == null || !Infused.HasValue || atk.atkInfo == null) return;
+            if (atk.GetComponentInParent<Player>() != null || atk.atkInfo.entity is Player) return;
+            Infusion.ConvertEnemyInfo(atk.atkInfo, Infused.Value);
+            TintAttack(atk, false, StageVariant.Chaos, null, ElementRamps.ForElement(Infused.Value));
+        }
+
+        // Lines for an infused member, {el} = the element they borrowed. Upbeat, like the others: they've been
+        // trying out a fellow Council member's element and are rather proud of it.
+        static readonly Dictionary<string, string[][]> InfusedLines = new Dictionary<string, string[][]>
+        {
+            { "FireBoss", new[] {
+                new[] { "Fire is great, but I've been mixing in a little {el}. Turns out my flames look amazing this way!",
+                        "Let's see how you handle {el}-infused fire. I've been practicing all week!" },
+                new[] { "Huh. Maybe {el} and fire don't mix as well as I thought.",
+                        "Back to pure flames for me. You've got a fierce spark, wizard!" } } },
+            { "IceBoss", new[] {
+                new[] { "Even ice can learn something new. I've been weaving {el} into my frost, and the result is... exquisite.",
+                        "Shall we see whether you can read a technique you've never faced?" },
+                new[] { "Elegant, but not yet mastered. {el} will have to wait.",
+                        "Well fought. Keep studying, wizard; I certainly will." } } },
+            { "EarthBoss", new[] {
+                new[] { "Borrowed a pinch of {el} from a colleague. Stone with a twist! Pretty clever for an old timer, eh?",
+                        "Come on then, let's see if you can crack it!" },
+                new[] { "Ha! Too much {el}, not enough rock. Lesson learned.",
+                        "Solid work, kid. Real solid." } } },
+            { "AirBoss", new[] {
+                new[] { "The wind carried a little {el} my way, so I kept it! Now my breezes have a whole new flavor!",
+                        "Try to keep up, okay? I'm still figuring out what it does!" },
+                new[] { "Whoa, that got away from me. {el} is trickier than the wind.",
+                        "Nice moves! I'll stick to the breeze... for now." } } },
+            { "LightningBoss", new[] {
+                new[] { "Lightning plus {el}? We had to try it! Double the wizards, double the experiments!",
+                        "Brace yourself, this storm comes with a twist!" },
+                new[] { "Okay, the {el} part needs more work. Noted!",
+                        "You really outshone us! Back to the lab... er, the storm!" } } },
+        };
 
         // Kept for older callers: the Chaos ramp.
         internal static Color ChaosRamp(Color c) { return Variants.Ramp(c, StageVariant.Chaos); }
@@ -133,9 +263,10 @@ namespace WolHybridBosses
             int dash = dialogId.IndexOf('-');
             string who = dash > 0 ? dialogId.Substring(0, dash) : dialogId;
             string[][] set;
-            if (!LinesFor(Variant).TryGetValue(who, out set)) return null;
+            if (!(Infused.HasValue ? InfusedLines : LinesFor(Variant)).TryGetValue(who, out set)) return null;
             string[] lines = dialogId == victoryId ? set[1] : set[0];
-            return lines.Length == 0 ? null : lines[Mathf.Min(index, lines.Length - 1)];
+            string line = lines.Length == 0 ? null : lines[Mathf.Min(index, lines.Length - 1)];
+            return line != null && Infused.HasValue ? line.Replace("{el}", Infusion.Name(Infused.Value)) : line;
         }
 
         // Messages we rewrote, put back when the fight ends (the dialog data is shared for the whole session).
@@ -195,17 +326,27 @@ namespace WolHybridBosses
 
         internal static void ToggleForce()
         {
-            if (Forced == StageVariant.None) Forced = StageVariant.Chaos;
+            // v0.8.0: ... -> Prism -> Infused (a random other element) -> off.
+            if (ForcedInfused) { ForcedInfused = false; Forced = StageVariant.None; }
+            else if (Forced == StageVariant.None) Forced = StageVariant.Chaos;
             else if (Forced == StageVariant.Chaos && ArcanosBridge.Present) Forced = StageVariant.Radiant;
             else if (Forced == StageVariant.Radiant) Forced = StageVariant.Prism;
-            else Forced = StageVariant.None;
-            Plugin.Log.LogInfo("COUNCIL variant forced: " + (Forced == StageVariant.None ? "OFF" : Forced + " (every Council fight)"));
-            if (Forced == StageVariant.None) return;
+            else { Forced = StageVariant.None; ForcedInfused = true; }
+            Plugin.Log.LogInfo("COUNCIL variant forced: " + (ForcedInfused ? "Infused (every Council fight)" : Forced == StageVariant.None ? "OFF" : Forced + " (every Council fight)"));
+            if (Forced == StageVariant.None && !ForcedInfused) return;
             foreach (BossRoomEventHandler room in UnityEngine.Object.FindObjectsOfType<BossRoomEventHandler>())
             {
                 if (room is FinalBossRoomEventHandler) continue;
                 if (Room == room) End();
-                Begin(room, Forced);
+                if (ForcedInfused)
+                {
+                    string key = Traverse.Create(room).Field("bossIntroDialogID").GetValue<string>();
+                    BeginInfused(room, RandomOtherThan(OwnElement(key)));
+                }
+                else Begin(room, Forced);
+                // v0.8.1: a boss already in the room takes the new look and echoes right away.
+                Boss present = Traverse.Create(room).Field("boss").GetValue() as Boss;
+                if (present != null) { ClearTinted(); CorruptBoss(present); PickEchoes(); }
                 if (room.GetComponent<CouncilCorruptionRunner>() == null) room.gameObject.AddComponent<CouncilCorruptionRunner>().Room = room;
             }
         }
@@ -235,9 +376,11 @@ namespace WolHybridBosses
         {
             RestoreDialog();
             RestoreTints();
+            RecolorEngine.RestoreBodies();
             if (CurrentBoss != null) { PrismCycle pc = CurrentBoss.GetComponent<PrismCycle>(); if (pc != null) UnityEngine.Object.Destroy(pc); }
             if (roomTinted) { roomTinted = false; try { ChaosStages.Revert(); } catch (Exception) { } }
             Room = null; CurrentBoss = null; introId = victoryId = null;
+            Infused = null; infusedInfo = null;
         }
 
         // The Council room's tiles, decorations and lights, like a variant stage (visuals only: no rewards, no enemies).
@@ -247,7 +390,12 @@ namespace WolHybridBosses
         {
             if (roomTinted) return;
             roomTinted = true;
-            try { ChaosStages.Apply(true, Variant); } catch (Exception ex) { Plugin.Log.LogWarning("COUNCIL room tint failed: " + ex.Message); }
+            try
+            {
+                if (Infused.HasValue && infusedInfo != null) ChaosStages.Apply(true, StageVariant.Chaos, infusedInfo.Tiles);
+                else ChaosStages.Apply(true, Variant);
+            }
+            catch (Exception ex) { Plugin.Log.LogWarning("COUNCIL room tint failed: " + ex.Message); }
         }
 
         internal static bool DialogCorrupted(string dialogId)
@@ -261,12 +409,18 @@ namespace WolHybridBosses
         {
             CurrentBoss = b;
             VariantInfo vi = Info;
+            // v0.8.1: the member's whole body in the element's colours (their palette recoloured onto its ramp),
+            // instead of a faint multiply. Prism keeps its hue cycle.
+            string bodyKey = Infused.HasValue ? ElementRamps.ForElement(Infused.Value) : ElementRamps.ForVariant(Variant);
+            int recoloured = 0;
+            if (!vi.Rainbow && bodyKey != null) recoloured = RecolorEngine.RecolorBody(b, bodyKey);
+            Plugin.Log.LogInfo("COUNCIL body recolour (" + (bodyKey ?? "prism") + "): " + recoloured + " part(s)");
             if (vi.Rainbow) { if (b.GetComponent<PrismCycle>() == null) b.gameObject.AddComponent<PrismCycle>(); }
             else
                 foreach (SpriteRenderer sr in b.GetComponentsInChildren<SpriteRenderer>(true))
                 {
                     if (sr == null) continue;
-                    sr.color = Multiply(sr.color, vi.BodyTint);
+                    if (recoloured == 0) sr.color = Multiply(sr.color, vi.BodyTint);
                     Material m = sr.material;
                     if (m != null && m.HasProperty("_OutlineColor")) m.SetColor("_OutlineColor", vi.Color);
                     if (m != null && m.HasProperty("_OutlineColor2")) m.SetColor("_OutlineColor2", vi.RampDark);
@@ -325,7 +479,7 @@ namespace WolHybridBosses
             VariantInfo vi = Variants.Info(v);
             // v0.6.5: the recolour engine (gradient map per element): recoloured sprite frames, particles, trails,
             // lines and lights on the element's ramp. Chaos / Radiant use their own ramp, Prism its cycle element's.
-            string key = rampKey ?? ElementRamps.ForVariant(v);
+            string key = rampKey ?? (Infused.HasValue && Room != null ? ElementRamps.ForElement(Infused.Value) : ElementRamps.ForVariant(v));
             if (key != null && ElementRamps.Has(key)) { RecolorTree(root, key, source); return; }
             Func<Color, Color> ramp = elementColor.HasValue ? (Func<Color, Color>)(c => ElementRamp(c, elementColor.Value)) : (c => Variants.Ramp(c, v));
             foreach (SpriteRenderer sr in root.GetComponentsInChildren<SpriteRenderer>(true))
@@ -509,7 +663,7 @@ namespace WolHybridBosses
 
         internal static void PickEchoes()
         {
-            List<ArcanaDef> pool = Variants.CastPool(Variant);
+            List<ArcanaDef> pool = Infused.HasValue ? ArcanaCatalog.Pool(Infusion.Prefix(Infused.Value)) : Variants.CastPool(Variant);
             pool.RemoveAll(d => d.Family == ArcanaFamily.Melee || d.Family == ArcanaFamily.Dash || d.Family == ArcanaFamily.Minion
                 || d.Family == ArcanaFamily.Seeker || d.Family == ArcanaFamily.Ward || EnemyArcana.Broken.Contains(d.SkillID));
             Echoes = Rivals.PickVaried(pool, 2, false);
@@ -562,6 +716,23 @@ namespace WolHybridBosses
 
         internal static string PickVariantArcana()
         {
+            // v0.8.0 infused member: half the time an arcana of the borrowed element, half the time one of their own
+            // element that comes already infused with it (only arcana the player has unlocked, as always).
+            if (Infused.HasValue)
+            {
+                ElementType? own = OwnElement(introId);
+                bool preInfused = own.HasValue && UnityEngine.Random.value < 0.5f;
+                string prefix = Infusion.Prefix(preInfused ? own.Value : Infused.Value);
+                List<string> ids = new List<string>();
+                foreach (ArcanaDef d in ArcanaCatalog.Pool(prefix)) if (d.Port == ArcanosPort.None && !ids.Contains(d.SkillID)) ids.Add(d.SkillID);
+                ids.RemoveAll(id => !ArcanosBridge.Unlocked(id));
+                List<string> ownedNow = Traverse.Create(typeof(LootManager)).Field("currentPlayerSkills").GetValue() as List<string>;
+                if (ownedNow != null) { List<string> notOwned = ids.FindAll(id => !ownedNow.Contains(id)); if (notOwned.Count > 0) ids = notOwned; }
+                if (ids.Count == 0) return null;
+                string pick = ids[UnityEngine.Random.Range(0, ids.Count)];
+                if (preInfused) Infusion.SetPending(pick, Infused.Value);
+                return pick;
+            }
             List<string> list = new List<string>();
             if (Variant == StageVariant.Chaos) { if (LootManager.chaosSkillList != null) list.AddRange(LootManager.chaosSkillList); }
             else list.AddRange(ArcanosBridge.IdsOf(Variant));
@@ -603,7 +774,21 @@ namespace WolHybridBosses
                 bool once = CouncilCorruption.ForceOnce;
                 CouncilCorruption.ForceOnce = false;
                 StageVariant v = CouncilCorruption.CouncilVariant(GameController.tierCount);
-                if (once && v == StageVariant.None) v = StageVariant.Chaos;
+                if (once && v == StageVariant.None && !CouncilCorruption.ForcedInfused) v = StageVariant.Chaos;
+                string bossKey = Traverse.Create(__instance).Field("bossIntroDialogID").GetValue<string>();
+                if (!Level.isBossRushMode && v == StageVariant.None)
+                {
+                    // v0.8.0: no variant member this tier: maybe an infused one.
+                    ElementType? el = CouncilCorruption.ForcedInfused
+                        ? (ElementType?)CouncilCorruption.RandomOtherFor(bossKey)
+                        : CouncilCorruption.CouncilInfusion(GameController.tierCount, bossKey);
+                    if (el.HasValue)
+                    {
+                        CouncilCorruption.BeginInfused(__instance, el.Value);
+                        __instance.gameObject.AddComponent<CouncilCorruptionRunner>().Room = __instance;
+                        return;
+                    }
+                }
                 if (Level.isBossRushMode || v == StageVariant.None) { CouncilCorruption.End(); return; }
                 CouncilCorruption.Begin(__instance, v);
                 __instance.gameObject.AddComponent<CouncilCorruptionRunner>().Room = __instance;
@@ -646,7 +831,7 @@ namespace WolHybridBosses
             foreach (Attack a in FindObjectsOfType<Attack>())
             {
                 if (a == null || a.GetComponentInParent<Player>() != null) continue;
-                Variants.Apply(a, CouncilCorruption.Variant, false);
+                if (CouncilCorruption.Infused.HasValue) CouncilCorruption.InfuseAttack(a); else Variants.Apply(a, CouncilCorruption.Variant, false);
             }
             CouncilCorruption.TintNewEffects();
         }
@@ -658,8 +843,8 @@ namespace WolHybridBosses
 
         void Announce()
         {
-            VariantInfo vi = Variants.Info(CouncilCorruption.Variant);
-            string element = ElementalGiants.ElementColorName(vi.Prefix);
+            VariantInfo vi = CouncilCorruption.CurrentInfo;
+            string element = CouncilCorruption.Infused.HasValue ? Infusion.Name(CouncilCorruption.Infused.Value) : ElementalGiants.ElementColorName(vi.Prefix);
             List<IntroEntry> entries = new List<IntroEntry>();
             foreach (ArcanaDef d in CouncilCorruption.Echoes)
             {
@@ -749,7 +934,7 @@ namespace WolHybridBosses
                 bool corrupted = __0 != null && CouncilCorruption.DialogCorrupted(id);
                 if (msg != null && originalText == null) originalText = msg.color;
                 if (!corrupted) { if (msg != null && originalText != null) msg.color = originalText.Value; return; }
-                Color vc = Variants.Info(CouncilCorruption.Variant).Color;
+                Color vc = CouncilCorruption.CurrentInfo.Color;
                 Image img = tr.Field("leftPortraitImage").GetValue() as Image;
                 if (img != null) img.color = Color.Lerp(img.color, vc, 0.35f);
                 if (msg != null && originalText != null) msg.color = Color.Lerp(originalText.Value, vc, 0.55f);

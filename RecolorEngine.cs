@@ -255,6 +255,85 @@ namespace WolHybridBosses
             }
         }
 
+        // v0.8.1: a palette texture (the game's palette shader: one row of colours per palette) recoloured onto a
+        // ramp, for bodies (Council members). Saturated colours (robes, magic) take the ramp almost fully, greys and
+        // skin only partly, so faces and metal stay readable. Cached per (palette, ramp).
+        static readonly Dictionary<string, Texture2D> paletteTwins = new Dictionary<string, Texture2D>();
+
+        internal static Texture2D PaletteTwin(Texture src, string key)
+        {
+            if (src == null || !ElementRamps.Has(key)) return null;
+            string k = src.GetInstanceID() + "|" + key;
+            Texture2D t;
+            if (paletteTwins.TryGetValue(k, out t) && t != null) return t;
+            try
+            {
+                int w = src.width, h = src.height;
+                RenderTexture rt = RenderTexture.GetTemporary(w, h, 0, RenderTextureFormat.ARGB32, RenderTextureReadWrite.Default);
+                Graphics.Blit(src, rt);
+                RenderTexture prev = RenderTexture.active;
+                RenderTexture.active = rt;
+                t = new Texture2D(w, h, TextureFormat.RGBA32, false);
+                t.ReadPixels(new Rect(0, 0, w, h), 0, 0);
+                RenderTexture.active = prev;
+                RenderTexture.ReleaseTemporary(rt);
+                Color32[] px = t.GetPixels32();
+                for (int i = 0; i < px.Length; i++)
+                {
+                    Color c = px[i];
+                    if (c.a <= 0f) continue;
+                    float hh, s, v;
+                    Color.RGBToHSV(c, out hh, out s, out v);
+                    float strength = 0.25f + 0.7f * Mathf.Clamp01(s * 1.6f);
+                    Color o = Color.Lerp(c, ElementRamps.Map(key, c), strength);
+                    o.a = c.a;
+                    px[i] = o;
+                }
+                t.SetPixels32(px);
+                t.filterMode = FilterMode.Point;
+                t.wrapMode = TextureWrapMode.Clamp;
+                t.Apply(false);
+                t.name = src.name + " (" + key + ")";
+                paletteTwins[k] = t;
+                return t;
+            }
+            catch (Exception ex) { Plugin.Log.LogWarning("RECOLOR palette failed for " + src.name + ": " + ex.Message); return null; }
+        }
+
+        // A whole body (a Council member) on a ramp: palette-shader sprites get a recoloured palette, others are
+        // twinned frame by frame. Restorable.
+        static readonly Dictionary<Material, Texture> origPalettes = new Dictionary<Material, Texture>();
+
+        internal static int RecolorBody(Component body, string key)
+        {
+            if (body == null || !ElementRamps.Has(key)) return 0;
+            int n = 0;
+            bool needTwins = false;
+            foreach (SpriteRenderer sr in body.GetComponentsInChildren<SpriteRenderer>(true))
+            {
+                if (sr == null) continue;
+                if (PaletteSprite(sr))
+                {
+                    Material m = sr.material; // instance: this body only
+                    Texture pal = m.GetTexture("_Palette");
+                    Texture2D twin = PaletteTwin(pal, key);
+                    if (twin == null) continue;
+                    if (!origPalettes.ContainsKey(m)) origPalettes[m] = pal;
+                    m.SetTexture("_Palette", twin);
+                    n++;
+                }
+                else needTwins = true;
+            }
+            if (needTwins) { RecolorSprites rs = RecolorSprites.Attach(body.gameObject, key, null); if (rs != null) { rs.AllowBodies = true; n++; } }
+            return n;
+        }
+
+        internal static void RestoreBodies()
+        {
+            foreach (KeyValuePair<Material, Texture> kv in origPalettes) if (kv.Key != null) kv.Key.SetTexture("_Palette", kv.Value);
+            origPalettes.Clear();
+        }
+
         // Sprites drawn by the game's palette shader carry colour indices, not colours: never recolour those.
         internal static bool PaletteSprite(SpriteRenderer sr)
         {
@@ -296,6 +375,7 @@ namespace WolHybridBosses
     {
         public string Key;
         public Attack Source;
+        public bool AllowBodies; // v0.8.1: recolouring a body itself (a Council member without a palette shader)
         AttackInfo info;
         readonly Dictionary<SpriteRenderer, Sprite> lastSet = new Dictionary<SpriteRenderer, Sprite>();
         readonly Dictionary<SpriteRenderer, Color> tinted = new Dictionary<SpriteRenderer, Color>();
@@ -337,7 +417,7 @@ namespace WolHybridBosses
             {
                 // v0.7.1: only bodies *inside* this visual are skipped (an effect parented to the player is still an
                 // effect: checking every parent up the scene skipped all of those).
-                if (sr == null || sr.sprite == null || BodyWithin(sr.transform)) continue;
+                if (sr == null || sr.sprite == null || (!AllowBodies && BodyWithin(sr.transform))) continue;
                 Sprite cur = sr.sprite;
                 Sprite done;
                 if (lastSet.TryGetValue(sr, out done) && done == cur) continue; // our twin still on

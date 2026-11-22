@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using HarmonyLib;
@@ -26,6 +26,7 @@ namespace WolHybridBosses
         Room selectorRoom, arenaRoom;
         List<Vector2> selectorSpots = new List<Vector2>(), arenaSpots = new List<Vector2>();
         Vector2 selectorArrival, arenaArrival, entrancePos;
+        internal Vector2 EntrancePos { get { return entrancePos; } }
         GameObject entrance, leavePortal;
         readonly List<GameObject> tierPortals = new List<GameObject>();
         bool chosen;
@@ -133,7 +134,7 @@ namespace WolHybridBosses
         // Selector: a small Standard room. Never Start / Exit rooms: they bring the stage's start/exit setup with them
         // (a Start room copy pulled the player's spawn out of the real start room). Emptied of enemies, interactables
         // and portals.
-        static Room BuildRoom(Vector2 at, bool arena, List<Vector2> spots)
+        internal static Room BuildRoom(Vector2 at, bool arena, List<Vector2> spots)
         {
             Dictionary<string, Room> dict = Level.LoadedRoomDict;
             if (dict == null || dict.Count == 0) return null;
@@ -273,7 +274,7 @@ namespace WolHybridBosses
 
         // An open floor spot near arrival + offset: no wall or pit collider of the room there, nothing solid in between,
         // and not on top of an earlier portal. Tries the offset, then rotated/shorter versions; falls back to arrival.
-        static Vector2 OpenSpot(Room r, Vector2 arrival, Vector2 offset, List<Vector2> used)
+        internal static Vector2 OpenSpot(Room r, Vector2 arrival, Vector2 offset, List<Vector2> used)
         {
             float[] angles = { 0f, 30f, -30f, 60f, -60f, 90f, -90f, 135f, -135f, 180f };
             for (int step = 0; step < 4; step++)
@@ -356,7 +357,7 @@ namespace WolHybridBosses
 
         // Inside the room's floor art, 2 units in from its edge (so nothing lands out through a doorway into the void).
         static readonly Dictionary<Room, Bounds> roomBounds = new Dictionary<Room, Bounds>();
-        static bool InsideFloor(Room r, Vector2 p)
+        internal static bool InsideFloor(Room r, Vector2 p)
         {
             if (r == null) return true;
             Bounds b;
@@ -376,7 +377,7 @@ namespace WolHybridBosses
         }
 
         // How far from p the nearest wall / pit / obstacle is (capped at 5).
-        static float Clearance(Vector2 p)
+        internal static float Clearance(Vector2 p)
         {
             for (float rad = 1f; rad <= 5f; rad += 0.5f)
                 foreach (Collider2D c in Physics2D.OverlapCircleAll(p, rad))
@@ -386,7 +387,7 @@ namespace WolHybridBosses
 
         // The most open floor reachable from 'from' within 6 units, leaning toward 'centre' (checkpoints often sit
         // right under a wall). Used for where the player lands in each room and for the stage entrance.
-        static Vector2 Roomy(Vector2 from, Vector2 centre, Room inRoom = null)
+        internal static Vector2 Roomy(Vector2 from, Vector2 centre, Room inRoom = null)
         {
             Vector2 best = from;
             float bestScore = Clearance(from) * 10f - Vector2.Distance(from, centre) * 0.4f;
@@ -408,12 +409,12 @@ namespace WolHybridBosses
         }
 
         // The checkpoint nearest the middle of the room's floor.
-        static Vector2 Central(Room r, List<Vector2> spots)
+        internal static Vector2 Central(Room r, List<Vector2> spots)
         {
             return Snap(Mean(spots), spots);
         }
 
-        static Vector2 Mean(List<Vector2> spots)
+        internal static Vector2 Mean(List<Vector2> spots)
         {
             Vector2 c = Vector2.zero;
             if (spots.Count == 0) return c;
@@ -430,7 +431,7 @@ namespace WolHybridBosses
         }
 
         // A random checkpoint of the stage, not too close to the start and not in our rooms.
-        static Vector2? PickEntrance(Vector2 start)
+        internal static Vector2? PickEntrance(Vector2 start)
         {
             List<Vector2> far = new List<Vector2>(), any = new List<Vector2>();
             foreach (Checkpoint cp in FindObjectsOfType<Checkpoint>())
@@ -447,7 +448,7 @@ namespace WolHybridBosses
             return from[UnityEngine.Random.Range(0, from.Count)];
         }
 
-        static GameObject MakePortal(Vector2 at, Vector2 target, Color color)
+        internal static GameObject MakePortal(Vector2 at, Vector2 target, Color color)
         {
             GameObject prefab = Portal.Prefab;
             if (prefab == null) return null;

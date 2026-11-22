@@ -71,6 +71,42 @@ Cloning the player GameObject and driving it from script failed:
 - v0.0.7 tested: summon swap works (logged EarthKnight, FlameLancer etc.). SuperCoffin goes **pink** on palettes 4–8, so its sheet has no elemental rows: keep palette 3 and tint or outline it (MiniBoss uses `_OutlineColor`/`_OutlineColor2`). The user wants the coffin (and rivals) to cast **player arcana** instead.
 - Arcana research: `Contestant : Enemy` (PvP wizard) reimplements Tornado/SwordThrow/Fireball as its own states (ctor typed to Contestant). Its FireballState instantiates the prefab and calls `Attack.SetAttackInfo("Player", "ShootFireball", level, isUltimate)`, the same call player arcana make (e.g. `UseFireBeam.CreateFireBeam`: `FireBeam.Prefab` + `ChaosInst` + `SetAttackInfo`). There are 100 `Player+Use*` arcana. Plan: our own data-driven `ArcanaState : Enemy.SkillState` (skillID, prefab, delivery type). See ROADMAP "Enemy Arcana".
 
+## v0.8.1: trial spawns; Council body recolour (built, not yet run in game)
+- **Trials:** the v0.8.0 wave keys were raw object names ("FrostMage(!)", "Knight (1)", "OrbChargeFamiliar (3)", "FrostZoneEnemy(!)"). Only "Summoner" spawned, and an empty wave counted as cleared.
+  - Keys now come only from humanoid kinds (`ChaosEnemies.IsChaosType`), using `CleanName` (cut at "(") and the type name, plus a Fallback list (Knight, Archer, Rogue, Mage, Lancer, Summoner).
+  - `SpawnWave` drops a key that fails and tries another (up to count×4 attempts), returning the number spawned. If a wave spawns 0, the trial is cancelled with no reward ("The trial fizzles out").
+- **Council bodies:** `RecolorEngine.RecolorBody(body, key)`.
+  - Palette-shader sprites get `PaletteTwin` (the `_Palette` texture gradient-mapped; strength 0.25 + 0.7 × saturation, so robes recolour fully and skin and greys only partly), set on the instance material, with originals kept for `RestoreBodies` (called from CouncilCorruption.End).
+  - Other sprites go through `RecolorSprites` with `AllowBodies`.
+  - `CorruptBoss` uses it for infused (element ramp), Chaos and Radiant; Prism keeps PrismCycle. The multiply tint only applies as a fallback.
+- **ToggleForce** inside a Council room re-runs CorruptBoss/PickEchoes on the boss already there.
+- **Freiya's lines in the test:** the variant was switched to Infused while in her room, after her intro, so only her victory lines could change. Test by choosing with Shift+F12 first, then Ctrl+F12 from a stage.
+
+## v0.8.0: infused Council, elite enemies, infusion trials (built, not yet run in game)
+- **Infused Council (CouncilCorruption):**
+  - **Activation:** `Infused` (ElementType?), `BeginInfused(room, el)` (uses Begin with Chaos internally), `InfusedFight`, and `CurrentInfo` (an infused VariantInfo built per element: title "<El>-infused", ramp colours, `InfusedTiles` = target-hue tiles per element).
+  - **Choice:** `CouncilInfusion(tier, bossKey)` is deterministic (seed hash): tier ≥ 1, 15% / 25%, +20% from loop 1, never when the tier has a variant member. The element is one of Fire/Water/Earth/Air/Lightning minus the boss's own (`OwnElement` from "FireBoss…", "IceBoss…" → Water, and so on). The board marks the portrait in the element colour (plan shows "Fire-infused").
+  - **Attacks:** `Variants.Apply` diverts to `InfuseAttack` (`Infusion.ConvertEnemyInfo`: element plus moved status, no bonus; recolour with the element ramp). Covers VariantAttackPatch, MakeEnemyAttack and the runner scan. TintTree uses the element ramp when infused.
+  - **Fight content:** echoes from `ArcanaCatalog.Pool(prefix)`. Lines: `InfusedLines` per boss with `{el}`. Chest: half the time an arcana of the borrowed element, half the time one of the boss's own element pre-infused with it (unlocked only).
+  - **Rules:** Shift+F12 cycles … → Prism → Infused (random other element) → off. Config `Infusion.InfusedCouncil`.
+- **Elites.cs:**
+  - **Roll:** EliteSpawnPatch (Enemy.Start, 2 frames later) calls `Elites.TryMake`. Eligible means not MiniBoss/Boss/rival/our summons/split copies, not on boss floors or in BossRoomEventHandler rooms. Chance 4% + 3%/tier, +4% from loop 1, × config.
+  - **Look:** `EliteMark` gives a pulsing trait-colour outline (`_OutlineColor`) and an OnGUI label "<Trait> <Name>" in the game font.
+  - **Traits:**
+    - Shielded: `health.CurrentShieldValue` = 40% max HP.
+    - Hasted: `movement.moveSpeedStat` ×1.35, anim speed 1.3, `FadeOut` after-images.
+    - Draining: `EliteDrainPatch` (Health.TakeDamage prefix/postfix; the victim is a player from playerScripts) heals the attacker half the health lost.
+    - Blinking: every 3.5–5s, a teleport 3.5 units from the player via GetAvailableNearbyLocation, not through walls, skipped in hurt/frozen/Arcanos states.
+    - Splitting: on death, `Enemy.Spawn(gameObject name, then type name)` ×2 with `EliteSplitChild`, 0.75 scale and 40% HP.
+  - **Death:** `DropGold(15 + 10×tier)`; `EliteInfusedDropChance` (0.12) calls `DropSkill` with `InfusionDropPatch.ForceNext`.
+  - Ctrl+F7 makes the nearest enemy the next trait.
+- **TrialEvent.cs:**
+  - **Opening:** `OnLevelGenerated` (called after RivalEvent from LevelGenPatch.Generated) with `Trials.Chance` 0.12. The portal goes on a checkpoint 12–80 units from the start, 15+ away from the rival portal.
+  - **Room:** `RivalEvent.BuildRoom` (its helpers are now internal) at startPosition + (0, -1140). In Settle: Roomy arrival, a way-back portal from the start, and enemy keys taken from the stage's enemies (gameObject names).
+  - **Run:** on entering, `Infusion.ForcedElement` is set (ApplyToAttack converts every player attack, no bonus). Three waves of 2/3/4 + tier `Enemy.Spawn` around the arrival; a 120s guard per wave.
+  - **Clear:** gold, plus an unlocked arcana of another element, not owned, set pending with the trial element and dropped via `DropSkill`. Leaving the room ends the trial (forced element cleared, also on destroy).
+  - Ctrl+F6 opens a trial beside you.
+
 ## v0.7.4: final-fight hotkey; Tomi hint overlap; Chaos Ball and Chaos accents (built, not yet run in game)
 - **Ctrl+Shift+F12 → `Debug.JumpToFinal`:** sets tierCount = 3 and stageCount = 0, then `GameController.LoadLevel("FinalBossLevel")` (Sura, or the run's champion). It only works from inside a run.
 - **Tomi hint:** in the Hub the switched version was shown twice (the bar line plus a status message), and two lines didn't fit the fixed 70px band. The message is dropped, and the band moved to the top of the screen (the game's prompts sit at the bottom), sized with `CalcHeight`.
