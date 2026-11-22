@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
 using HarmonyLib;
@@ -23,7 +23,11 @@ namespace WolHybridBosses
 
     internal static class ElementalNeutrals
     {
-        internal static bool IsKind(Enemy e) { return e != null && (e.GetType() == typeof(Coffin) || e.GetType() == typeof(Cyclops)); }
+        internal static bool IsKind(Enemy e) { return e != null && (e.GetType() == typeof(Coffin) || e.GetType() == typeof(Cyclops) || IsBeast(e)); }
+
+        // v0.9.14: blobs (Blob, mini Blob, Roller Blob, Blob Barrager, Super Blob) and ghouls (Ghoul, Macho Ghoul):
+        // elemental look and damage only, no arcana.
+        internal static bool IsBeast(Enemy e) { return e is Blob || e is BlobSpitter || e is Ghoul || e is GhoulLarge; }
 
         internal static ElementType ElementOf(string prefix)
         {
@@ -40,13 +44,21 @@ namespace WolHybridBosses
         // Regular spawns (two frames after Start, from EliteSpawnPatch). The Giant Cyclops applies its own.
         internal static void TryApply(Enemy e)
         {
-            if (!IsKind(e) || e.GetComponent<GiantCyclops>() != null || e.GetComponent<ElementalNeutral>() != null) return;
-            if (e.GetComponent<ChaosArmed>() != null || ChaosStages.Planned || Level.isBossRushMode) return;
+            if (!IsKind(e) || e.GetComponent<GiantCyclops>() != null || e.GetComponent<ElementalNeutral>() != null || e.GetComponent<BossEventEnemy>() != null) return;
+            if (e.GetComponent<ChaosArmed>() != null || e.GetComponent<VariantMark>() != null || Level.isBossRushMode) return;
             if (Rivals.IsRival(e) || OwnerContext.OwnerOf(e) != null) return;
+            bool beast = IsBeast(e);
+            if (ChaosStages.Planned)
+            {
+                // Coffins / Cyclops are converted with the stage's humanoids (ChaosEnemies); blobs and ghouls take the
+                // variant's look and attacks here, without arcana.
+                if (beast && UnityEngine.Random.value < Plugin.ElementalNeutralChance.Value) MinibossFights.MatchStage(e, false, 0);
+                return;
+            }
             string prefix = ElementalGiants.StagePrefix();
             if (prefix == null) return; // neutral stage: neutral, like the knights there
             if (UnityEngine.Random.value >= Plugin.ElementalNeutralChance.Value) return;
-            Apply(e, prefix, 1, 1.6f);
+            Apply(e, prefix, beast ? 0 : 1, 1.6f);
         }
 
         internal static void Apply(Enemy e, string prefix, int arcanaCount, float cooldown)
@@ -60,6 +72,7 @@ namespace WolHybridBosses
             ElementalGiants.RecolorOrTint(e, Infusion.RampKey(el), ElementalGiants.ElementColor(prefix)); // v0.9.9
             Cyclops cy = e as Cyclops;
             if (cy != null) TintLaser(cy, Infusion.RampKey(el));
+            ConvertExisting(e, el, StageVariant.None);
             int n = 0;
             if (arcanaCount > 0)
             {
@@ -67,6 +80,21 @@ namespace WolHybridBosses
                 n = EnemyArcana.Give(e, picks, cooldown);
             }
             Plugin.Log.LogInfo("ELEMENTAL " + e.GetType().Name + (e.GetComponent<GiantCyclops>() != null ? " (giant)" : "") + " -> " + prefix + " (" + el + "), arcana " + n);
+        }
+
+        // v0.9.14: hitboxes set up before the element was applied (a blob's or ghoul's contact / body attack is often
+        // set once in its own Start): their damage type and status change now; later attacks go through
+        // VariantAttackPatch as usual. v = None: the element; otherwise the stage variant's conversion.
+        internal static void ConvertExisting(Enemy e, ElementType el, StageVariant v)
+        {
+            if (e == null) return;
+            int n = 0;
+            foreach (Attack a in e.GetComponentsInChildren<Attack>(true))
+            {
+                if (a == null || a.atkInfo == null) continue;
+                try { if (v == StageVariant.None) Infusion.ConvertEnemyInfo(a.atkInfo, el); else Variants.Convert(a, v); n++; } catch (Exception) { }
+            }
+            if (n > 0) Plugin.Log.LogInfo("ELEMENTAL " + e.GetType().Name + ": " + n + " existing hitbox(es) converted");
         }
 
         // The beam's colours are fields the laser re-applies every time it charges and fires, so they're set there.
@@ -172,7 +200,7 @@ namespace WolHybridBosses
                 else if (UnityEngine.Random.value < Plugin.ElementalGiantChance.Value) prefix = ElementalGiants.RandomPrefix();
                 if (prefix != "Neutral") ElementalNeutrals.Apply(enemy, prefix, 2, 1f);
             }
-            if (Plugin.GiantIntros.Value) GiantIntro.Attach(enemy, prefix, "Cyclops");
+            if (Plugin.GiantIntros.Value && GetComponent<BossEventEnemy>() == null) GiantIntro.Attach(enemy, prefix, "Cyclops"); // the Eye Court has its own card
             SetArmour(true);
             started = true;
             Plugin.Log.LogInfo("GIANT Cyclops ready: HP " + maxHp + ", " + prefix);
@@ -237,6 +265,7 @@ namespace WolHybridBosses
             }
             catch (Exception) { }
             Plugin.Log.LogInfo("GIANT Cyclops armour broken: stunned 3.5s");
+            try { MinibossFights.OnCyclopsBreak(enemy); } catch (Exception) { } // v0.9.11: the Eye Court
         }
     }
 
@@ -268,44 +297,54 @@ namespace WolHybridBosses
         }
     }
 
-    // Now and then a giant spawn becomes a Giant Cyclops (never the Super Rogue's clones, never boss rooms).
-    static class GiantCyclopsSwap
+    // v0.9.11: the special mini-boss pool. Now and then a giant spawn (Super Knight / Mage / Archer / Lancer /
+    // Summoner / Coffin; never the Super Rogue, whose clones use Spawn too; never boss rooms) becomes one of the
+    // special mini-bosses (MinibossFights): Giant Cyclops, Mimic King, Cyclops Eye Court or Elemental Conclave.
+    static class MinibossSwap
     {
         static readonly HashSet<string> Giants = new HashSet<string> { "SuperKnight", "SuperMage", "SuperArcher", "SuperLancer", "SuperSummoner", "SuperCoffin" };
+        internal static MinibossFight? Pending; // set while a giant spawn is being swapped (cleared by the postfix)
 
-        internal static bool Roll(string key)
+        // The replacement enemy name, or null to keep the giant.
+        internal static string Roll(string key)
         {
-            if (GiantCyclops.Pending || key == null || !Giants.Contains(key)) return false;
-            if (Plugin.GiantCyclopsChance.Value <= 0f || Level.isBossRushMode) return false;
+            if (Pending.HasValue || GiantCyclops.Pending || key == null || !Giants.Contains(key)) return null;
+            if (!Plugin.BossFightsEnabled.Value || Plugin.MinibossFightChance.Value <= 0f || Level.isBossRushMode) return null;
             string scene = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name ?? "";
-            if (scene == "Hub" || scene == "Tutorial" || scene.Contains("BossLevel") || scene.Contains("PvP")) return false;
-            if (UnityEngine.Object.FindObjectOfType<BossRoomEventHandler>() != null) return false;
-            if (UnityEngine.Random.value >= Plugin.GiantCyclopsChance.Value) return false;
-            Plugin.Log.LogInfo("GIANT spawn " + key + " becomes a Giant Cyclops");
-            GiantCyclops.Pending = true;
-            return true;
+            if (scene == "Hub" || scene == "Tutorial" || scene.Contains("BossLevel") || scene.Contains("PvP")) return null;
+            if (UnityEngine.Object.FindObjectOfType<BossRoomEventHandler>() != null) return null;
+            if (UnityEngine.Random.value >= Plugin.MinibossFightChance.Value) return null;
+            MinibossFight f = (MinibossFight)UnityEngine.Random.Range(0, MinibossFights.Count);
+            Pending = f;
+            string to = MinibossFights.KeyFor(f);
+            Plugin.Log.LogInfo("MINIBOSS spawn " + key + " becomes " + MinibossFights.Title(f) + " (" + to + ")");
+            return to;
         }
 
         internal static void Done(Enemy result)
         {
-            if (!GiantCyclops.Pending) return;
-            GiantCyclops.Pending = false; // also when the spawn failed, so the next spawn isn't taken for a giant
-            if (result != null) GiantCyclops.Mark(result);
+            if (!Pending.HasValue) return;
+            MinibossFight f = Pending.Value;
+            Pending = null; // also when the spawn failed, so the next spawn isn't taken for one
+            if (result != null) MinibossFights.Begin(result, f);
         }
     }
 
     [HarmonyPatch(typeof(Enemy), "Spawn", new Type[] { typeof(string), typeof(Vector3), typeof(Transform), typeof(bool), typeof(bool), typeof(bool), typeof(bool), typeof(bool) })]
-    static class GiantCyclopsSpawnByName
+    static class MinibossSpawnByName
     {
-        static void Prefix(ref string __0) { try { if (GiantCyclopsSwap.Roll(__0)) __0 = "Cyclops"; } catch (Exception) { } }
-        static void Postfix(Enemy __result) { try { GiantCyclopsSwap.Done(__result); } catch (Exception) { } }
+        static void Prefix(ref string __0) { try { string to = MinibossSwap.Roll(__0); if (to != null) __0 = to; } catch (Exception) { } }
+        static void Postfix(Enemy __result) { try { MinibossSwap.Done(__result); } catch (Exception) { } }
     }
 
     [HarmonyPatch(typeof(Enemy), "Spawn", new Type[] { typeof(Enemy.EName), typeof(Vector3), typeof(Transform), typeof(bool), typeof(bool), typeof(bool), typeof(bool), typeof(bool) })]
-    static class GiantCyclopsSpawnByEnum
+    static class MinibossSpawnByEnum
     {
-        static void Prefix(ref Enemy.EName __0) { try { if (GiantCyclopsSwap.Roll(__0.ToString())) __0 = Enemy.EName.Cyclops; } catch (Exception) { } }
-        static void Postfix(Enemy __result) { try { GiantCyclopsSwap.Done(__result); } catch (Exception) { } }
+        static void Prefix(ref Enemy.EName __0)
+        {
+            try { string to = MinibossSwap.Roll(__0.ToString()); if (to != null) __0 = (Enemy.EName)Enum.Parse(typeof(Enemy.EName), to); } catch (Exception) { }
+        }
+        static void Postfix(Enemy __result) { try { MinibossSwap.Done(__result); } catch (Exception) { } }
     }
 
     // Its beam hits harder than a regular cyclops'.

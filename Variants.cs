@@ -449,6 +449,7 @@ namespace WolHybridBosses
                     return;
                 }
                 if (__instance.GetComponentInParent<Player>() != null) return;
+                if (ConclaveCore.ConvertAttack(__instance)) return; // v0.9.10: the Elemental Archon
                 if (Elites.InfuseAttack(__instance)) return; // v0.9.7: Infused elites
                 if (ElementalNeutrals.ConvertAttack(__instance)) return; // v0.9.8: elemental Coffin Knights / Cyclops
                 StageVariant v = Variants.AttackVariant(__instance);

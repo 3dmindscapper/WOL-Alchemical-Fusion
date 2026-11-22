@@ -14,7 +14,7 @@ namespace WolHybridBosses
     [BepInDependency("wolarcanos.arcanos", BepInDependency.DependencyFlags.SoftDependency)] // optional: Radiant / Prism variants
     public class Plugin : BaseUnityPlugin
     {
-        public const string Version = "0.9.9";
+        public const string Version = "0.9.14";
         internal static ManualLogSource Log;
 
         internal static ConfigEntry<bool> ElementalGiants;
@@ -43,7 +43,8 @@ namespace WolHybridBosses
         internal static ConfigEntry<float> VariantChaosShare, VariantRadiantShare, VariantPrismShare, VariantArchonChance, RadiantHealthDropChance;
         internal static ConfigEntry<bool> InfusionEnabled, InfusedCouncil, ElitesEnabled, TrialsEnabled, EchoEnabled, RivalScaleWithProgress;
         internal static ConfigEntry<float> EchoChance; // v0.9.2
-        internal static ConfigEntry<float> ElementalNeutralChance, GiantCyclopsChance; // v0.9.8
+        internal static ConfigEntry<float> ElementalNeutralChance; // v0.9.8
+        internal static ConfigEntry<bool> BossFightsEnabled; internal static ConfigEntry<float> MinibossFightChance; // v0.9.11
         internal static ConfigEntry<float> EliteChanceMultiplier, EliteInfusedDropChance, TrialChance;
         internal static ConfigEntry<string> InfusionButtons;
         internal static ConfigEntry<float> InfusedDropChance, InfusedStockChance;
@@ -124,8 +125,9 @@ namespace WolHybridBosses
             RivalScaleWithProgress = Config.Bind("RivalWizards", "ScaleWithProgress", true, "The rival's difficulty is rolled with Hard more likely deeper in the run (Easy/Medium/Hard %: first tier 60/30/10, second 30/45/25, third 15/40/45, later loops 5/30/65). Off: an even roll.");
             EchoEnabled = Config.Bind("RivalWizards", "EchoOfLastRun", true, "A rival portal can hold the Echo of your last run instead (your arcana with their infusions, robe and stat relics), once per run. Beating it gives a gold chest.");
             EchoChance = Config.Bind("RivalWizards", "EchoChance", 0.35f, "Chance that a rival portal holds the Echo of your last run (when there is one and it has not been fought this run).");
-            ElementalNeutralChance = Config.Bind("Enemies", "ElementalCoffinCyclopsChance", 0.6f, "On an elemental stage, chance that a Coffin Knight or Cyclops takes the stage's element (tint, elemental attacks in its colours, one borrowed arcana), like the elemental knights.");
-            GiantCyclopsChance = Config.Bind("Enemies", "GiantCyclopsChance", 0.15f, "Chance that a giant spawn becomes a Giant Cyclops instead (thick beam, armour that breaks into stun phases, mini-boss chest). 0 turns it off.");
+            ElementalNeutralChance = Config.Bind("Enemies", "ElementalCoffinCyclopsChance", 0.6f, "On an elemental stage, chance that a Coffin Knight, Cyclops, blob (any kind) or ghoul (Ghoul, Macho Ghoul) takes the stage's element: recoloured body and elemental attacks in its colours, plus one borrowed arcana for Coffin Knights and Cyclops. Blobs and ghouls also take Chaos / Radiant / Prism on those stages.");
+            BossFightsEnabled = Config.Bind("BossFights", "Enabled", true, "Special mini-bosses made from regular enemies (Giant Cyclops, Mimic King, Cyclops Eye Court, Elemental Conclave, Hive Mother, Gravewarden) can take a giant's place in the mini-boss pool.");
+            MinibossFightChance = Config.Bind("BossFights", "MinibossChance", 0.3f, "Chance that a giant (mini-boss) spawn becomes one of the six special mini-bosses instead, picked evenly.");
             ElitesEnabled = Config.Bind("Elites", "Enabled", true, "Now and then a regular enemy is an elite with one trait (Shielded, Hasted, Splitting, Draining, Blinking, Volatile, Vengeful, Haunting, Anchored, Overcharged, Infused, Thief): a coloured outline, an Elite label, more gold and sometimes an infused arcana. Chance 4% +3% per tier, +4% from the second loop.");
             EliteChanceMultiplier = Config.Bind("Elites", "ChanceMultiplier", 1f, "Multiplies the elite chance (0 turns elites off, 2 doubles them).");
             EliteInfusedDropChance = Config.Bind("Elites", "InfusedDropChance", 0.12f, "Chance that an elite (not an Infused one) drops an arcana that is already infused.");
@@ -180,7 +182,8 @@ namespace WolHybridBosses
         void Update()
         {
             if (!DebugKeys.Value) return;
-            if (Input.GetKeyDown(KeyCode.F5)) Debug.ListEnemies();
+            if (Input.GetKeyDown(KeyCode.F5) && (Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl))) MinibossFights.TestHere(); // v0.9.11: the next special mini-boss beside you
+            else if (Input.GetKeyDown(KeyCode.F5)) Debug.ListEnemies();
             if (Input.GetKeyDown(KeyCode.F6) && !(Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl))) Debug.CyclePalette();
             if (Input.GetKeyDown(KeyCode.F7) && !(Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl))) Debug.DumpNearestEnemy();
             bool ctrlKey = Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl);

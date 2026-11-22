@@ -71,6 +71,58 @@ Cloning the player GameObject and driving it from script failed:
 - v0.0.7 tested: summon swap works (logged EarthKnight, FlameLancer etc.). SuperCoffin goes **pink** on palettes 4–8, so its sheet has no elemental rows: keep palette 3 and tint or outline it (MiniBoss uses `_OutlineColor`/`_OutlineColor2`). The user wants the coffin (and rivals) to cast **player arcana** instead.
 - Arcana research: `Contestant : Enemy` (PvP wizard) reimplements Tornado/SwordThrow/Fireball as its own states (ctor typed to Contestant). Its FireballState instantiates the prefab and calls `Attack.SetAttackInfo("Player", "ShootFireball", level, isUltimate)`, the same call player arcana make (e.g. `UseFireBeam.CreateFireBeam`: `FireBeam.Prefab` + `ChaosInst` + `SetAttackInfo`). There are 100 `Player+Use*` arcana. Plan: our own data-driven `ArcanaState : Enemy.SkillState` (skillID, prefab, delivery type). See ROADMAP "Enemy Arcana".
 
+## v0.9.14: elemental blobs and ghouls
+- **Which enemies:** `ElementalNeutrals.IsBeast` covers `Blob` (and its subclasses `BlobRoller`, `SuperBlob`; the mini blob is a Blob prefab), `BlobSpitter` (Blob Barrager), `Ghoul` and `GhoulLarge` (Macho Ghoul). They're added to `IsKind`.
+- **Elemental stages:** they roll `ElementalCoffinCyclopsChance` and get `Apply(e, prefix, 0)`: recoloured body and elemental attacks, no arcana.
+- **Chaos / Radiant / Prism stages:** they aren't in `ChaosEnemies.ChaosTypes` (that would give them an arcana). Instead `TryApply` calls `MinibossFights.MatchStage(e, false, 0)`: `VariantMark`, the look, and converted attacks. `TryApply` now skips enemies that already have a `VariantMark`.
+- **`ConvertExisting(e, el, v)`:** converts hitboxes whose info was set before the element applied (contact / body attacks set in their own Start). With v = None it uses `Infusion.ConvertEnemyInfo`, otherwise `Variants.Convert`. It's called from `Apply` and from `MatchStage`'s escort variant path, so it covers Coffin, Cyclops and the fights' escorts too.
+
+## v0.9.13: special mini-bosses match the stage
+- **Before:** only the Giant Cyclops (and so the Eye Court's giant) took the stage element or variant (its own `Start`). The Mimic King, Hive Mother and Gravewarden aren't `MiniBoss` bodies, so `ElementalGiants` never touched them, and the Conclave's Archon ignored variant stages.
+- **`MinibossFights.MatchStage(e, boss, arcana, followPrefix)`:**
+  - **Variant stage:** a boss → `ChaosGiants.Apply` (variant look, 2 variant arcana, `VariantMark`), and its `GiantIntro` is destroyed because the fight shows its own card. An escort with arcana that is a Chaos type (the Gravewarden's Coffin Knights) → `ChaosEnemies.ArmRegular`. Other escorts → `VariantMark.Set` plus the look (Chaos: element Chaos + `RecolorOrTint("Chaos")`; else `Variants.TintBody`).
+  - **Elemental stage:** `ElementalNeutrals.Apply(e, stagePrefix, arcana)`.
+  - **Neutral stage:** the boss rolls `ElementalGiantChance` for a random element; escorts follow the boss's prefix.
+- **Per fight:**
+  - Mimic King, Hive Mother, Gravewarden: the boss gets 2 arcana. The Mimic adds, the brood and the Ghouls follow via `Follow()`, two frames after their Start.
+  - Eye Court: the orbs follow the giant's `ElementalNeutral.Prefix`, or the variant.
+  - Gravewarden knights: the warden's element, else random (always elemental); on variant stages, armed as humanoids.
+  - Conclave: on variant stages the Archon also becomes the variant giant, and Chaos joins its element cycle. Zoners 1–4 stay their own elements.
+- **Intro cards** show the element ("Mini-boss · Fire · …") in its colour (`Sub`, `TitleColour`).
+
+## v0.9.12: Hive Mother and Gravewarden (6 special mini-bosses)
+- `MinibossFight` gained `HiveMother` ("SuperBlob") and `Gravewarden` ("GhoulLarge"). `MinibossFights.Count` = 6 is used by the swap roll and Ctrl+F5.
+- **Hive Mother:** ×1.3 scale, 1000 + 380/tier, `BossArmour`. Each break spawns 4 brood (BlobSpitter, BlobRoller, BlobMini, BlobSpitter) tagged `BroodBlob`. After 6s, a living brood moves straight to her at 3 u/s (overriding its AI). On contact it heals her 8% of max (`healthStat.CurrentValue`) and is removed. On her death the brood is orphaned (stays as normal enemies).
+- **Gravewarden:** ×1.35 scale, 1100 + 400/tier, plus 2 Ghouls at the start.
+  - Raises a "Coffin" every 9s while fewer than 3 stand. Each is made elemental after two frames: the stage prefix, else random, via `ElementalNeutrals.Apply`, 1 arcana.
+  - New `BossArmour.CanBreak` (`Func<bool>`): the armour can't break while any of its knights lives. The first refusal shows a hint card.
+  - Leftover knights are removed when it dies.
+
+## v0.9.11: the special fights join the mini-boss pool (no portal)
+- **What changed:** the v0.9.10 `BossEvent` (portal plus arena) is gone. `MinibossSwap` (ElementalNeutrals.cs) replaced `GiantCyclopsSwap`. A giant spawn (Super Knight / Mage / Archer / Lancer / Summoner / Coffin) rolls `BossFights.MinibossChance` (0.3) and becomes one of four specials, picked evenly: Giant Cyclops, Mimic King, Cyclops Eye Court, Elemental Conclave. It happens in the stage's own mini-boss room, with the game's escort.
+- **Config:** `Enemies.GiantCyclopsChance` and `BossFights.Chance` are no longer bound.
+- **Swap:** `MinibossFights.KeyFor(f)` gives the replacement name: "Cyclops", "MimicEnemyLarge", or a random elemental Zoner (the Archon). The Spawn postfix calls `MinibossFights.Begin(enemy, f)`.
+- **The enemy returned to the game is the one that must die last,** so the room's mini-boss logic holds:
+  - Conclave: the Archon is `SetActive(false)` while `MinibossRunner` spawns the other four Zoners one at a time. Those use `Setup(..., chest: false)`. Then it reactivates the Archon at the spot, with armour and cycling elements.
+  - Eye Court: `GiantCyclops.Mark`, plus orbs spawned by the runner. `GiantCyclops.Break` calls `MinibossFights.OnCyclopsBreak` directly (the static event was removed). The Giant Cyclops skips its own `GiantIntro` when tagged `BossEventEnemy`.
+- **Helper spawns** go through `MinibossFights.Spawn`, which sets `GiantCyclops.Pending` so they're never swapped themselves.
+- **Ctrl+F5:** `MinibossFights.TestHere` spawns the four in turn beside you.
+
+## v0.9.10: boss fights from regular enemies (superseded by v0.9.11: no portal any more)
+- **Roster:** checked against the wiki's enemy list (Archer, Blob, Blob Barrager, Chaos/Laser Cyclops, Coffin Knight, Ghoul, Golem, Knight, Lancer, Macho Ghoul, Mage, Mimic, Rogue, Roller Blob, Summoner, Turret, Zoner). Rats, doves and eagles in `Enemy.EName` are critters, not enemies. Laser Orbs aren't a listed enemy but are the mini-bosses' summon (`MiniBossLaserSummonState`). `MimicEnemyLarge : MimicEnemy` exists in code.
+- **BossFights.cs, `BossEvent`** (shaped like `TrialEvent`):
+  - Config `BossFights.Chance` (0.12), hooked in `LevelGenPatch.Generated` after the trial.
+  - Portal: gold, in the start room. `RivalEvent.StartRoomSpot` is now internal with an `avoid` list, so it stays 4+ units from the rival portal. Settle waits 3 physics steps so the rival portal is placed first.
+  - Arena: `BuildRoom` at start + (0, -1500).
+  - Flow: the fight starts on arrival (the entrance portal is removed). On a win: gold, the boss's mini-boss chest (`BossKit.Setup` sets `dropLoot`, `dropLootChest`, "TreasureChestMiniBoss"), then the way back.
+  - Ctrl+F5 opens one beside you, cycling the three fights; plain F5 still lists enemies.
+- **The three fights:**
+  - **Mimic King:** "MimicEnemyLarge" (fallback "MimicEnemy"), ×1.4 scale, 1100 + 400/tier. Each armour break: 3 gold drops and 2 Mimics (spawned with loot off). Gold ×1.6.
+  - **Cyclops Eye Court:** `GiantCyclops.SpawnAt` plus 4 "LaserOrb"s with `allowRoam` false, orbited by `OrbitCourt` at radius 4.5. `GiantCyclops.ArmourBroken` (new static event) removes one orb per break via `BossKit.Remove`: out of `GameController.enemies` and destroyed, no loot.
+  - **Elemental Conclave:** the 5 elemental Zoner classes in random order, one at a time. Zoners 1–4 have growing HP (260 + 100/tier × (1 + 0.25i)), size and speed. The fifth is the "Elemental Archon": ×1.7, 900 + 300/tier, `BossArmour`, and `ConclaveCore`, whose attacks cycle the absorbed elements (in `VariantAttackPatch`, before the elite and neutral conversions) with a shimmering outline.
+- **`BossArmour`:** a generic copy of the Giant Cyclops armour cycle: threshold, stun seconds, `OnBreak(breaks)`. Enemies with no "Hurt" state (the Mimic) are slowed to 15% while stunned instead.
+- **`BossEventEnemy`** tags every spawn of a fight, so they're never elites or re-elemented.
+
 ## v0.9.9: giants always elemental on elemental stages; recoloured Coffin / Cyclops sheets
 - **Giants:** `ElementalGiants.TryMakeElemental` and the Giant Cyclops no longer check `MatchStageElement`. On any elemental stage (`StagePrefix() != null`) the giant takes the stage element. The setting is kept but described as unused.
   - The user's cfg already had it true. If a neutral giant shows up on an elemental stage, the log line "stays neutral (stage X …)" will show `Level.element` read Neutral there.

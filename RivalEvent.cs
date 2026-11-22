@@ -399,7 +399,7 @@ namespace WolHybridBosses
         // v0.9.3: the rival portal's spot in the start room: open floor 3.5-6 units from where the player arrives, in a
         // straight unblocked line from it (so it stays in the same room, not through a wall into the next one), the
         // most open such spot. Falls back to the arrival point's own most open floor.
-        static Vector2 StartRoomSpot(Vector2 start)
+        internal static Vector2 StartRoomSpot(Vector2 start, List<Vector2> avoid = null)
         {
             Vector2 best = start;
             float bestClear = -1f;
@@ -410,6 +410,7 @@ namespace WolHybridBosses
                 {
                     Vector2 p = start + new Vector2(Mathf.Cos(ang), Mathf.Sin(ang)) * rad;
                     if (Blocked(null, start, p)) continue;
+                    if (avoid != null && avoid.Exists(q => Vector2.Distance(q, p) < 4f)) continue; // v0.9.10: other portals
                     float clear = Clearance(p);
                     if (clear > bestClear) { bestClear = clear; best = p; }
                 }
