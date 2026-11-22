@@ -71,6 +71,35 @@ Cloning the player GameObject and driving it from script failed:
 - v0.0.7 tested: summon swap works (logged EarthKnight, FlameLancer etc.). SuperCoffin goes **pink** on palettes 4–8, so its sheet has no elemental rows: keep palette 3 and tint or outline it (MiniBoss uses `_OutlineColor`/`_OutlineColor2`). The user wants the coffin (and rivals) to cast **player arcana** instead.
 - Arcana research: `Contestant : Enemy` (PvP wizard) reimplements Tornado/SwordThrow/Fireball as its own states (ctor typed to Contestant). Its FireballState instantiates the prefab and calls `Attack.SetAttackInfo("Player", "ShootFireball", level, isUltimate)`, the same call player arcana make (e.g. `UseFireBeam.CreateFireBeam`: `FireBeam.Prefab` + `ChaosInst` + `SetAttackInfo`). There are 100 `Player+Use*` arcana. Plan: our own data-driven `ArcanaState : Enemy.SkillState` (skillID, prefab, delivery type). See ROADMAP "Enemy Arcana".
 
+## v0.9.9: giants always elemental on elemental stages; recoloured Coffin / Cyclops sheets
+- **Giants:** `ElementalGiants.TryMakeElemental` and the Giant Cyclops no longer check `MatchStageElement`. On any elemental stage (`StagePrefix() != null`) the giant takes the stage element. The setting is kept but described as unused.
+  - The user's cfg already had it true. If a neutral giant shows up on an elemental stage, the log line "stays neutral (stage X …)" will show `Level.element` read Neutral there.
+- **`ElementalGiants.RecolorOrTint(e, rampKey, outline)`:** `RecolorEngine.RecolorBody(e, key, restorable: false)` maps the palette texture onto the element ramp, then sets only the outline colours. It falls back to the flat `Tint` when 0 parts were recoloured. Log: `RECOLOR <type> body on the <key> ramp (N part(s))`.
+  - Used for the Super Coffin (`NoElementPalettes`), for elemental Coffin / Cyclops / Giant Cyclops (`ElementalNeutrals.Apply`), and by `ChaosGiants.Apply` when a giant has no purple row (key "Chaos").
+  - `RecolorBody` got `restorable = true` by default (Council). With false, the material isn't registered in `origPalettes`, so `CouncilCorruption.End` → `RestoreBodies` won't undo it.
+
+## v0.9.8: elemental Coffin Knights / Cyclops; the Giant Cyclops (built, not yet run in game)
+- **ElementalNeutrals.cs:** the game only has neutral `Coffin` and `Cyclops` (no elemental subclasses).
+  - `TryApply` runs from `EliteSpawnPatch.Later`, before the elite roll, so an Infused elite sees the new element. On an elemental stage it rolls `Enemies.ElementalCoffinCyclopsChance` (0.6).
+  - `Apply`:
+    - `ElementalNeutral` mark and `e.element`.
+    - `ElementalGiants.Tint`, because their sheets have no usable elemental rows (the Super Coffin's render pink).
+    - One arcana from `GapArcana` ("Knight" families for the Coffin, "Mage" for the Cyclops), cooldown ×1.6.
+    - The cyclops beam colours: `Laser.chargeColor0-2`/`shootColor0-2`, mapped on the element ramp. The laser re-applies them on every `SetTargetLineVars`, so tinting the line renderer wouldn't stick.
+  - Their attacks are converted in `VariantAttackPatch` (`ElementalNeutrals.ConvertAttack`: `Infusion.ConvertEnemyInfo` plus `TintAttack`).
+  - On Chaos / Radiant / Prism stages, "Coffin" and "Cyclops" were added to `ChaosEnemies.ChaosTypes`.
+- **Giant Cyclops** (no Super Cyclops in the game):
+  - **Spawning:** `GiantCyclopsSpawnByName` / `ByEnum` prefix both `Enemy.Spawn` overloads. A Super Knight / Mage / Archer / Lancer / Summoner / Coffin spawn rolls `Enemies.GiantCyclopsChance` (0.15) to become "Cyclops"; never the Super Rogue (its clones use Spawn), Hub, boss levels or `BossRoomEventHandler` rooms. The postfix calls `GiantCyclops.Mark`: ×1.9 scale, `dropLootChest` + `chestLootTableID = "TreasureChestMiniBoss"`. `Pending` guards nested overload calls and is cleared even when the spawn fails. F8's test cycle now ends with "GiantCyclops" (`GiantCyclops.SpawnAt`).
+  - **Setup** (`GiantCyclops.Start`, two frames in): HP override (900 + 350/tier, ×1.5 from loop 1).
+    - Element: the variant giant via `ChaosGiants.Apply` on Chaos stages; otherwise the stage element (MatchStageElement) or random by `ElementalGiantChance`, through `ElementalNeutrals.Apply` with 2 arcana at cooldown ×1.
+    - `GiantIntro` with kind "Cyclops" (`GiantName` → "Giant Cyclops").
+  - **Stun phases:** MiniBoss's armour is `bossIgnoreMod` on `ignoreHurtVarStat` / `ignoreKnockbackVarStat`, toggled by `AllowHurtState`. The giant does the same with its own `BoolVarStatMod` (`VarStat.Modify(mod, on)`) and a pale outline while armoured.
+    - After 20% of max HP lost since the armour went up: break, with "ArmorDissipateEffect" (`PoolManager.GetPoolItem<ParticleEffect>` + `Emit(15, pos, …)`) and a camera shake.
+    - Stun lasts 3.5s: every 0.25s it re-enters "Hurt" (`fsm.ChangeState("Hurt", true)` if `HasState`, skipping Dead/Frozen/WolArcanos states) and the laser is `Deactivate()`d.
+    - Then the armour comes back. `GiantWatchdog` isn't attached.
+  - **Beam:** `Cyclops.InitLaser` postfix scales `shootThickness0-2` ×2.4, `chargeThickness0-2` ×2 and `randomSizeRange0-2` ×2.4. `Laser+ShootState.Update` sizes the `BoxCollider2D` as line thickness × `atkVisualRatio`, so the hitbox widens with it. `maxRange` becomes 26, and the parent's ×1.9 scale is undone on the laser transform. `GiantCyclopsDamagePatch` makes its hits ×1.5 (undone in the postfix).
+  - Not an elite candidate (`Elites.Eligible`).
+
 ## v0.9.7: seven more elite traits; gold by risk
 - **Elites.cs:** `EliteTrait` now has 12 traits (`Elites.TraitCount`), and the Ctrl+F7 test key cycles through all of them.
   - **Volatile:** `EliteBlast.Spawn` (radius 2.4, 30 + 12/tier, its element, 0.9s delay). The warning is the game's `CastingCirclePool.Spawn("Draw", …, useCastTime, delay, size, CastingCircle.enemyColor)`, the same call `ArrowShower` makes. Then `Explosion.Prefab` + `Explode(scale)` (as `SuperMovingStatue`'s ground slam does), the "MeteorExplosion" sound, a camera shake, and one frame of `Attack.CirclePrefab`. Its info is `NeutralKnightAttack` re-owned by the elite (entity null if the body is gone), with damage and element status set (`Infusion.SetStatus`, now internal).

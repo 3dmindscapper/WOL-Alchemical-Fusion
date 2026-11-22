@@ -14,7 +14,7 @@ namespace WolHybridBosses
     [BepInDependency("wolarcanos.arcanos", BepInDependency.DependencyFlags.SoftDependency)] // optional: Radiant / Prism variants
     public class Plugin : BaseUnityPlugin
     {
-        public const string Version = "0.9.7";
+        public const string Version = "0.9.9";
         internal static ManualLogSource Log;
 
         internal static ConfigEntry<bool> ElementalGiants;
@@ -43,6 +43,7 @@ namespace WolHybridBosses
         internal static ConfigEntry<float> VariantChaosShare, VariantRadiantShare, VariantPrismShare, VariantArchonChance, RadiantHealthDropChance;
         internal static ConfigEntry<bool> InfusionEnabled, InfusedCouncil, ElitesEnabled, TrialsEnabled, EchoEnabled, RivalScaleWithProgress;
         internal static ConfigEntry<float> EchoChance; // v0.9.2
+        internal static ConfigEntry<float> ElementalNeutralChance, GiantCyclopsChance; // v0.9.8
         internal static ConfigEntry<float> EliteChanceMultiplier, EliteInfusedDropChance, TrialChance;
         internal static ConfigEntry<string> InfusionButtons;
         internal static ConfigEntry<float> InfusedDropChance, InfusedStockChance;
@@ -61,9 +62,9 @@ namespace WolHybridBosses
             ElementalGiants = Config.Bind("ElementalGiants", "Enabled", true,
                 "Giant (Super*) enemies can spawn with an element, its palette and that element's enemy skills.");
             MatchStageElement = Config.Bind("ElementalGiants", "MatchStageElement", true,
-                "On an elemental stage (Forest/Earth, Ice, Fire, Air, Lightning) every giant takes that stage's element: Ice stage -> Water giants, and so on.");
+                "No longer used (v0.9.9): on an elemental stage (Forest/Earth, Ice, Fire, Air, Lightning) every giant always takes that stage's element.");
             ElementalGiantChance = Config.Bind("ElementalGiants", "NeutralStageChance", 0.5f,
-                "On a neutral stage (castle, final stage), or on any stage if MatchStageElement is off: chance (0 to 1) that a giant gets a random element. Applies on every difficulty, including normal.");
+                "On a neutral stage (castle, final stage): chance (0 to 1) that a giant gets a random element. Applies on every difficulty, including normal.");
             IgnoreSkillDifficulty = Config.Bind("ElementalGiants", "IgnoreSkillDifficulty", true,
                 "Borrowed elemental skills are usable on normal difficulty (the game normally locks some behind higher difficulty).");
             ArcanaDamageMultiplier = Config.Bind("EnemyArcana", "DamageMultiplier", 1f,
@@ -123,6 +124,8 @@ namespace WolHybridBosses
             RivalScaleWithProgress = Config.Bind("RivalWizards", "ScaleWithProgress", true, "The rival's difficulty is rolled with Hard more likely deeper in the run (Easy/Medium/Hard %: first tier 60/30/10, second 30/45/25, third 15/40/45, later loops 5/30/65). Off: an even roll.");
             EchoEnabled = Config.Bind("RivalWizards", "EchoOfLastRun", true, "A rival portal can hold the Echo of your last run instead (your arcana with their infusions, robe and stat relics), once per run. Beating it gives a gold chest.");
             EchoChance = Config.Bind("RivalWizards", "EchoChance", 0.35f, "Chance that a rival portal holds the Echo of your last run (when there is one and it has not been fought this run).");
+            ElementalNeutralChance = Config.Bind("Enemies", "ElementalCoffinCyclopsChance", 0.6f, "On an elemental stage, chance that a Coffin Knight or Cyclops takes the stage's element (tint, elemental attacks in its colours, one borrowed arcana), like the elemental knights.");
+            GiantCyclopsChance = Config.Bind("Enemies", "GiantCyclopsChance", 0.15f, "Chance that a giant spawn becomes a Giant Cyclops instead (thick beam, armour that breaks into stun phases, mini-boss chest). 0 turns it off.");
             ElitesEnabled = Config.Bind("Elites", "Enabled", true, "Now and then a regular enemy is an elite with one trait (Shielded, Hasted, Splitting, Draining, Blinking, Volatile, Vengeful, Haunting, Anchored, Overcharged, Infused, Thief): a coloured outline, an Elite label, more gold and sometimes an infused arcana. Chance 4% +3% per tier, +4% from the second loop.");
             EliteChanceMultiplier = Config.Bind("Elites", "ChanceMultiplier", 1f, "Multiplies the elite chance (0 turns elites off, 2 doubles them).");
             EliteInfusedDropChance = Config.Bind("Elites", "InfusedDropChance", 0.12f, "Chance that an elite (not an Infused one) drops an arcana that is already infused.");
@@ -384,8 +387,9 @@ namespace WolHybridBosses
             // On a Chaos stage giants become Chaos giants instead of taking the stage element.
             if (ChaosStages.Planned) { ChaosGiants.Apply(e); return; }
 
+            // v0.9.9: on an elemental stage a giant always takes the stage's element.
             string stage = StagePrefix();
-            if (stage != null && Plugin.MatchStageElement.Value)
+            if (stage != null)
             {
                 Apply(e, stage);
                 return;
@@ -409,7 +413,7 @@ namespace WolHybridBosses
 
             e.element = element;
             int palette;
-            if (NoElementPalettes(e)) { Tint(e, ElementColor(prefix)); palette = -1; }
+            if (NoElementPalettes(e)) { RecolorOrTint(e, ElementRamps.ForElement(element), ElementColor(prefix)); palette = -1; }
             else palette = SetPalette(e, element);
 
             int added = 0;
@@ -479,6 +483,27 @@ namespace WolHybridBosses
                 foreach (ArcanaDef d in Rivals.PickVaried(pool.FindAll(d => d.Family != ArcanaFamily.Melee && d.Family != ArcanaFamily.Minion
                     && d.Family != ArcanaFamily.Seeker && !picked.Contains(d)), n - picked.Count, false)) picked.Add(d);
             return picked;
+        }
+
+        // v0.9.9: sheets with no usable elemental rows (Super Coffin, Coffin, Cyclops, Giant Cyclops): the recolour
+        // engine maps their palette texture onto the element's gradient (saturated parts fully, greys and skin
+        // partly), with the element's outline. Falls back to the flat tint if nothing could be recoloured.
+        internal static bool RecolorOrTint(Enemy e, string rampKey, Color outline)
+        {
+            int n = 0;
+            if (rampKey != null && ElementRamps.Has(rampKey))
+                try { n = RecolorEngine.RecolorBody(e, rampKey, false); } catch (Exception ex) { Plugin.Log.LogWarning("RECOLOR body failed on " + e.GetType().Name + ": " + ex.Message); }
+            if (n == 0) { Tint(e, outline); return false; }
+            foreach (SpriteRenderer sr in e.GetComponentsInChildren<SpriteRenderer>(true))
+            {
+                Material sm = sr != null ? sr.sharedMaterial : null;
+                if (sm == null || !sm.HasProperty("_PaletteIndex")) continue;
+                Material mine = sr.material;
+                if (mine.HasProperty("_OutlineColor")) mine.SetColor("_OutlineColor", outline);
+                if (mine.HasProperty("_OutlineColor2")) mine.SetColor("_OutlineColor2", outline);
+            }
+            Plugin.Log.LogInfo("RECOLOR " + e.GetType().Name + " body on the " + rampKey + " ramp (" + n + " part(s))");
+            return true;
         }
 
         // Keep the gray mini-boss palette and tint the sprites (and outline) in the element's colour.
@@ -733,7 +758,7 @@ namespace WolHybridBosses
         }
 
         // F8: spawn the next giant from the list next to the player.
-        static readonly string[] TestKeys = { "SuperKnight", "SuperMage", "SuperRogue", "SuperArcher", "SuperLancer", "SuperSummoner", "SuperCoffin" };
+        static readonly string[] TestKeys = { "SuperKnight", "SuperMage", "SuperRogue", "SuperArcher", "SuperLancer", "SuperSummoner", "SuperCoffin", "GiantCyclops" };
         static int testIndex;
 
         internal static void SpawnNextTestGiant()
@@ -745,7 +770,7 @@ namespace WolHybridBosses
             Vector3 pos = p.transform.position + new Vector3(4f, 0f, 0f);
             try
             {
-                Enemy e = Enemy.Spawn(key, pos, null, false, true, false, false, false);
+                Enemy e = key == "GiantCyclops" ? GiantCyclops.SpawnAt(pos) : Enemy.Spawn(key, pos, null, false, true, false, false, false);
                 Log.LogInfo("SPAWN " + key + " -> " + (e == null ? "null" : e.GetType().Name));
             }
             catch (Exception ex) { Log.LogError("SPAWN " + key + " failed: " + ex); }

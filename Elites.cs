@@ -38,7 +38,7 @@ namespace WolHybridBosses
         internal static bool Eligible(Enemy e)
         {
             if (e == null || e.health == null || e is MiniBoss || e is Boss || Rivals.IsRival(e)) return false;
-            if (e.GetComponent<EliteMark>() != null || e.GetComponent<EliteSplitChild>() != null) return false;
+            if (e.GetComponent<EliteMark>() != null || e.GetComponent<EliteSplitChild>() != null || GiantCyclops.IsGiant(e)) return false;
             if (OwnerContext.OwnerOf(e) != null || e.GetComponent<ArcanaOwned>() != null) return false; // summons of our casters
             string scene = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
             if (scene == "Hub" || scene == "Tutorial" || scene.Contains("BossLevel") || scene.Contains("PvP") || Level.isBossRushMode) return false;
@@ -636,6 +636,7 @@ namespace WolHybridBosses
         {
             yield return null;
             yield return null;
+            try { ElementalNeutrals.TryApply(e); } catch (Exception ex) { Plugin.Log.LogWarning("ELEMENTAL roll failed: " + ex.Message); } // v0.9.8
             try { Elites.TryMake(e); } catch (Exception ex) { Plugin.Log.LogWarning("ELITE roll failed: " + ex.Message); }
         }
     }

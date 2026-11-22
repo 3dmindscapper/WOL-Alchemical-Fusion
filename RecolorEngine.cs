@@ -304,7 +304,9 @@ namespace WolHybridBosses
         // twinned frame by frame. Restorable.
         static readonly Dictionary<Material, Texture> origPalettes = new Dictionary<Material, Texture>();
 
-        internal static int RecolorBody(Component body, string key)
+        // restorable = false (v0.9.9, elemental giants / coffins / cyclops): kept for the enemy's life, not undone by
+        // RestoreBodies when a Council fight ends (the materials are the enemy's own instances anyway).
+        internal static int RecolorBody(Component body, string key, bool restorable = true)
         {
             if (body == null || !ElementRamps.Has(key)) return 0;
             int n = 0;
@@ -318,7 +320,7 @@ namespace WolHybridBosses
                     Texture pal = m.GetTexture("_Palette");
                     Texture2D twin = PaletteTwin(pal, key);
                     if (twin == null) continue;
-                    if (!origPalettes.ContainsKey(m)) origPalettes[m] = pal;
+                    if (restorable && !origPalettes.ContainsKey(m)) origPalettes[m] = pal;
                     m.SetTexture("_Palette", twin);
                     n++;
                 }

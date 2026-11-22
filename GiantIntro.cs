@@ -36,6 +36,7 @@ namespace WolHybridBosses
         static string GiantName(Enemy e)
         {
             string n = e.GetType().Name; // SuperKnight -> Giant Knight
+            if (GiantCyclops.IsGiant(e)) return "Giant Cyclops";
             return n.StartsWith("Super") ? "Giant " + n.Substring(5) : n;
         }
 
