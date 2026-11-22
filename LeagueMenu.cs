@@ -64,7 +64,9 @@ namespace WolHybridBosses
 
         void Update()
         {
-            if (!InHubScene || TomiInfusion.InRun) { IsOpen = false; statue = null; return; }
+            if (!InHubScene || TomiInfusion.InRun) { IsOpen = false; statue = null; }
+            MenuInput.Hold("league", IsOpen); // v1.1.3: the wizard stays put while the board is open
+            if (!InHubScene || TomiInfusion.InRun) return;
             if (statue == null && Time.unscaledTime - searchedAt > 3f) FindStatue();
             Player p = Elites.Player0;
             ChaosInputDevice dev = p != null ? p.inputDevice : null;

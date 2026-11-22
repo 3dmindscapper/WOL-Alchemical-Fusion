@@ -15,7 +15,7 @@ namespace WolHybridBosses
     [BepInDependency(MantleRobe.LegendApiGuid, BepInDependency.DependencyFlags.HardDependency)] // v1.1.1: required (the White Mantle robe, later content)
     public class Plugin : BaseUnityPlugin
     {
-        public const string Version = "1.1.3";
+        public const string Version = "1.1.4";
         internal static ManualLogSource Log;
 
         internal static ConfigEntry<bool> ElementalGiants;

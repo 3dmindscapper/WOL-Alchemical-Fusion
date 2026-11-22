@@ -11,7 +11,7 @@ namespace WolHybridBosses
     //   Open:   F1 anywhere in the Hub, or the Modifiers button (config Modifiers.Button, default Skill4) while Tomi's
     //           spellbook is open there.
     //   Keys:   Up / Down (W / S), Left / Right or Enter / Space to change, F1 / Esc to close.
-    //   Pad:    Skill1 up, Skill2 down, Skill3 change, the Modifiers button (or Cancel) closes.
+    //   Pad:    Skill1 up, Skill2 down, Skill3 change, the Modifiers button (or Cancel) closes; outside a spellbook also the stick / D-pad and Confirm (v1.1.3).
     internal class ModifiersMenu : MonoBehaviour
     {
         sealed class Item
@@ -84,19 +84,27 @@ namespace WolHybridBosses
         void Update()
         {
             bool inHub = TomiInfusion.AtHome; // v1.1.1: not on the title screen
+            if (!inHub) IsOpen = false;
+            MenuInput.Hold("modifiers", IsOpen); // v1.1.3: the wizard stays put while the menu is open
             if (inHub && !IsOpen && (LeagueMenu.IsOpen || NocturneMenu.IsOpen)) return; // one menu at a time
-            if (!inHub) { IsOpen = false; return; }
+            if (!inHub) return;
             ChaosInputDevice dev = TomiInfusion.Device;
             if (!IsOpen)
             {
                 if (Input.GetKeyDown(KeyCode.F1) || (TomiInfusion.MenuOpen && Pad(dev, Plugin.ModifiersButton.Value))) { IsOpen = true; index = 0; }
                 return;
             }
-            if (Input.GetKeyDown(KeyCode.F1) || Input.GetKeyDown(KeyCode.Escape) || Pad(dev, Plugin.ModifiersButton.Value) || Pad(dev, "Cancel")) { IsOpen = false; return; }
+            if (Input.GetKeyDown(KeyCode.F1) || Input.GetKeyDown(KeyCode.Escape) || Pad(dev, Plugin.ModifiersButton.Value) || Pad(dev, "Cancel")) { IsOpen = false; MenuInput.Hold("modifiers", false); return; }
             int n = Items.Count;
-            if (Input.GetKeyDown(KeyCode.UpArrow) || Input.GetKeyDown(KeyCode.W) || Pad(dev, "Skill1")) index = (index - 1 + n) % n;
-            if (Input.GetKeyDown(KeyCode.DownArrow) || Input.GetKeyDown(KeyCode.S) || Pad(dev, "Skill2")) index = (index + 1) % n;
-            int change = 0;
+            // v1.1.3: outside a spellbook the stick / D-pad and Confirm drive the menu too (inside one they'd also move
+            // the book behind it, so there the arcana buttons stay the pad controls).
+            bool free = !TomiInfusion.MenuOpen;
+            int step = free ? MenuInput.Vertical(dev, "modifiers") : 0;
+            if (Input.GetKeyDown(KeyCode.UpArrow) || Input.GetKeyDown(KeyCode.W) || Pad(dev, "Skill1")) step = -1;
+            if (Input.GetKeyDown(KeyCode.DownArrow) || Input.GetKeyDown(KeyCode.S) || Pad(dev, "Skill2")) step = 1;
+            if (step != 0) index = (index + step + n) % n;
+            int change = free ? MenuInput.Horizontal(dev, "modifiers") : 0;
+            if (free && Pad(dev, "Confirm")) change = 1;
             if (Input.GetKeyDown(KeyCode.RightArrow) || Input.GetKeyDown(KeyCode.D) || Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.Space) || Pad(dev, "Skill3")) change = 1;
             if (Input.GetKeyDown(KeyCode.LeftArrow) || Input.GetKeyDown(KeyCode.A)) change = -1;
             if (change != 0)
@@ -145,7 +153,7 @@ namespace WolHybridBosses
                 string v = list[i].Value();
                 GameFont.Shadowed(new Rect(r.x, r.y, r.width, r.height), "<color=#" + (v == "Off" ? "8a8580" : "ffd27a") + ">" + v + "</color>", RightStyle(), c);
             }
-            GameFont.Shadowed(new Rect(box.x, box.yMax - 34f, box.width, 24f), "Up / Down: choose  ·  Left / Right, Enter: change  ·  F1 / Esc: close  ·  pad: Skill1 / Skill2 / Skill3, " + Plugin.ModifiersButton.Value + " closes",
+            GameFont.Shadowed(new Rect(box.x, box.yMax - 34f, box.width, 24f), "Up / Down: choose  ·  Left / Right, Enter: change  ·  F1 / Esc: close  ·  pad: stick or Skill1 / Skill2, Confirm or Skill3, " + Plugin.ModifiersButton.Value + " closes",
                 CentreSmall(), new Color(0.75f, 0.72f, 0.68f));
         }
 

@@ -768,6 +768,9 @@ namespace WolHybridBosses
                     ownedFrame = Time.frameCount;
                 }
                 if (owned == null) return true;
+                // v1.1.3: the arcana whose card you opened (Confirm on a loadout slot) always stays: the card view draws
+                // the list at its index, and a filter that left it out (no infused arcana yet) crashed the book.
+                if (__0 == Traverse.Create(__instance).Field("currentSkill").GetValue() as Player.SkillState) return true;
                 return (TomiInfusion.InRun && owned.Count == 0) || owned.Contains(__0.skillID);
             }
             catch (Exception) { return true; }

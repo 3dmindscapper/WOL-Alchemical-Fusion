@@ -171,19 +171,23 @@ namespace WolHybridBosses
 
         void Update()
         {
+            if (open && TomiInfusion.InRun) open = false;
+            MenuInput.Hold("nocturne", open); // v1.1.3: the wizard stays put while you choose
             if (!open) return;
-            if (TomiInfusion.InRun) { open = false; return; }
-            if (Time.unscaledTime - openedAt < 0.2f) return; // the press that opened it
+            if (Time.unscaledTime - openedAt < 0.35f) return; // the press that opened it (her last line)
             Player p = Elites.Player0;
             ChaosInputDevice dev = p != null ? p.inputDevice : null;
             int n = NocturneShuffle.Names.Length;
-            if (Input.GetKeyDown(KeyCode.Escape) || Pad(dev, "Cancel")) { open = false; return; }
-            if (Input.GetKeyDown(KeyCode.UpArrow) || Input.GetKeyDown(KeyCode.W) || Pad(dev, "Skill1")) index = (index - 1 + n) % n;
-            if (Input.GetKeyDown(KeyCode.DownArrow) || Input.GetKeyDown(KeyCode.S) || Pad(dev, "Skill2")) index = (index + 1) % n;
-            if (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.Space) || Pad(dev, "Skill3"))
+            if (Input.GetKeyDown(KeyCode.Escape) || Pad(dev, "Cancel")) { open = false; MenuInput.Hold("nocturne", false); return; }
+            int step = MenuInput.Vertical(dev, "nocturne"); // v1.1.3: stick / D-pad
+            if (Input.GetKeyDown(KeyCode.UpArrow) || Input.GetKeyDown(KeyCode.W) || Pad(dev, "Skill1")) step = -1;
+            if (Input.GetKeyDown(KeyCode.DownArrow) || Input.GetKeyDown(KeyCode.S) || Pad(dev, "Skill2")) step = 1;
+            if (step != 0) index = (index + step + n) % n;
+            if (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.Space) || Pad(dev, "Confirm") || Pad(dev, "Interact") || Pad(dev, "Skill3"))
             {
                 Plugin.NocturnePreset.Value = index;
                 open = false;
+                MenuInput.Hold("nocturne", false);
                 IntroUI.Show("Nocturne will deal: " + NocturneShuffle.Names[index], NocturneShuffle.Descriptions[index], new Color(0.85f, 0.7f, 1f), null, 3f);
                 Plugin.Log.LogInfo("NOCTURNE preset: " + NocturneShuffle.Names[index]);
             }
@@ -223,7 +227,7 @@ namespace WolHybridBosses
                 GameFont.Shadowed(new Rect(r.x, r.y + 2f, r.width, 22f), (sel ? "> " : "  ") + NocturneShuffle.Names[i] + (i == NocturneShuffle.Preset ? "  (current)" : ""), rowStyle, sel ? new Color(1f, 0.92f, 0.65f) : new Color(0.88f, 0.86f, 0.82f));
                 GameFont.Shadowed(new Rect(r.x + 18f, r.y + 22f, r.width, 18f), NocturneShuffle.Descriptions[i], desc, new Color(0.75f, 0.72f, 0.68f));
             }
-            GameFont.Shadowed(new Rect(box.x, box.yMax - 32f, box.width, 22f), "Up / Down: choose  ·  Enter: deal  ·  Esc: keep current  ·  pad: Skill1 / Skill2, Skill3 deals, Cancel keeps", small, new Color(0.75f, 0.72f, 0.68f));
+            GameFont.Shadowed(new Rect(box.x, box.yMax - 32f, box.width, 22f), "Up / Down: choose  ·  Enter: deal  ·  Esc: keep current  ·  pad: stick / D-pad, Confirm deals, Cancel keeps", small, new Color(0.75f, 0.72f, 0.68f));
         }
     }
 }

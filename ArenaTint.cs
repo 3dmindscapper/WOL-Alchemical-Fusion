@@ -18,9 +18,10 @@ namespace WolHybridBosses
         static readonly HashSet<int> done = new HashSet<int>();
         static int sceneHandle = -1;
 
-        static bool Skip(Component c)
+        internal static bool Skip(Component c) // v1.1.3: also the variant stages' decoration and light pass
         {
             if (c == null) return true;
+            if (keepCache.Count > 20000) keepCache.Clear(); // the variant stages use it too, stage after stage
             if (c.transform.root.name.StartsWith("HybridBosses")) return true;
             if (c.GetComponentInParent<Entity>() != null) return true;  // players, enemies, the champion, Sura
             if (c.GetComponentInParent<Canvas>() != null) return true;  // UI

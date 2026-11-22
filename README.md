@@ -53,6 +53,7 @@ Requires **BepInExPack of Legend** and **LegendAPI** (installed automatically). 
 - **Rival League board**: Interact at the big wizard statue in the Hub, or F2.
 - **Tomix's journal**: J, or Interact on a pad, while his book is open.
 - **Champion conversations**: Confirm / Interact (pad) or Space / Enter to go to the next line.
+- **Nocturne's shuffle menu**: stick / D-pad or Up / Down to choose, Confirm or Enter to deal. Your wizard stays put while any of the mod's menus is open.
 - **Test hotkeys** are off by default. Turn on `Debug.Hotkeys` in the config to use them; the list is in the project's ROADMAP.md.
 
 ## Files it creates

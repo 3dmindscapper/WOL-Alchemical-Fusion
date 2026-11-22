@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.4
+- **Chaos Cyclops now look the part:** the Giant Cyclops, regular Cyclops and Coffin Knights on Chaos stages are recoloured onto the Chaos colours by the recolour engine (their sheets have no real Chaos row, so they only looked faintly purple), and the Cyclops beam turns Chaos too.
+- **Fixed:** opening one of your equipped arcana in Tomix's book with no infused arcana yet crashed the book (an empty card view).
+- **Chaos, Radiant and Prism stages** no longer wash the merchants, Tomi, their wares or the lights you and other characters carry in the stage's colour; only the stage itself is recoloured.
+- **Menus on a controller:** while Nocturne's shuffle menu, the modifiers menu or the League board is open your wizard stays put. Nocturne's menu (and the modifiers menu outside a spellbook) moves with the stick / D-pad and deals or changes with Confirm.
+
 ## 1.1.3
 - **Tomix arrives in the Hub like Tomi did:** the planter tree where he lands breaks and Tomi's beam of light comes down on him. He sits a little further left, centred on his planter.
 - **Fixed: Water infusions froze nothing.** They applied slow, the game's wind status; they now freeze, as water arcana and Prism's water do. The Primordial Water robe boosts freezing too.

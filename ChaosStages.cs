@@ -179,7 +179,8 @@ namespace WolHybridBosses
                 : (IEnumerable<SpriteRenderer>)UnityEngine.Object.FindObjectsOfType<SpriteRenderer>();
             foreach (SpriteRenderer sr in decor)
                 {
-                    if (sr == null || sr.GetComponentInParent<Entity>() != null || sr.GetComponentInParent<Canvas>() != null) continue;
+                    // v1.1.3: NPCs (merchants, Tomi), their wares, chests and portals keep their colours too (ArenaTint.Skip).
+                    if (sr == null || ArenaTint.Skip(sr)) continue;
                     origSpriteColors[sr] = sr.color;
                     sr.color = new Color(sr.color.r * v.SpriteTint.r, sr.color.g * v.SpriteTint.g, sr.color.b * v.SpriteTint.b, sr.color.a);
                     sprites++;
@@ -187,6 +188,9 @@ namespace WolHybridBosses
 
             foreach (Light l in UnityEngine.Object.FindObjectsOfType<Light>())
             {
+                // v1.1.3: lights carried by the player, enemies and NPCs (the player's own glow) keep their colour, so
+                // wizards and merchants aren't washed in the variant's colour; the stage's own lights still take it.
+                if (l == null || ArenaTint.Skip(l)) continue;
                 origLights[l] = l.color;
                 l.color = Color.Lerp(l.color, v.LightTint, 0.6f);
                 lights++;
@@ -372,9 +376,13 @@ namespace WolHybridBosses
             VariantMark.Set(e, v);
             if (v == StageVariant.Chaos)
             {
-                int idx = Plugin.ChaosGiantPalette.Value >= 0 ? Plugin.ChaosGiantPalette.Value : ChaosGiants.PurpleRow(e);
-                if (idx >= 0) ElementalGiants.SetPaletteIndexAll(e, idx);
-                else ElementalGiants.Tint(e, ChaosRun.Color);
+                if (ChaosGiants.EngineLook(e)) { ElementalGiants.RecolorOrTint(e, "Chaos", ChaosRun.Color); ElementalNeutrals.TintLaser(e as Cyclops, "Chaos"); } // v1.1.4: body and beam
+                else
+                {
+                    int idx = Plugin.ChaosGiantPalette.Value >= 0 ? Plugin.ChaosGiantPalette.Value : ChaosGiants.PurpleRow(e);
+                    if (idx >= 0) ElementalGiants.SetPaletteIndexAll(e, idx);
+                    else ElementalGiants.RecolorOrTint(e, "Chaos", ChaosRun.Color); // was a flat tint
+                }
             }
             else Variants.TintBody(e, v);
             List<ArcanaDef> pool = Variants.CastPool(v);
@@ -405,9 +413,9 @@ namespace WolHybridBosses
             int idx = -1;
             if (v == StageVariant.Chaos)
             {
-                idx = Plugin.ChaosGiantPalette.Value >= 0 ? Plugin.ChaosGiantPalette.Value : PurpleRow(e);
-                if (idx >= 0 && !ElementalGiants.NoElementPalettes(e)) ElementalGiants.SetPaletteIndexAll(e, idx);
-                else { ElementalGiants.RecolorOrTint(e, "Chaos", ChaosRun.Color); idx = -1; } // v0.9.9: recolour engine first
+                idx = EngineLook(e) ? -1 : Plugin.ChaosGiantPalette.Value >= 0 ? Plugin.ChaosGiantPalette.Value : PurpleRow(e);
+                if (idx >= 0) ElementalGiants.SetPaletteIndexAll(e, idx);
+                else { ElementalGiants.RecolorOrTint(e, "Chaos", ChaosRun.Color); ElementalNeutrals.TintLaser(e as Cyclops, "Chaos"); idx = -1; } // v0.9.9: recolour engine first; v1.1.4: the Cyclops beam too
             }
             else Variants.TintBody(e, v);
 
@@ -416,6 +424,14 @@ namespace WolHybridBosses
             if (pool.Count > 0) arcana = EnemyArcana.Give(e, Rivals.PickVaried(pool, 2, false));
             if (Plugin.GiantIntros.Value) GiantIntro.Attach(e, vi.Prefix, "");
             Plugin.Log.LogInfo("GIANT " + e.GetType().Name + " -> " + v + " giant, palette " + (idx < 0 ? "tint" : idx.ToString()) + ", arcana " + arcana);
+        }
+
+        // v1.1.4: sheets with no real Chaos row (the Cyclops, the Giant Cyclops, Coffin Knights, the Super Coffin) take
+        // the recolour engine's Chaos ramp, as their elemental versions do; the "most purple" row found there was only
+        // faintly purple. Humanoids keep the game's own Chaos row.
+        internal static bool EngineLook(Enemy e)
+        {
+            return e != null && (ElementalGiants.NoElementPalettes(e) || e is Cyclops || e is Coffin);
         }
 
         // Palette texture per material: which row is purple, cached by texture.
