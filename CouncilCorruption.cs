@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Text;
@@ -118,7 +118,7 @@ namespace WolHybridBosses
                 return;
             }
             ForceOnce = true; // just this fight (Shift+F12 is the lasting toggle)
-            GameController.stageCount = GameController.stagesPerTier; // as if the tier's stages were done
+            GameController.stageCount = ChaosRun.RegularStages; // as if the tier's stages were done
             string boss = GameController.bossLevelNameDict[scene];
             Plugin.Log.LogInfo("COUNCIL jump: " + scene + " -> " + boss + " (tier " + GameController.tierCount + ", corrupted for this fight)");
             GameController.LoadLevel(boss);
@@ -142,7 +142,7 @@ namespace WolHybridBosses
         {
             if (Forced) return true;
             if (!Plugin.CorruptedCouncil.Value) return false;
-            for (int s = 0; s < GameController.stagesPerTier; s++) if (ChaosRun.IsChaos(tier, s)) return true; // its regular stages
+            for (int s = 0; s < ChaosRun.RegularStages; s++) if (ChaosRun.IsChaos(tier, s)) return true; // its regular stages
             return false;
         }
 
@@ -214,9 +214,12 @@ namespace WolHybridBosses
         static readonly Dictionary<LineRenderer, Color[]> origLines = new Dictionary<LineRenderer, Color[]>();
 
         // A non-player attack in the corrupted fight: tint its visual object (the projectile/effect it belongs to).
-        internal static void TintAttack(Attack atk)
+        internal static void TintAttack(Attack atk) { TintAttack(atk, false); }
+
+        // stage: an enemy attack on a Chaos stage (no corrupted boss involved).
+        internal static void TintAttack(Attack atk, bool stage)
         {
-            if (atk == null || CurrentBoss == null) return;
+            if (atk == null || (CurrentBoss == null && !stage)) return;
             if (atk.atkInfo != null && atk.atkInfo.skillCategory == "Player") return;
             if (atk.GetComponentInParent<Player>() != null) return;
             GameObject root = VisualRoot(atk);
@@ -294,7 +297,7 @@ namespace WolHybridBosses
             TintTree(go);
         }
 
-        static void RestoreTints()
+        internal static void RestoreTints()
         {
             foreach (KeyValuePair<SpriteRenderer, Color> kv in origSprites) if (kv.Key != null) kv.Key.color = kv.Value;
             foreach (KeyValuePair<ParticleSystem, ParticleSystem.MinMaxGradient> kv in origParticles)
@@ -538,7 +541,7 @@ namespace WolHybridBosses
                 entries.Add(ie);
             }
             string name = boss != null && !string.IsNullOrEmpty(boss.BossDisplayName) ? boss.BossDisplayName : "Council";
-            IntroUI.Show("Corrupted " + name, "Chaos echoes  ·  Chaos damage  ·  drops a Chaos arcana", CouncilCorruption.Purple, entries, 3f);
+            IntroUI.Show("Corrupted " + name, "Chaos echoes  Â·  Chaos damage  Â·  drops a Chaos arcana", CouncilCorruption.Purple, entries, 3f);
             Plugin.Log.LogInfo("COUNCIL echoes: " + Rivals.ArcanaList(CouncilCorruption.Echoes));
         }
 

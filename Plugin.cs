@@ -13,7 +13,7 @@ namespace WolHybridBosses
     [BepInPlugin("osi.wol.hybridbosses", "Hybrid Bosses", Version)]
     public class Plugin : BaseUnityPlugin
     {
-        public const string Version = "0.5.13";
+        public const string Version = "0.5.15";
         internal static ManualLogSource Log;
 
         internal static ConfigEntry<bool> ElementalGiants;
@@ -761,10 +761,28 @@ namespace WolHybridBosses
         // stage, the Council floor after a tier's last stage, the next tier after a Council floor).
         internal static void SkipToNextStage()
         {
+            // 0.5.14: the exit is inactive until reached, so look through inactive scene objects too.
             NextLevelLoader loader = UnityEngine.Object.FindObjectOfType<NextLevelLoader>();
             if (loader == null)
+                foreach (NextLevelLoader l in Resources.FindObjectsOfTypeAll<NextLevelLoader>())
+                    if (l != null && l.gameObject.scene.IsValid()) { loader = l; break; }
+            if (loader == null)
             {
-                Plugin.Log.LogWarning("SKIP: no exit on this floor (NextLevelLoader not found; a Council floor opens its exit after the fight)");
+                // Same choice LoadNextLevel makes for a regular stage: the Council floor after the tier's last stage,
+                // else another stage of this tier (the tier scene itself, regenerated).
+                string scene = Application.loadedLevelName;
+                string next = null;
+                if (GameController.stageCount > GameController.stagesPerTier && GameController.bossLevelNameDict != null && GameController.bossLevelNameDict.ContainsKey(scene))
+                    next = GameController.bossLevelNameDict[scene];
+                else if (GameController.bossLevelNameDict != null && GameController.bossLevelNameDict.ContainsKey(scene))
+                    next = scene;
+                if (next == null)
+                {
+                    Plugin.Log.LogWarning("SKIP: no exit on this floor (" + scene + "; a Council floor opens its exit after the fight)");
+                    return;
+                }
+                Plugin.Log.LogInfo("SKIP: no exit object found, loading " + next + " directly (tier " + GameController.tierCount + ", stage " + GameController.stageCount + ")");
+                GameController.LoadLevel(next);
                 return;
             }
             Plugin.Log.LogInfo("SKIP: leaving " + Application.loadedLevelName + " (tier " + GameController.tierCount + ", stage " + GameController.stageCount + ")");

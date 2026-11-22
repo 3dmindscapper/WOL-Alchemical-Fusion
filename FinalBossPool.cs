@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
 using HarmonyLib;
@@ -138,7 +138,7 @@ namespace WolHybridBosses
     internal static class FinalRun
     {
         static string runKey;
-        static bool needRoll = true;
+        static bool needRoll = true, wasInHub;
 
         internal static string ChampionPrefix { get; private set; }
 
@@ -163,9 +163,17 @@ namespace WolHybridBosses
         internal static void Tick()
         {
             string level = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name ?? "";
-            if (level == "Hub" || level == "Tutorial") { needRoll = true; return; }
+            // 0.5.15: roll once on arriving in the Hub, not on leaving it. The loading board shown when leaving the Hub
+            // still has the Hub as active scene, so it used to draw the previous run's Chaos plan / champion, which
+            // then changed at the next board.
+            bool inHub = level == "Hub" || level == "Tutorial";
+            if (inHub) { if (wasInHub) return; wasInHub = true; }
+            else
+            {
+                wasInHub = false;
+                if (!needRoll && Key() == runKey) return;
+            }
             string key = Key();
-            if (!needRoll && key == runKey) return;
             needRoll = false;
             runKey = key;
             Seed = UnityEngine.Random.Range(1, int.MaxValue);

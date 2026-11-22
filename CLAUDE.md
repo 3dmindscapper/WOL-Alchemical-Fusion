@@ -71,6 +71,23 @@ Cloning the player GameObject and driving it from script failed:
 - v0.0.7 tested: summon swap works (logged EarthKnight, FlameLancer etc.). SuperCoffin goes **pink** on palettes 4–8, so its sheet has no elemental rows: keep palette 3 and tint or outline it (MiniBoss uses `_OutlineColor`/`_OutlineColor2`). The user wants the coffin (and rivals) to cast **player arcana** instead.
 - Arcana research: `Contestant : Enemy` (PvP wizard) reimplements Tornado/SwordThrow/Fireball as its own states (ctor typed to Contestant). Its FireballState instantiates the prefab and calls `Attack.SetAttackInfo("Player", "ShootFireball", level, isUltimate)`, the same call player arcana make (e.g. `UseFireBeam.CreateFireBeam`: `FireBeam.Prefab` + `ChaosInst` + `SetAttackInfo`). There are 100 `Player+Use*` arcana. Plan: our own data-driven `ArcanaState : Enemy.SkillState` (skillID, prefab, delivery type). See ROADMAP "Enemy Arcana".
 
+## v0.5.15: board / stage Chaos plan agree and stay stable (built, not yet run in game)
+- **GameController.stagesPerTier is 1.** NextLevelLoader goes to the boss once stageCount > stagesPerTier, so a tier has stagesPerTier + 1 = 2 regular stages, with stageCount 1 and 2.
+  - Before, the board used regular = 1, giving every square its own tier, and IsChaos rejected each tier's 2nd stage.
+  - Now ChaosRun.RegularStages (= stagesPerTier + 1) is used everywhere: IsChaos, board, IsCorrupted, JumpToCouncil. The board cross-checks against curMaxStagesPerTier - 1.
+- **Seed:** FinalRun.Tick rolls the run once on arriving in the Hub. It used to roll on leaving, after the first board had already drawn the previous run's plan. ChaosStageRunner.Update calls Tick every frame.
+- **Ctrl+F11 fallback** now uses the game's rule (stageCount > stagesPerTier → boss).
+
+## v0.5.14: Chaos stages actually apply; all humanoids turn Chaos (built, not yet run in game)
+- **Planned but never tinted:** the log had `CHAOS stage planned` but no `CHAOS stage on`. ChaosStageRunner required Level.levelContainer and gave up silently.
+  - It now applies as soon as Planned, and keeps checking for 5s.
+  - It logs `CHAOS stage was planned for X but this stage is Y` if the stage key never matches.
+  - Apply falls back to all scene sprites when levelContainer is null.
+- **Enemies:** ChaosEnemies.ArmRegular no longer rolls, so every Knight/Rogue/Archer/Mage/Summoner/Lancer turns Chaos. The ChaosStages.EnemyChance config is now unused.
+- **Attacks:** ChaosStageAttackPatch (SetAttackInfo postfix, Chaos stage only, not during a corrupted Council fight) chaosifies and tints enemy attacks that carry an element.
+  - It uses CouncilCorruption.TintAttack(atk, stage: true). RestoreTints is now internal, and Revert calls it.
+- **Ctrl+F11:** finds an inactive NextLevelLoader via Resources.FindObjectsOfTypeAll. Otherwise it loads directly: the boss floor after the tier's last stage, else the tier scene again.
+
 ## v0.5.13: Ctrl+F11 skips to the next stage (built, not yet run in game)
 - Debug.SkipToNextStage finds the floor's NextLevelLoader (the exit portal) and invokes LoadNextLevel. That picks the next regular stage, the Council floor after a tier's last stage, or the next tier, then calls GameController.LoadLevel.
 - It does nothing (logs `SKIP: no exit`) on a floor without a NextLevelLoader.

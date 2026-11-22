@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
 using HarmonyLib;
@@ -35,12 +35,16 @@ namespace WolHybridBosses
         // stages, then the boss floor, which is its own scene and never Chaos). During a stage GameController.stageCount
         // is 1-based (LoadLevel adds 1 as the tier scene loads), so the stage itself is stageCount - 1.
         // (Before v0.5.3 the boss-floor guard used "stage >= stagesPerTier - 1", which rejected every in-game stage.)
+        // 0.5.15: GameController.stagesPerTier is 1, not 2. The game goes to the boss once stageCount > stagesPerTier,
+        // so a tier has stagesPerTier + 1 regular stages (stageCount 1 and 2). Treating it as the count made the board
+        // give every square its own tier (marks on the wrong squares) and the 2nd stage of a tier could never be Chaos.
+        internal static int RegularStages { get { return Mathf.Max(1, GameController.stagesPerTier + 1); } }
+
         internal static bool IsChaos(int tier, int stage)
         {
             float chance = Plugin.ChaosStageChance.Value;
-            if (chance <= 0f || stage < 0) return false;
-            int per = GameController.stagesPerTier;
-            if (per > 0 && stage >= per) return false;
+            if (chance <= 0f || stage < 0 || tier < 0) return false;
+            if (stage >= RegularStages) return false;
             unchecked
             {
                 int h = FinalRun.Seed;
@@ -72,6 +76,8 @@ namespace WolHybridBosses
         static bool planned;
         static string plannedKey;
         internal static bool Planned { get { return planned && plannedKey == StageKey(); } }
+        internal static bool WasPlanned { get { return planned; } }
+        internal static string PlannedKey { get { return plannedKey; } }
         internal static ChaosVariant Active { get; private set; }
 
         internal static string StageKey() { return Level.tileSetName + "|" + GameController.tierCount + "|" + GameController.stageCount; }
@@ -127,7 +133,7 @@ namespace WolHybridBosses
             Transform level = Level.levelContainer;
             IEnumerable<SpriteRenderer> decor = level != null
                 ? (IEnumerable<SpriteRenderer>)level.GetComponentsInChildren<SpriteRenderer>(true)
-                : (visualOnly ? UnityEngine.Object.FindObjectsOfType<SpriteRenderer>() : new SpriteRenderer[0]);
+                : (IEnumerable<SpriteRenderer>)UnityEngine.Object.FindObjectsOfType<SpriteRenderer>();
             foreach (SpriteRenderer sr in decor)
                 {
                     if (sr == null || sr.GetComponentInParent<Entity>() != null || sr.GetComponentInParent<Canvas>() != null) continue;
@@ -160,6 +166,7 @@ namespace WolHybridBosses
             foreach (KeyValuePair<SpriteRenderer, Color> kv in origSpriteColors) if (kv.Key != null) kv.Key.color = kv.Value;
             foreach (KeyValuePair<Light, Color> kv in origLights) if (kv.Key != null) kv.Key.color = kv.Value;
             origMaterials.Clear(); origSpriteColors.Clear(); origLights.Clear();
+            if (CouncilCorruption.CurrentBoss == null) { try { CouncilCorruption.RestoreTints(); CouncilCorruption.ClearTinted(); } catch (Exception) { } }
             RemoveRewards();
             Active = null;
         }
@@ -302,8 +309,9 @@ namespace WolHybridBosses
         internal static bool ArmRegular(Enemy e)
         {
             if (!IsChaosType(e) || e.fsm == null || e.GetComponent<ChaosArmed>() != null) return false;
-            e.gameObject.AddComponent<ChaosArmed>();                                  // rolled once, either way
-            if (UnityEngine.Random.value >= Plugin.ChaosEnemyChance.Value) return false; // stays its normal self
+            // 0.5.14: every humanoid with elemental versions turns Chaos (the 50% roll left half the stage's elemental
+            // knights / lancers as they were). Their own attacks become Chaos via ChaosStageAttackPatch.
+            e.gameObject.AddComponent<ChaosArmed>();
             int idx = Plugin.ChaosGiantPalette.Value >= 0 ? Plugin.ChaosGiantPalette.Value : ChaosGiants.PurpleRow(e);
             if (idx >= 0) ElementalGiants.SetPaletteIndexAll(e, idx);
             else ElementalGiants.Tint(e, ChaosRun.Color);
@@ -446,6 +454,26 @@ namespace WolHybridBosses
 
     internal class ChaosArmed : MonoBehaviour { }
 
+    // Chaos stage: enemy attacks that carry an element (an elemental knight's lightning slash, an archer's frost
+    // arrow...) become Chaos damage, tinted Chaos purple. Restored on ChaosStages.Revert.
+    [HarmonyPatch(typeof(Attack), "SetAttackInfo", new Type[] { typeof(string), typeof(string), typeof(int), typeof(bool) })]
+    static class ChaosStageAttackPatch
+    {
+        static void Postfix(Attack __instance)
+        {
+            if (ChaosStages.Active == null || !ChaosStages.Planned || CouncilCorruption.CurrentBoss != null) return;
+            try
+            {
+                AttackInfo info = __instance.atkInfo;
+                if (info == null || info.skillCategory == "Player" || __instance.GetComponentInParent<Player>() != null) return;
+                if (info.elementType == ElementType.Chaos || info.elementType == ElementType.Neutral) return;
+                CouncilCorruption.Chaosify(info);
+                CouncilCorruption.TintAttack(__instance, true);
+            }
+            catch (Exception) { }
+        }
+    }
+
     // Giants become Chaos giants through the giant Start hook (GiantStartPatch -> ElementalGiants.TryMakeElemental),
     // after MiniBoss.Start has set its gray palette. Regular Chaos-type enemies are armed one frame after their
     // Start (Enemy.Start runs InitElement, and some subclasses set palettes after it), so the purple row sticks.
@@ -501,7 +529,11 @@ namespace WolHybridBosses
                 RectTransform startCircle = tr.Field("startCircle").GetValue() as RectTransform;
                 Image[] dimmers = tr.Field("dimmersInOrder").GetValue() as Image[];
                 if (stages == null) return;
-                int regular = Mathf.Max(1, GameController.stagesPerTier); // 2 regular stage squares per tier
+                // Regular squares per tier: the board's own count (curMaxStagesPerTier counts the boss too), which must
+                // match ChaosRun.RegularStages; logged if they ever disagree.
+                int boardPer = tr.Field("curMaxStagesPerTier").GetValue<int>() - 1;
+                int regular = ChaosRun.RegularStages;
+                if (boardPer > 0 && boardPer != regular) { Plugin.Log.LogWarning("CHAOS board has " + boardPer + " squares per tier, stages say " + regular + "; using the board's"); regular = boardPer; }
                 HashSet<Image> skip = new HashSet<Image>(dimmers ?? new Image[0]);
                 // stagesInOrder starts with the Start circle (logged layout) and may hold boss circles: skip all of them.
                 HashSet<RectTransform> bossSet = new HashSet<RectTransform>(bosses ?? new RectTransform[0]);
@@ -633,17 +665,29 @@ namespace WolHybridBosses
 
         void Update()
         {
-            string stage = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name + "|" + Level.tileSetName + "|" + GameController.tierCount + "|" + GameController.stageCount;
+            FinalRun.Tick(); // rolls the run (Chaos plan, champion) on arriving in the Hub
+            string stage =UnityEngine.SceneManagement.SceneManager.GetActiveScene().name + "|" + Level.tileSetName + "|" + GameController.tierCount + "|" + GameController.stageCount;
             if (stage != lastStage)
             {
                 lastStage = stage;
                 if (ChaosStages.Active != null) ChaosStages.Revert();
                 applyAt = Time.time + 1.5f; // let the stage finish building
             }
+            // 0.5.14: no longer waits on Level.levelContainer (a planned stage was never tinted: the apply gave up
+            // silently); keeps checking for a few seconds in case the plan's stage key settles late, and logs why not.
             if (applyAt > 0f && Time.time >= applyAt)
             {
-                applyAt = -1f;
-                if (ChaosStages.Planned && Level.levelContainer != null) ChaosStages.Apply();
+                if (ChaosStages.Planned && ChaosStages.Active == null)
+                {
+                    applyAt = -1f;
+                    ChaosStages.Apply();
+                }
+                else if (Time.time >= applyAt + 5f)
+                {
+                    applyAt = -1f;
+                    if (ChaosStages.WasPlanned)
+                        Plugin.Log.LogWarning("CHAOS stage was planned for " + ChaosStages.PlannedKey + " but this stage is " + ChaosStages.StageKey() + ": not applied");
+                }
             }
         }
     }
