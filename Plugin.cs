@@ -13,7 +13,7 @@ namespace WolHybridBosses
     [BepInPlugin("osi.wol.hybridbosses", "Hybrid Bosses", Version)]
     public class Plugin : BaseUnityPlugin
     {
-        public const string Version = "0.4.13";
+        public const string Version = "0.5.1";
         internal static ManualLogSource Log;
 
         internal static ConfigEntry<bool> ElementalGiants;
@@ -45,6 +45,7 @@ namespace WolHybridBosses
         internal static ConfigEntry<bool> BossBars;
         internal static ConfigEntry<bool> ChampionPhases;
         internal static ConfigEntry<float> ArchonRivalChance;
+        internal static ConfigEntry<bool> CorruptedCouncil;
         internal static ConfigEntry<bool> GiantBossBars;
 
         void Awake()
@@ -76,6 +77,8 @@ namespace WolHybridBosses
                 "Final champions shift at half health: an Archon becomes a two-element hybrid (keeps 2 arcana, gains 3 of a second element, casts faster); the Chaos Sovereign gains 2 more arcana and casts faster.");
             ArchonRivalChance = Config.Bind("RivalWizards", "ArchonChance", 0.25f,
                 "Chance (0 to 1) that the Hard portal of a rival arena holds an Archon (a final champion with its second phase; Chaos Sovereign on Chaos stages) instead of a Hard rival. It drops a gold chest.");
+            CorruptedCouncil = Config.Bind("ChaosStages", "CorruptedCouncil", true,
+                "A Council member whose tier had a Chaos stage is corrupted: dark purple sprites and attacks, glitched dialog with Chaos whispers, 'Corrupted' on the boss bar, and a purple boss circle on the loading-screen board.");
             BossBars = Config.Bind("BossBar", "Enabled", true,
                 "Rivals and final champions get the game's big boss health bar (the one the Council and Sura use) once their intro ends.");
             GiantBossBars = Config.Bind("BossBar", "Giants", true,
@@ -158,7 +161,10 @@ namespace WolHybridBosses
             bool shift = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
             if (Input.GetKeyDown(KeyCode.F11) && shift) ChaosStages.ToggleOnCurrentStage();
             else if (Input.GetKeyDown(KeyCode.F11)) Debug.OpenRivalArenaHere();
-            if (Input.GetKeyDown(KeyCode.F12)) Debug.FinalChampionTest();
+            bool ctrl = Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl);
+            if (Input.GetKeyDown(KeyCode.F12) && ctrl) CouncilCorruption.JumpToCouncil();
+            else if (Input.GetKeyDown(KeyCode.F12) && shift) CouncilCorruption.ToggleForce();
+            else if (Input.GetKeyDown(KeyCode.F12)) Debug.FinalChampionTest();
         }
     }
 

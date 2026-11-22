@@ -483,7 +483,9 @@ namespace WolHybridBosses
                 int marked = 0;
                 for (int i = 0; i < stages.Length && i < final; i++)
                 {
-                    if (stages[i] == null || !ChaosRun.IsChaos(i / per, i % per)) continue;
+                    // Chaos stages, and the boss circle of a tier whose Council member is corrupted.
+                    bool councilCorrupted = i % per == per - 1 && CouncilCorruption.IsCorrupted(i / per);
+                    if (stages[i] == null || !(ChaosRun.IsChaos(i / per, i % per) || councilCorrupted)) continue;
                     foreach (Image img in stages[i].GetComponentsInChildren<Image>(true))
                     {
                         if (skip.Contains(img)) continue;

@@ -5,7 +5,7 @@ It mostly reuses the game's own assets. Custom art is possible, but so far every
 
 Status key: ✅ done · 🧪 built, needs in-game testing · 🔜 next · 📋 planned · ❓ needs research first · 💬 dev note (idea to consider)
 
-Current version: **0.4.13**. Technical details (game internals, file layout, pitfalls) live in `CLAUDE.md`.
+Current version: **0.5.1**. Technical details (game internals, file layout, pitfalls) live in `CLAUDE.md`.
 
 ---
 
@@ -94,7 +94,9 @@ Built:
 
 Next:
 - 🔜 Check in game that the automatic purple row looks right on each giant (the log shows `CHAOS palette for <giant>: row N`). If it's wrong, set `ChaosStages.GiantPalette`; F6 cycles rows on the nearest enemy to find the right one.
-- 📋 **Corrupted Council** on Chaos runs: their attacks tinted dark purple like Chaos arcana, sprites tinted, and a dialogue change that makes them seem a little corrupted.
+- 🧪 **Corrupted Council (v0.5.0):** if Chaos reached a tier (any of its regular stages is a Chaos stage), that tier's Council member is corrupted. Their sprites get a dark purple tint and outline, and all their attacks are tinted like Chaos arcana. The boss bar reads "Corrupted <name>". Their intro and victory lines come out glitched, with Chaos whispers, a purple-tinted portrait and purple text. Their circle on the loading-screen board is purple. Moves and stats are unchanged for now. `ChaosStages.CorruptedCouncil`; Shift+F12 forces it for testing.
+  - 🧪 **v0.5.1:** their chest drops a **Chaos arcana** instead of an element arcana. Their attacks deal **Chaos damage** (their elemental status effect becomes Chaos). They get 2 **Chaos echoes**: between their own attacks they sometimes flash and cast a Chaos arcana at you, so their whole moveset (and fight identity) stays intact. A card at fight start shows the echoes.
+  - 📋 Maybe: a corrupted phase at low health.
 - 📋 Chaos boss floors.
 
 ### 3b. Radiant and Prismatic stages 📋 💬
@@ -148,5 +150,7 @@ Lets any enemy cast real player arcana. Used by rivals, champions, arcana giants
 | F11 | Open a rival arena around you (cycles Fire → Water → Earth → Wind → Thunder → Chaos) |
 | Shift+F11 | Toggle the Chaos version of the current stage |
 | F12 | Final champion test (this final room, or spawn one here and make this run's final boss a champion) |
+| Shift+F12 | Force Corrupted Council on/off (every Council fight, including the current room) |
+| Ctrl+F12 | Jump straight to this tier's Council floor, corrupted (from any regular stage of a run) |
 
 Config: `BepInEx\config\osi.wol.hybridbosses.cfg` (created on first launch).
