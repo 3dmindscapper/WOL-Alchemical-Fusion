@@ -5,7 +5,7 @@ It mostly reuses the game's own assets. Custom art is possible, but so far every
 
 Status key: ✅ done · 🧪 built, needs in-game testing · 🔜 next · 📋 planned · ❓ needs research first · 💬 dev note (idea to consider)
 
-Current version: **0.5.7**. Technical details (game internals, file layout, pitfalls) live in `CLAUDE.md`.
+Current version: **0.5.15**. Technical details (game internals, file layout, pitfalls) live in `CLAUDE.md`.
 
 ---
 
@@ -39,7 +39,9 @@ Next:
 A rival is the game's PvP wizard (`Contestant`), turned hostile and given player arcana.
 
 Built:
-- 🧪 **Event (own portal, v0.5.4):** on some stages (`RivalWizards.Chance` 0.3) a **rival portal** opens somewhere on the floor ("A rival's portal has opened"). It leads to a **selector room** with three portals: Easy (green), Medium (yellow), Hard (red), plus a white one back. After that comes the **arena**, and after the fight a portal back to where you came in. Both rooms are real rooms of the stage's own tileset, built off-map in the same scene, so stage progress is untouched. The misc room keeps its NPC.
+- ✅ **Event (own portal, v0.5.4–0.5.11; user-tested: rooms and fight work):** on some stages (`RivalWizards.Chance` 0.3) a **rival portal** opens on open floor somewhere on the stage ("A rival's portal has opened"). It leads to a **selector room** with three portals spread around you: Easy (green), Medium (yellow), Hard (red), plus a white one back. After that comes the **arena** (one of the stage's Survival/Challenge rooms), and after the fight a portal back to where you came in. Both rooms are real rooms of the stage's own tileset with their props and breakables, built off-map in the same scene, so stage progress is untouched. The misc room keeps its NPC.
+  - How the rooms are built: at the map origin and then moved, so their art and walls line up; you land on the most open floor; portals are at least 4 units apart and never on a wall or out a doorway.
+  - 🧪 v0.5.11: breakables in both rooms, wider portal spacing, and no portals in walls or wall nooks (the stage portal too). Waiting on a test.
 - 🧪 **Intro:** the rival is frozen and the camera moves to it. Its arcana, dash arcana, signature spells, robe and relic appear one by one, then the fight starts.
 - 🧪 **Tiers:**
 
@@ -71,9 +73,8 @@ Built:
 - 🧪 Player-style fall protection.
 
 Next:
-- 🔜 Check the built rooms in game. 0.5.4 showed walls but no visible floor; v0.5.5 picks the game's fight rooms (Survival/Challenge) for the arena, never Start/Exit rooms, spreads the portals on open floor, tries a floor-visibility fix, and logs each room (`RIVAL room ...`).
+- 🔜 Confirm v0.5.11 in game: breakables, portal spacing, nothing in walls.
 - 💬 Limit the portal to the 2nd stage of each tier (just before the Council fight), as in the earlier dev note, if one random stage per run feels better.
-- 💬 **Fight in the real PvP arena:** if the game has a PvP arena scene, teleport the player there for the rival fight and back, without losing the stage's state.
 - 💬 **Evil echo of your last run:** remember the previous lost run (robe, arcana, relics) and bring it back as an evil rival.
 - ✅ **Boss health bar (v0.4.9):** the game's own boss bar (the Council's and Sura's) with the rival's name, shown when the intro ends. Champions and elemental giants get it too (`BossBar.Enabled`, `BossBar.Giants`).
 - 📋 Dropping the rival's relic, a secondary element on Hard, Sura-style attack patterns, and special relics (Resurrect, Vampire…) done for real.
@@ -82,33 +83,58 @@ Next:
 
 ### 3a. Chaos stages 🧪
 
-A regular stage can have a **Chaos version** (`ChaosStages.StageChance` 0.15 per regular floor; boss floors, the Hub and the final room stay normal).
+A regular stage can have a **Chaos version** (`ChaosStages.StageChance` 0.15 per regular stage; a tier has 2 regular stages; boss floors, the Hub and the final room stay normal). The run's plan is rolled when you arrive in the Hub, so the loading board and the stages agree from the first board on and never change mid-run.
 
 Built:
-- 🧪 **Look:** purple-tinted tiles, decorations and lights.
-- 🧪 **Enemies (v0.4.5):** the types that have elemental versions on other stages (**Knight, Rogue (thief), Archer, Mage (wizard), Summoner, Lancer**, including their elemental versions) each have a 50% chance (`ChaosStages.EnemyChance`) to be a Chaos version: **1 Chaos arcana and their purple palette row**. That's like elemental stages, where not all of them are elemental. Other regular enemies keep their normal kit. **Giants become Chaos giants** instead of taking the stage element: Chaos element, 2 Chaos arcana, no borrowed elemental skills. They wear their own purple palette row, found automatically by reading each giant's palette texture (`ChaosStages.GiantPalette` = -1). A giant with no purple row (the Coffin) gets a purple tint instead.
-- 🧪 **Rival:** the stage's rival arena features a Chaos rival casting Chaos arcana. Rivals never appear outside their arenas.
+- 🧪 **Look:** dark purple tiles, decorations and lights. **v0.5.14:** this now actually applies as soon as the stage is built (it gave up silently before).
+- 🧪 **Enemies (v0.5.14):** every humanoid with elemental versions (**Knight, Rogue, Archer, Mage, Summoner, Lancer**, including the stage's elemental ones) turns Chaos: purple palette row and 1 Chaos arcana. Their own elemental attacks deal **Chaos damage** and are tinted Chaos purple. (`ChaosStages.EnemyChance` no longer used.)
+- 🧪 **Giants become Chaos giants:** Chaos element, 2 Chaos arcana, their own purple palette row found from the palette texture (`ChaosStages.GiantPalette` = -1); the Coffin gets a purple tint.
+- 🧪 **Rival:** the rival portal on a Chaos stage leads to a Chaos rival. Rivals never appear outside their arenas.
 - 🧪 **Rewards:** gold and item drops ×1.5 (`ChaosStages.RewardMultiplier`).
-- 🧪 **Shown:** "Chaos <stage>" title. On the loading-screen board (v0.5.4) the stage's square turns dark purple and shows the Chaos symbol instead of its element icon. The board and the stage always agree.
-- Shift+F11 toggles Chaos on the current stage (test key).
+- 🧪 **Shown:** "Chaos <stage>" title. On the loading board the square turns **near-black purple with the Chaos symbol** in place of its element icon (v0.5.11). **v0.5.15:** marks land on the right squares (the board was counting one stage per tier) and stay put between stages.
+- 🧪 **Corrupted Council:** if Chaos reached a tier, that tier's Council member is corrupted:
+  - dark purple sprites and outline, "Corrupted <name>" boss bar;
+  - attacks tinted near-black purple and dealing Chaos damage;
+  - 2 **Chaos echoes** cast at you between their own attacks, so their moveset stays intact;
+  - custom upbeat voicelines (they've been dabbling in Chaos and want to trade their element for it);
+  - their room turns Chaos purple; their chest drops a **Chaos arcana**;
+  - on the board, **only their portrait** is tinted purple (v0.5.12: the tint used to spill over the whole tier, on the wrong tier).
+- Test keys: Shift+F11 (Chaos on this stage), Ctrl+F11 (next stage), Shift/Ctrl+F12 (Council).
 
 Next:
-- 🔜 Check in game that the automatic purple row looks right on each giant (the log shows `CHAOS palette for <giant>: row N`). If it's wrong, set `ChaosStages.GiantPalette`; F6 cycles rows on the nearest enemy to find the right one.
-- 🧪 **Corrupted Council (v0.5.0):** if Chaos reached a tier (any of its regular stages is a Chaos stage), that tier's Council member is corrupted. Their sprites get a dark purple tint and outline, and all their attacks are tinted like Chaos arcana. The boss bar reads "Corrupted <name>". Their intro and victory lines come out glitched, with Chaos whispers, a purple-tinted portrait and purple text. Their circle on the loading-screen board is purple. Moves and stats are unchanged for now. `ChaosStages.CorruptedCouncil`; Shift+F12 forces it for testing.
-  - 🧪 **v0.5.1:** their chest drops a **Chaos arcana** instead of an element arcana. Their attacks deal **Chaos damage** (their elemental status effect becomes Chaos). They get 2 **Chaos echoes**: between their own attacks they sometimes flash and cast a Chaos arcana at you, so their whole moveset (and fight identity) stays intact. A card at fight start shows the echoes.
-  - 🧪 **v0.5.2:** **custom corrupted voicelines** for each Council member, in place of their intro and victory lines (the earlier glitch effect never reached the screen). Their **room's tiles and lights** turn Chaos purple. All their attacks and effects are tinted a **darker, near-black Chaos purple**. Their Chaos echoes now aim at you (Chaos Beam was landing beside the boss).
-  - 🧪 **v0.5.3:** the voicelines are rewritten in the game's upbeat tone: each member has been dabbling in Chaos and wants to trade their element in for it, and comes back to it once beaten. No glitching.
-  - 🧪 **v0.5.3 fix:** Chaos stages never appeared on their own before (a stage-numbering bug). They now really roll 15% per regular stage, and the board marks the corrupted Council portrait itself.
-  - 📋 Maybe: a corrupted phase at low health; voicelines in the game's other languages (custom lines are English only).
+- 🔜 Confirm v0.5.14–0.5.15 in game: purple tiles, every humanoid Chaos, board marks right and stable.
+- 🔜 Check the automatic purple row on each giant (`CHAOS palette for <giant>: row N` in the log; F6 cycles rows).
+- 📋 Maybe: a corrupted phase at low health; voicelines in the game's other languages (custom lines are English only).
 - 📋 Chaos boss floors.
 
-### 3b. Radiant and Prismatic stages 📋 💬
+### 3b. Radiant and Prism stages (with WoL Arcanos) 📋
 
-Same approach as Chaos, once Chaos is nailed down:
-- **Radiant:** everything tinted toward pearl white; giants and elemental enemies cast Radiant spells; Radiant rivals.
-- **Prismatic:** WoL Arcanos has Prismatic arcana that mix two elements. Prismatic stages mix elements, with rivals using dual-element kits and Prismatic arcana.
-- Both use the same pieces as Chaos (title, board marker, rewards, rival variant), and both need WoL Arcanos (see 5).
+**Plan (agreed direction, not started):** keep the one roll per regular stage (`StageChance`, 15%), then pick which variant it is:
 
+| Variant | Share of variant stages | Needs |
+|---|---|---|
+| Chaos | 50% | nothing (base game) |
+| Radiant (Arcanos "Fulgor") | 35% | WoL Arcanos |
+| Prism (Arcanos "Prisma") | 15% | WoL Arcanos |
+
+Without Arcanos every variant stage is Chaos, exactly as now. The shares would be config values.
+
+Why it's realistic: Arcanos already registers both elements as real game element types and exposes their names, colours, icons and a way to set an attack's element (`WolArcanos.ElementosNuevos`, `WolArcanos.Prismatico`). Hybrid Bosses has no hard dependency on Arcanos today: it only discovers other mods' arcana by scanning at startup. So it stays optional with a soft dependency plus reflection, without building against Arcanos.
+
+What it takes:
+1. **Generalise "Chaos stage" into "variant stage"** (the larger part): the plan stores which variant (not just yes/no), and the tint colours, title ("Radiant <stage>"), board square colour/icon, enemy conversion, attack element/tint and Council corruption all read from the variant. Most of this code already exists for Chaos and only needs the colours, names and element pulled from the variant.
+2. **Arcanos bridge** (small): detect the mod, read the two element values, icon and colour by reflection; switch the variant split off when it's missing.
+3. **Arcana pools** (needs a check first ❓): the catalog currently sorts the 192 Arcanos arcana into the base elements only (startup log: Wind 34, Frost 35, Flame 36, Earth 37, Thunder 37, Chaos 21). It must learn to tag Radiant and Prism arcana so variant enemies, giants, rivals and the Council can cast them.
+4. **Look per variant:** Radiant toward pearl white / gold; Prism as a cycling or multi-hue tint. Enemies have no Radiant/Prism palette rows, so they'd use a tint plus outline (as the Coffin does for Chaos).
+
+Rough size: a few focused sessions. Step 1 is most of the work, and it also tidies up the Chaos code.
+
+Ideas within this theme (💬, to decide later):
+- 💬 **Radiant / Prism Council** (counterpart of the Corrupted Council): "Radiant" or "Prismatic" boss bar, echoes from that pool, matching voicelines, and the chest drops an arcana of that element.
+- 💬 **Radiant / Prism rivals and giants** on those stages, plus Radiant and Prism Archons in the final pool. The Sovereign could pull from all three pools.
+- 💬 **Prism enemies cycle elements** (Arcanos' Prism attacks rotate through elements; enemy attacks could do the same).
+- 💬 **Per-variant reward twist**: Chaos gives more gold and drops; Radiant could give healing or shield pickups, Prism more arcana or relic choices.
+- 💬 A variant mark for the run on the board's final circle when the champion matches a variant.
 ## 4. Final-stage boss pool 🧪
 
 Built:
@@ -119,14 +145,16 @@ Built:
 Next:
 - 🧪 Boss health bar (v0.4.9, shared with rivals).
 - ✅ **Second phase (v0.4.12):** at half health the champion freezes in a burst, then an "awakens" card shows its new arcana. An **Archon becomes a hybrid**: it keeps its 2 strongest arcana, gains 3 from a second element (and that element's own spells), and casts faster. The boss bar becomes e.g. "Fire–Water Archon". The **Chaos Sovereign** becomes "Unbound": 2 more arcana and faster casts. (`FinalBoss.Phases`)
-- 📋 real icon art, and Radiant/Prismatic arcana in the Sovereign's pool when WoL Arcanos is installed.
+- 🧪 The run's champion is rolled in the Hub with the Chaos plan (v0.5.15), so the board's final circle is right from the first board.
+- 📋 Radiant and Prism arcana in the Sovereign's pool, and Radiant/Prism Archons, when WoL Arcanos is installed (see 3b).
 
-## 5. WoL Arcanos compatibility 🔜
+## 5. WoL Arcanos compatibility ✅ / 📋
 
-WoL Arcanos (v0.57.0) is now installed: 192 arcana, mod robes, and Radiant/Prismatic elements.
-- 🔜 Check the startup log for `ARCANA found N arcana from other mods`. Our catalog already looks for other mods' arcana at startup, but hasn't been verified with Arcanos.
-- 📋 Map Arcanos' Radiant and Prismatic elements into our pools (for 3b and the Sovereign).
-- 📋 Keep it a **soft dependency**: everything must work without Arcanos.
+WoL Arcanos (v0.57.0) is installed: 192 arcana, mod robes, and the Prism ("Prisma") and Radiant ("Fulgor") elements.
+- ✅ **Already optional:** no hard dependency. Its arcana are found at startup by scanning loaded mods (log: `ARCANA catalog: 201 castable arcana … 192 from other mods`), and enemies, rivals and giants cast them. Without Arcanos, everything runs on the base game's arcana.
+- ✅ Its robes work as rival robes (the palette it logs is the game's own).
+- 📋 Tag Arcanos' Radiant and Prism arcana in the catalog (currently they're filed under the base elements or skipped), for 3b and the Sovereign.
+- 📋 Declare it as a soft dependency (load after Arcanos when present) and read its element API by reflection: the bridge for 3b.
 - 💬 **Safekeeping copy of Arcanos** (use the installed mod if present, otherwise a dormant bundled copy): redistributing another author's mod needs their permission, so **ask the author first**. An alternative is to store only the data we need, such as arcana lists and colours, without the mod itself.
 
 ## Shared system: Enemy Arcana 🧪
