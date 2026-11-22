@@ -13,7 +13,7 @@ namespace WolHybridBosses
     [BepInPlugin("osi.wol.hybridbosses", "Hybrid Bosses", Version)]
     public class Plugin : BaseUnityPlugin
     {
-        public const string Version = "0.4.8";
+        public const string Version = "0.4.13";
         internal static ManualLogSource Log;
 
         internal static ConfigEntry<bool> ElementalGiants;
@@ -41,6 +41,11 @@ namespace WolHybridBosses
         internal static ConfigEntry<float> ChaosStageRewards;
         internal static ConfigEntry<int> ChaosGiantPalette;
         internal static ConfigEntry<float> ChaosEnemyChance;
+        internal static ConfigEntry<int> GiantMinElementMoves;
+        internal static ConfigEntry<bool> BossBars;
+        internal static ConfigEntry<bool> ChampionPhases;
+        internal static ConfigEntry<float> ArchonRivalChance;
+        internal static ConfigEntry<bool> GiantBossBars;
 
         void Awake()
         {
@@ -64,7 +69,17 @@ namespace WolHybridBosses
             ChaosRivalChance = Config.Bind("RivalWizards", "ChaosChance", 0.15f,
                 "Chance (0 to 1) that a rival is a Chaos 'jack of all trades' wizard with arcana from every element, instead of the stage's element.");
             EnhancedArcanaChance = Config.Bind("EnemyArcana", "EnhancedChance", 0.2f,
-                "Chance (0 to 1) that an arcana cast by a giant is the enhanced version (more shots, ultimate stats). Rivals don't roll this: they charge a signature meter instead.");
+                "Chance (0 to 1) that an arcana cast by an enemy (giant, rival, champion) is the enhanced version (more shots, +30% damage). The signature version is separate: only a rival's signature arcana cast with a full meter.");
+            GiantMinElementMoves = Config.Bind("ElementalGiants", "MinElementMoves", 2,
+                "Every elemental giant gets at least this many element moves. Giants with fewer borrowed enemy skills (Wind/Thunder Knight, Fire/Thunder Archer have none) are topped up with player arcana of their element that suit their style. 0 = off.");
+            ChampionPhases = Config.Bind("FinalBoss", "Phases", true,
+                "Final champions shift at half health: an Archon becomes a two-element hybrid (keeps 2 arcana, gains 3 of a second element, casts faster); the Chaos Sovereign gains 2 more arcana and casts faster.");
+            ArchonRivalChance = Config.Bind("RivalWizards", "ArchonChance", 0.25f,
+                "Chance (0 to 1) that the Hard portal of a rival arena holds an Archon (a final champion with its second phase; Chaos Sovereign on Chaos stages) instead of a Hard rival. It drops a gold chest.");
+            BossBars = Config.Bind("BossBar", "Enabled", true,
+                "Rivals and final champions get the game's big boss health bar (the one the Council and Sura use) once their intro ends.");
+            GiantBossBars = Config.Bind("BossBar", "Giants", true,
+                "Elemental giants get the boss health bar too, when their intro shows.");
             RivalEvents = Config.Bind("RivalWizards", "Enabled", true,
                 "The misc-room portal can lead to a rival-wizard arena with Easy/Medium/Hard portals instead of the usual NPC room.");
             RivalEventChance = Config.Bind("RivalWizards", "Chance", 0.3f,
@@ -320,6 +335,7 @@ namespace WolHybridBosses
         {
             if (!IsGiant(e) || !Plugin.ElementalGiants.Value) return;
             if (!Done.Add(e.GetInstanceID())) return;
+            GiantWatchdog.Attach(e); // a giant stuck in one action (e.g. a charge) goes back to Chase
 
             // On a Chaos stage giants become Chaos giants instead of taking the stage element.
             if (ChaosStages.Planned) { ChaosGiants.Apply(e); return; }
@@ -372,6 +388,13 @@ namespace WolHybridBosses
                 // No signature meter: signatures are for the player, rivals and the Council (they have their own).
                 // Giants can still roll enhanced arcana (EnemyArcana.EnhancedChance).
             }
+            else if (added < Plugin.GiantMinElementMoves.Value)
+            {
+                // Gap filler: some giants have (almost) nothing to borrow (no Wind/Thunder Knight or Fire/Thunder Archer
+                // enemy exists). Top them up with player arcana of their element that suit how they fight.
+                List<ArcanaDef> fill = GapArcana(kind, prefix, Plugin.GiantMinElementMoves.Value - added);
+                arcana = EnemyArcana.Give(e, fill);
+            }
 
             if (Plugin.GiantIntros.Value) GiantIntro.Attach(e, prefix, kind);
 
@@ -379,6 +402,39 @@ namespace WolHybridBosses
             Plugin.Log.LogInfo("GIANT " + e.GetType().Name + " -> " + prefix + " (" + element + "), stage " + Level.element
                 + " (" + Level.tileSetName + "), palette " + (palette < 0 ? "tint" : palette.ToString())
                 + ", skills added " + added + ", arcana " + arcana + ", summons " + minions);
+        }
+
+        // Arcana families that fit each giant's fighting style, best first. Melee basics, dashes and summons stay out:
+        // giants already have their own swings/charges, and summoning giants already summon.
+        static readonly Dictionary<string, ArcanaFamily[]> GapFamilies = new Dictionary<string, ArcanaFamily[]>
+        {
+            { "Knight", new[] { ArcanaFamily.Spell, ArcanaFamily.Jump, ArcanaFamily.Ward } },     // close-range blasts, slams
+            { "Archer", new[] { ArcanaFamily.Projectile, ArcanaFamily.Spell } },                 // shots from range
+            { "Mage",   new[] { ArcanaFamily.Projectile, ArcanaFamily.Spell } },
+            { "Rogue",  new[] { ArcanaFamily.Projectile, ArcanaFamily.Jump, ArcanaFamily.Spell } },
+            { "Lancer", new[] { ArcanaFamily.Spell, ArcanaFamily.Projectile } },
+        };
+
+        internal static List<ArcanaDef> GapArcana(string kind, string prefix, int n)
+        {
+            List<ArcanaDef> picked = new List<ArcanaDef>();
+            if (n <= 0) return picked;
+            ArcanaFamily[] fams;
+            if (!GapFamilies.TryGetValue(kind ?? "", out fams)) fams = new[] { ArcanaFamily.Spell, ArcanaFamily.Projectile };
+            List<ArcanaDef> pool = ArcanaCatalog.Pool(prefix);
+            pool.RemoveAll(d => EnemyArcana.Broken.Contains(d.SkillID));
+            // Preferred families first, one arcana per family before repeating one, then anything left of the element.
+            for (int round = 0; round < 2 && picked.Count < n; round++)
+                foreach (ArcanaFamily f in fams)
+                {
+                    if (picked.Count >= n) break;
+                    List<ArcanaDef> opts = pool.FindAll(d => d.Family == f && !picked.Contains(d));
+                    if (opts.Count > 0) picked.Add(opts[UnityEngine.Random.Range(0, opts.Count)]);
+                }
+            if (picked.Count < n)
+                foreach (ArcanaDef d in Rivals.PickVaried(pool.FindAll(d => d.Family != ArcanaFamily.Melee && d.Family != ArcanaFamily.Minion
+                    && d.Family != ArcanaFamily.Seeker && !picked.Contains(d)), n - picked.Count, false)) picked.Add(d);
+            return picked;
         }
 
         // Keep the gray mini-boss palette and tint the sprites (and outline) in the element's colour.

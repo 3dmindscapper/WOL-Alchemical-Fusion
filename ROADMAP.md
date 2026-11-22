@@ -5,7 +5,7 @@ It mostly reuses the game's own assets. Custom art is possible, but so far every
 
 Status key: ✅ done · 🧪 built, needs in-game testing · 🔜 next · 📋 planned · ❓ needs research first · 💬 dev note (idea to consider)
 
-Current version: **0.4.2**. Technical details (game internals, file layout, pitfalls) live in `CLAUDE.md`.
+Current version: **0.4.13**. Technical details (game internals, file layout, pitfalls) live in `CLAUDE.md`.
 
 ---
 
@@ -30,7 +30,7 @@ Built:
 - 🧪 Enhanced arcana: giants that cast arcana have a 20% chance (`EnemyArcana.EnhancedChance`) per cast to use the enhanced version. **No signature meter: signatures are for the player, rivals and the Council only.**
 
 Next:
-- 🔜 Fill the skill gaps: Wind/Thunder Knight and Fire/Thunder Archer have no borrowed skills. 💬 The rival arcana system may solve this: give those giants a few arcana of their element (as `EnemyArcana.AllGiants` already can), if it makes sense in play.
+- 🧪 **Skill gaps filled (v0.4.10):** every elemental giant now has at least 2 element moves (`ElementalGiants.MinElementMoves`). Giants with nothing or little to borrow (Wind/Thunder Knight, Fire/Thunder Archer and Fire Lancer have nothing; several have only 1) get player arcana of their element that suit their style: knights get close-range blasts and slams, archers and mages get projectiles.
 - 📋 Element-coloured aura/outline and a burst before attacks; an elemental Coffin stomp.
 - 📋 The other big enemies that aren't mini-bosses: giant Blob, Moving Statue, large Ghoul, large Mimic.
 
@@ -43,19 +43,21 @@ Built:
 - 🧪 **Intro:** the rival is frozen and the camera moves to it. Its arcana, dash arcana, signature spells, robe and relic appear one by one, then the fight starts.
 - 🧪 **Tiers:**
 
-  | Tier | HP | Arcana | Spell gap | Damage | Signature after |
-  |---|---|---|---|---|---|
-  | Easy | 500 | 2 | 3s | 50% | 12 hits |
-  | Medium | 900 | 3 | 2s | 75% | 9 hits |
-  | Hard | 1400 | 4 | 1.3s | 100% | 6 hits |
+  | Tier | HP | Arcana | Spell gap | Damage | Signature after | Reward (v0.4.13) |
+  |---|---|---|---|---|---|---|
+  | Easy | 500 | 2 | 3s | 50% | 12 hits | 1 standard chest |
+  | Medium | 900 | 3 | 2s | 75% | 9 hits | 2 standard chests |
+  | Hard | 1400 | 4 | 1.3s | 100% | 6 hits | 1 gold chest |
+  | Hard: Archon (25%) | 2600 | 5 + phase 2 | 1.1s | 100% | 6 hits | 1 gold chest |
 
   HP goes up with difficulty. Element: the stage's, or random on neutral stages. 15% chance of a **Chaos** rival (`RivalWizards.ChaosChance`) with arcana from every element.
+- 🧪 **Archons in the arena (v0.4.13):** the Hard portal sometimes (`RivalWizards.ArchonChance` 0.25) holds an Archon instead: the full final-champion kit with its half-health hybrid phase (a Chaos Sovereign on Chaos stages). The champion that replaces Sura drops no chest, since the final room has its own rewards.
 - ✅ **Kit (user-tested: "working great"):**
   - any player arcana of its element, picked for variety, with priorities reshuffled after each cast;
   - a dash arcana fired from its own dashes;
-  - a signature meter that fills on hits and empowers its next arcana;
+  - a signature meter that fills on hits (see the v0.4.8 rework below);
   - summons and wards;
-  - its own Fireball / Tornado / Blizzard only when they match its element.
+  - its own Fireball / Tornado / Sword Throw / Blizzard only when they match its element.
 - 🧪 **Fixes (v0.4.5), from testing:**
   - **Walking in place:** the built-in basic attack (a Wind Slash with no stats outside its ally role) swung for nothing over and over. Rivals now get an **elemental basic arcana** (shown in the intro as "(basic)") that replaces it, and an unstuck watchdog makes them dash at you if they "run" without moving.
   - **Only their kit:** the log lists everything a rival may cast (`RIVAL kit …`), and logs its built-in spells too (`RIVAL own spell …`). They match the intro: arcana, basic, dash, and the own spells that fit its element.
@@ -66,14 +68,15 @@ Built:
 - 🧪 **Fixes (v0.4.7):** arcana that the player "finishes" after casting (the Hammer Throw's spin-and-throw, boomerangs, dragons, axes, bolas, charge shots like Ball Lightning) now get that last step when an enemy casts them, so nothing is left floating in place.
 - 🧪 **Fixes (v0.4.8):** the Earth rival's axe basic now spins out instead of floating; the Frost rival's Water Arc basic works (it crashed before); rivals no longer glow at random (that was the old timed signature window).
 - ✅ **Robe and relic:** a random player robe (its colours and stat bonuses) and a random stat relic (real icon and name, effect translated to a rival stat).
-- 🧪 Player-style fall protection; a mini-boss reward chest on death.
+- 🧪 Player-style fall protection.
 
 Next:
 - 🔜 Arena layout tuning (portal and rival positions are guesses).
 - 💬 **Dedicated rival portal instead of the red portal room:** a new portal that can appear on each 2nd stage of a tier (the X-2 stages, just before the Council member fights). WoL Arcanos or Tournament Edition have custom portals, so this should be possible. If adopted, the event above moves to that portal.
 - 💬 **Fight in the real PvP arena:** if the game has a PvP arena scene, teleport the player there for the rival fight and back, without losing the stage's state.
 - 💬 **Evil echo of your last run:** remember the previous lost run (robe, arcana, relics) and bring it back as an evil rival.
-- 📋 A big boss health bar, better chest tables for Hard, dropping the rival's relic, a secondary element on Hard, Sura-style attack patterns, and special relics (Resurrect, Vampire…) done for real.
+- ✅ **Boss health bar (v0.4.9):** the game's own boss bar (the Council's and Sura's) with the rival's name, shown when the intro ends. Champions and elemental giants get it too (`BossBar.Enabled`, `BossBar.Giants`).
+- 📋 Dropping the rival's relic, a secondary element on Hard, Sura-style attack patterns, and special relics (Resurrect, Vampire…) done for real.
 
 ## 3. Stage variants
 
@@ -109,7 +112,9 @@ Built:
 - 🧪 **Normal ending kept:** beating the champion ends the run exactly like beating Sura, including the Chaos arcana unlock.
 
 Next:
-- 📋 A big boss health bar, phases (element swap at 50% for Archons), real icon art, and Radiant/Prismatic arcana in the Sovereign's pool when WoL Arcanos is installed.
+- 🧪 Boss health bar (v0.4.9, shared with rivals).
+- ✅ **Second phase (v0.4.12):** at half health the champion freezes in a burst, then an "awakens" card shows its new arcana. An **Archon becomes a hybrid**: it keeps its 2 strongest arcana, gains 3 from a second element (and that element's own spells), and casts faster. The boss bar becomes e.g. "Fire–Water Archon". The **Chaos Sovereign** becomes "Unbound": 2 more arcana and faster casts. (`FinalBoss.Phases`)
+- 📋 real icon art, and Radiant/Prismatic arcana in the Sovereign's pool when WoL Arcanos is installed.
 
 ## 5. WoL Arcanos compatibility 🔜
 

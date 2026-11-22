@@ -114,9 +114,58 @@ namespace WolHybridBosses
 
         // ---------- lookups (all fail soft) ----------
 
+        // null when the game has no icon for it (IconManager hands back its "?" placeholder for unknown IDs).
         internal static Sprite SkillIcon(string skillID)
         {
-            try { return IconManager.GetSkillIcon(skillID); } catch (Exception) { return null; }
+            try
+            {
+                if (string.IsNullOrEmpty(skillID)) return null;
+                if (!placeholderKnown) { placeholderKnown = true; placeholder = IconManager.GetSkillIcon("HybridBossesNoSuchSkill"); }
+                Sprite s = IconManager.GetSkillIcon(skillID);
+                return s == null || (placeholder != null && s == placeholder) ? null : s;
+            }
+            catch (Exception) { return null; }
+        }
+
+        static Sprite placeholder;
+        static bool placeholderKnown;
+
+        // An enemy skill ("EarthKnightPoisonBolas") shown with the icon of the player arcana it mirrors
+        // ("UsePoisonBolas"), matched by name; null if none fits (the entry then shows an element-coloured tile).
+        // Enemy skills whose name doesn't match a player arcana, mapped by hand to the closest-looking one.
+        static readonly Dictionary<string, string> EnemyIconMap = new Dictionary<string, string>
+        {
+            { "FlameKnightFlameShield", "FlameShieldDash" }, { "FlameMageIgnitionOrb", "UseFireOrbBasic" },
+            { "FlameRogueFlameRush", "FireDash" }, { "FrostRogueIceDecoy", "IceDash" }, { "FrostArcherIceTrap", "UseFrostBlock" },
+            { "FrostLancerIceBeam", "UseAquaBeam" }, { "FrostMageFrostBlast", "UseFrostFan" }, { "EarthArcherPoisonBomb", "PoisonDash" },
+            { "EarthLancerDrillCharge", "UseEarthDrill" }, { "WindMageSummonTwister", "UseTwister" }, { "WindArcherWindTrap", "AirTrapDash" },
+            { "WindRogueBlastDash", "UseAirWave" }, { "ThunderRogueShockBomb", "UseShockNova" }, { "ThunderLancerGroundShock", "UseShockSpear" },
+            { "ThunderMageThunderBlast", "ThunderOrbBasic" },
+        };
+
+        internal static Sprite EnemySkillIcon(string enemySkill, string element, string kind)
+        {
+            Sprite own = SkillIcon(enemySkill);
+            if (own != null) return own;
+            string mapped;
+            if (enemySkill != null && EnemyIconMap.TryGetValue(enemySkill, out mapped))
+            {
+                Sprite m = SkillIcon(mapped);
+                if (m != null) return m;
+            }
+            string core = enemySkill ?? "";
+            if (core.StartsWith(element)) core = core.Substring(element.Length);
+            if (core.StartsWith(kind)) core = core.Substring(kind.Length);
+            if (core.EndsWith("State")) core = core.Substring(0, core.Length - 5);
+            if (core.Length < 4) return null;
+            string best = null;
+            foreach (GenArcana g in ArcanaCatalog.AllRows())
+            {
+                string id = g.SkillID;
+                if (id == null || !id.EndsWith(core)) continue;
+                if (best == null || id.Length < best.Length) best = id; // the closest name ("UseFireBlast" over "UseFireBlastXL")
+            }
+            return best != null ? SkillIcon(best) : null;
         }
 
         internal static Sprite ItemIcon(string itemID)

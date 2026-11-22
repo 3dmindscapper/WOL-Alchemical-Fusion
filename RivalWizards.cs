@@ -81,7 +81,7 @@ namespace WolHybridBosses
         internal static void MarkCast(Enemy e)
         {
             RivalMarker mk = e.GetComponent<RivalMarker>();
-            float gap = mk != null ? TierCastGap(mk.Tier) : Plugin.ArcanaCastGap.Value;
+            float gap = mk != null ? TierCastGap(mk.Tier) * mk.GapMultiplier : Plugin.ArcanaCastGap.Value;
             nextCastTime[e.GetInstanceID()] = Time.time + gap;
         }
 
@@ -115,7 +115,9 @@ namespace WolHybridBosses
         }
 
         // Spawns a rival. Hostility is applied in Contestant.Start's postfix (Start undoes it otherwise).
-        internal static Enemy Spawn(Vector2 pos, string prefix, RivalTier tier)
+        // arenaArchon: a Final-tier champion met through a rival arena's Hard portal (it drops a gold chest; the one that
+        // replaces Sura drops nothing, the final room has its own rewards).
+        internal static Enemy Spawn(Vector2 pos, string prefix, RivalTier tier, bool arenaArchon = false)
         {
             Enemy e = Enemy.Spawn("Contestant", pos, null, true, false, false, false, false);
             if (e == null) { Plugin.Log.LogWarning("RIVAL spawn failed (no Contestant prefab)"); return null; }
@@ -124,6 +126,7 @@ namespace WolHybridBosses
             RivalMarker mk = e.gameObject.AddComponent<RivalMarker>();
             mk.Prefix = prefix;
             mk.Tier = tier;
+            mk.ArenaArchon = arenaArchon;
             rivalIds.Add(e.GetInstanceID());
             return e;
         }
@@ -146,7 +149,11 @@ namespace WolHybridBosses
             e.targetGroup = GameController.players;
             e.currentGroup = GameController.enemies;
             e.dropLoot = true;
-            e.dropLootChest = mk.Tier != RivalTier.Final; // EnemyDropLoot spawns TreasureChest with chestLootTableID ("TreasureChestMiniBoss"); the final boss room has its own rewards
+            // Chests by tier (RivalRewards): Easy 1 standard, Medium 2 standard, Hard or arena Archon 1 gold; none for the
+            // champion that replaces Sura (the final room has its own rewards). The game's own drop (always a gold
+            // "TreasureChestMiniBoss") is off.
+            e.dropLootChest = false;
+            RivalRewards.Attach(e, mk);
 
             // The Contestant also registers the Frost Mage's Blizzard as an extra skill. Keep it only on Water rivals.
             if (!SignatureAllowed(mk, "SummonBlizzard") && e.availableEnemySkillsDict != null) e.availableEnemySkillsDict.Remove(BlizzardSkill);
@@ -278,6 +285,7 @@ namespace WolHybridBosses
         {
             if (rival == null) yield break;
             rival.enabled = false;
+            BossBar bar = BossBar.Attach(rival, title); // the game's boss health bar, shown when the fight starts
             RivalMarker mk = rival.GetComponent<RivalMarker>();
             RivalTier tier = mk != null ? mk.Tier : RivalTier.Medium;
             float intro = IntroUI.Show(title, subtitle + (mk != null ? "  ·  " + mk.Bonus.Describe() : ""), TierColor(tier),
@@ -290,6 +298,8 @@ namespace WolHybridBosses
             {
                 DelayCasts(rival, 1.5f); // no opening burst
                 rival.enabled = true;
+                if (bar != null) bar.Show();
+                if (tier == RivalTier.Final && Plugin.ChampionPhases.Value) ChampionPhase.Attach(rival, title); // phase 2 at half health
             }
         }
 
@@ -344,14 +354,16 @@ namespace WolHybridBosses
         internal static bool SignatureAllowed(RivalMarker mk, string spell)
         {
             if (mk == null || mk.Prefix == "Chaos") return true;
+            string el;
             switch (spell)
             {
-                case "ShootFireball": return mk.Prefix == "Flame";
+                case "ShootFireball": el = "Flame"; break;
                 case "SummonTornado":
-                case "SwordThrow": return mk.Prefix == "Wind"; // Sword Throw is the spinning cyclone boomerang: a wind spell
-                case "SummonBlizzard": return mk.Prefix == "Frost";
+                case "SwordThrow": el = "Wind"; break; // Sword Throw is the spinning cyclone boomerang: a wind spell
+                case "SummonBlizzard": el = "Frost"; break;
                 default: return false; // anything else of its own: not part of an elemental kit
             }
+            return mk.Prefix == el || mk.SecondPrefix == el; // a hybrid Archon (phase 2) also uses its second element's
         }
 
         static void Shuffle<T>(List<T> list)
@@ -415,6 +427,9 @@ namespace WolHybridBosses
         public ArcanaDef Dash;
         public ArcanaDef Basic;
         public ArcanaDef Signature; // the one arcana that spends a full signature meter (its signature version)
+        public float GapMultiplier = 1f; // champions' second phase casts faster
+        public string SecondPrefix;      // an Archon's second element after its phase shift
+        public bool ArenaArchon;         // a champion from a rival arena's Hard portal (not replacing Sura)
         public RivalBonus Bonus = new RivalBonus();
         public string OutfitID, RelicID;
         public int RobeColor = -1;
@@ -488,12 +503,18 @@ namespace WolHybridBosses
             yield return new WaitForSeconds(1.2f); // let the teleport finish
             foreach (GameObject p in portals) if (p != null) Destroy(p);
 
-            rival = Rivals.Spawn(arrival + RivalOffset, prefix, tier);
+            // The Hard portal sometimes holds an Archon (a final champion, with its half-health phase) instead.
+            bool archon = tier == RivalTier.Hard && UnityEngine.Random.value < Plugin.ArchonRivalChance.Value;
+            rival = Rivals.Spawn(arrival + RivalOffset, prefix, archon ? RivalTier.Final : tier, archon);
             if (rival == null) yield break;
             yield return null; // Start (and our hostile postfix) runs
             yield return null;
 
-            yield return StartCoroutine(Rivals.Intro(rival, ElementalGiants.ElementColorName(prefix) + " Rival Wizard", tier.ToString()));
+            string title = archon
+                ? (prefix == "Chaos" ? "Chaos Sovereign" : ElementalGiants.ElementColorName(prefix) + " Archon")
+                : ElementalGiants.ElementColorName(prefix) + " Rival Wizard";
+            if (archon) Plugin.Log.LogInfo("RIVAL Hard portal holds an Archon: " + title);
+            yield return StartCoroutine(Rivals.Intro(rival, title, archon ? "Hard  ·  Archon" : tier.ToString()));
         }
 
         void Show(string text, float seconds)

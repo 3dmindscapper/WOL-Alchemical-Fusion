@@ -28,8 +28,9 @@ namespace WolHybridBosses
             if (player == null) { player = FindObjectOfType<Player>(); if (player == null) return; }
             if (Vector2.Distance(player.transform.position, enemy.transform.position) > TriggerDistance) return;
             shown = true;
-            IntroUI.Show(ElementalGiants.ElementColorName(prefix) + " " + GiantName(enemy), "Mini-boss",
-                ElementalGiants.ElementColor(prefix), Entries(), 3f);
+            string title = ElementalGiants.ElementColorName(prefix) + " " + GiantName(enemy);
+            IntroUI.Show(title, "Mini-boss", ElementalGiants.ElementColor(prefix), Entries(), 3f);
+            if (Plugin.GiantBossBars.Value) BossBar.ShowFor(enemy, title);
         }
 
         static string GiantName(Enemy e)
@@ -47,7 +48,7 @@ namespace WolHybridBosses
             foreach (SkillDef d in ElementalGiants.Skills)
             {
                 if (d.Element != prefix || d.Kind != kind || !enemy.availableEnemySkillsDict.ContainsKey(d.Name)) continue;
-                IntroEntry ie = new IntroEntry(IntroUI.SkillIcon(d.Name), SkillLabel(d));
+                IntroEntry ie = new IntroEntry(IntroUI.EnemySkillIcon(d.Name, d.Element, d.Kind), SkillLabel(d));
                 if (ie.Icon == null) ie.Tint = el;
                 list.Add(ie);
             }
