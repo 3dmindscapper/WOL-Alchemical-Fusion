@@ -14,7 +14,7 @@ namespace WolHybridBosses
     [BepInDependency("wolarcanos.arcanos", BepInDependency.DependencyFlags.SoftDependency)] // optional: Radiant / Prism variants
     public class Plugin : BaseUnityPlugin
     {
-        public const string Version = "0.6.1";
+        public const string Version = "0.6.5";
         internal static ManualLogSource Log;
 
         internal static ConfigEntry<bool> ElementalGiants;
@@ -163,8 +163,10 @@ namespace WolHybridBosses
             if (Input.GetKeyDown(KeyCode.F6)) Debug.CyclePalette();
             if (Input.GetKeyDown(KeyCode.F7)) Debug.DumpNearestEnemy();
             if (Input.GetKeyDown(KeyCode.F8)) Debug.SpawnNextTestGiant();
-            if (Input.GetKeyDown(KeyCode.F9)) Debug.DumpElementPalette();
-            if (Input.GetKeyDown(KeyCode.F10)) Debug.RerollNearestGiant();
+            if (Input.GetKeyDown(KeyCode.F9) && (Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl))) Debug.DumpArcanaVisuals();
+            else if (Input.GetKeyDown(KeyCode.F9)) Debug.DumpElementPalette();
+            if (Input.GetKeyDown(KeyCode.F10) && (Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl))) InfusionPreview.Cycle();
+            else if (Input.GetKeyDown(KeyCode.F10)) Debug.RerollNearestGiant();
             bool shift = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
             bool ctrl = Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl);
             if (Input.GetKeyDown(KeyCode.F11) && ctrl) Debug.SkipToNextStage();
@@ -726,6 +728,57 @@ namespace WolHybridBosses
         }
 
         // F9: element -> palette index table.
+        // Ctrl+F9 (v0.6.4, infusion research): what each castable arcana's prefab is made of, to learn how vanilla
+        // sells an element's look: sprites (and their shaders), animators, particle systems (and start colours),
+        // trails, lines, lights. One line per arcana plus a per-element summary in the log.
+        internal static void DumpArcanaVisuals()
+        {
+            Dictionary<string, int[]> perEl = new Dictionary<string, int[]>(); // arcana, with particles, with lights, with trails
+            int n = 0;
+            List<ArcanaDef> defs = ArcanaCatalog.Pool("Chaos");
+            defs.AddRange(ArcanaCatalog.DashPool("Chaos"));
+            foreach (ArcanaDef d in defs)
+            {
+                if (d.Port != ArcanosPort.None) continue;
+                GameObject prefab = null;
+                try { prefab = EnemyArcana.GetPrefab(d); } catch (Exception) { }
+                if (prefab == null) continue;
+                SpriteRenderer[] srs = prefab.GetComponentsInChildren<SpriteRenderer>(true);
+                ParticleSystem[] pss = prefab.GetComponentsInChildren<ParticleSystem>(true);
+                TrailRenderer[] trs = prefab.GetComponentsInChildren<TrailRenderer>(true);
+                LineRenderer[] lrs = prefab.GetComponentsInChildren<LineRenderer>(true);
+                Light[] ls = prefab.GetComponentsInChildren<Light>(true);
+                Animator[] ans = prefab.GetComponentsInChildren<Animator>(true);
+                HashSet<string> shaders = new HashSet<string>();
+                foreach (SpriteRenderer sr in srs) if (sr.sharedMaterial != null && sr.sharedMaterial.shader != null) shaders.Add(sr.sharedMaterial.shader.name);
+                List<string> pcol = new List<string>();
+                foreach (ParticleSystem ps in pss)
+                {
+                    try
+                    {
+                        ParticleSystem.MainModule mm = ps.main;
+                        Color c = mm.startColor.color;
+                        ParticleSystemRenderer pr = ps.GetComponent<ParticleSystemRenderer>();
+                        string tex = pr != null && pr.sharedMaterial != null && pr.sharedMaterial.mainTexture != null ? pr.sharedMaterial.mainTexture.name : "-";
+                        pcol.Add(ps.name + "(" + mm.startColor.mode + " " + ColorUtility.ToHtmlStringRGB(c) + ", tex " + tex + ")");
+                    }
+                    catch (Exception) { pcol.Add(ps.name); }
+                }
+                List<string> lcol = new List<string>();
+                foreach (Light l in ls) lcol.Add(ColorUtility.ToHtmlStringRGB(l.color));
+                Plugin.Log.LogInfo("VISUALS " + d.Element + " " + d.SkillID + ": " + srs.Length + " sprites [" + string.Join(", ", new List<string>(shaders).ToArray()) + "], "
+                    + ans.Length + " animators, " + pss.Length + " particles [" + string.Join("; ", pcol.ToArray()) + "], " + trs.Length + " trails, " + lrs.Length + " lines, "
+                    + ls.Length + " lights [" + string.Join(", ", lcol.ToArray()) + "]");
+                int[] s;
+                if (!perEl.TryGetValue(d.Element, out s)) perEl[d.Element] = s = new int[4];
+                s[0]++; if (pss.Length > 0) s[1]++; if (ls.Length > 0) s[2]++; if (trs.Length + lrs.Length > 0) s[3]++;
+                n++;
+            }
+            foreach (KeyValuePair<string, int[]> kv in perEl)
+                Plugin.Log.LogInfo("VISUALS summary " + kv.Key + ": " + kv.Value[0] + " arcana, " + kv.Value[1] + " with particles, " + kv.Value[2] + " with lights, " + kv.Value[3] + " with trails/lines");
+            Plugin.Log.LogInfo("VISUALS dumped " + n + " arcana prefabs");
+        }
+
         internal static void DumpElementPalette()
         {
             Enemy e = GetNearestEnemy(null);

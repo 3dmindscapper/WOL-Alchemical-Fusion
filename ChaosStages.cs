@@ -732,21 +732,14 @@ namespace WolHybridBosses
                 if (ChaosStages.Active != null) ChaosStages.Revert();
                 applyAt = Time.time + 1.5f; // let the stage finish building
             }
-            // 0.5.14: no longer waits on Level.levelContainer (a planned stage was never tinted: the apply gave up
-            // silently); keeps checking for a few seconds in case the plan's stage key settles late, and logs why not.
-            if (applyAt > 0f && Time.time >= applyAt)
+            // 0.6.4: no time limit. The plan is made when the stage finishes generating, which on big stages (an Ice
+            // stage) came after the old 6.5s window, so a planned Prism stage was never tinted. Now: whenever this
+            // stage is planned and not tinted yet, tint it (1.5s after the scene changed at the earliest).
+            if (applyAt > 0f && Time.time >= applyAt && ChaosStages.Planned && ChaosStages.Active == null)
             {
-                if (ChaosStages.Planned && ChaosStages.Active == null)
-                {
-                    applyAt = -1f;
-                    ChaosStages.Apply();
-                }
-                else if (Time.time >= applyAt + 5f)
-                {
-                    applyAt = -1f;
-                    if (ChaosStages.WasPlanned)
-                        Plugin.Log.LogWarning("CHAOS stage was planned for " + ChaosStages.PlannedKey + " but this stage is " + ChaosStages.StageKey() + ": not applied");
-                }
+                applyAt = -1f;
+                try { ChaosStages.Apply(); }
+                catch (Exception ex) { Plugin.Log.LogWarning("CHAOS stage apply failed: " + ex); }
             }
         }
     }

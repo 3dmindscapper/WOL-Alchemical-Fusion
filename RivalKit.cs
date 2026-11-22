@@ -265,6 +265,7 @@ namespace WolHybridBosses
             if (Owner == null || !Ready) return;
             if (Owner.health == null || Owner.health.CurrentHealthValue <= 0) { Expire(); return; }
             if (Time.time - readySince > ReadySeconds) { Expire(); return; }
+            if (ArcanosBridge.Incapacitated(Owner)) return; // blinded / stunned by an Arcanos ailment: no forced cast
             // Like a player who has their signature up: use it at the next opening (out of Chase/Idle).
             if (Time.time < nextForce || !Owner.enabled || Owner.fsm == null || Owner.enemySkillUseInProgress) return;
             string state = Owner.fsm.currentStateName ?? "";
@@ -515,7 +516,9 @@ namespace WolHybridBosses
         void Update()
         {
             if (Owner == null || !Owner.enabled || Owner.fsm == null || Owner.health == null || Owner.health.CurrentHealthValue <= 0) return;
-            FixAnimation(Owner.fsm.currentStateName ?? "");
+            string sn = Owner.fsm.currentStateName ?? "";
+            if (sn.StartsWith("WolArcanos") || ArcanosBridge.Incapacitated(Owner)) { stillSince = Time.time; return; } // Arcanos ailment: leave it be
+            FixAnimation(sn);
             Vector2 pos = Owner.transform.position;
             if ((pos - lastPos).sqrMagnitude > 0.04f) { lastPos = pos; stillSince = Time.time; return; }
             string state = Owner.fsm.currentStateName ?? "";

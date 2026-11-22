@@ -5,7 +5,9 @@ It mostly reuses the game's own assets. Custom art is possible, but so far every
 
 Status key: ✅ done · 🧪 built, needs in-game testing · 🔜 next · 📋 planned · ❓ needs research first · 💬 dev note (idea to consider)
 
-Current version: **0.6.0**. Technical details (game internals, file layout, pitfalls) live in `CLAUDE.md`.
+Current version: **0.6.5**. Technical details (game internals, file layout, pitfalls) live in `CLAUDE.md`.
+
+**Next major focus: Arcana infusion (section 6).**
 
 ---
 
@@ -154,8 +156,96 @@ WoL Arcanos (v0.57.0) is installed: 192 arcana, mod robes, and the Prism ("Prism
 - ✅ Its robes work as rival robes (the palette it logs is the game's own).
 - 🧪 Arcanos' Radiant and Prism arcana are tagged in the catalog (v0.6.0).
 - 🧪 Soft dependency declared; its element and unlock API is read by reflection (`ArcanosBridge`, v0.6.0).
-- 💬 **Safekeeping copy of Arcanos** (use the installed mod if present, otherwise a dormant bundled copy): redistributing another author's mod needs their permission, so **ask the author first**. An alternative is to store only the data we need, such as arcana lists and colours, without the mod itself.
+- 🧪 **Radiant/Prism look (v0.6.1–0.6.2):** a gentler gold wash on Radiant stages, and strong gold-to-pearl infusion on Radiant attacks. Infused base arcana show as "Radiant X" / "Prismatic X" in intros. Arcanos' element values are never put on enemy bodies or enemy attacks (a Prism giant couldn't be damaged).
 
+### 5a. Arcanos' Radiant and Prism arcana on enemies 🧪 (v0.6.3)
+
+Arcanos writes its Radiant/Prism arcana for the player only: mouse aim, inventory, HUD and the player's skill events. So they can't run on an enemy, and **rivals can't use the player versions** either (a rival is an enemy, not a player). Instead, what makes them what they are was studied and rebuilt for enemies, using the installed mod's own pieces (nothing of Arcanos is shipped):
+- **Look and sound:** Arcanos' own sprites (light lance, light whip, flash, holy halo, light feathers, mote of light, prism arcs per element) and its own effects (light beams, sparkles, splashes, debris, gusts, lightning impacts).
+- **Hits:** the game's generic circle hitbox with the arcana's real stat damage, owned by the enemy. It's the same recipe Arcanos uses for its attacking training dummy.
+
+Rebuilt so far:
+
+| Arcana | Variant | What the enemy version does |
+|---|---|---|
+| Light Lance | Radiant | a spear of light flies straight and bursts into sparkles |
+| Flash | Radiant | a mote of light gathers on your spot, then a blinding burst (2 Flashes) |
+| Holy Halo | Radiant | a halo over the caster pulses holy light around it 3 times |
+| Light Whip | Radiant | a lash of light across the front |
+| Wings of Light | Radiant | a fan of light feathers |
+| Elemental Prism | Prism | five bursts around you, each the next element |
+| Triad | Prism | three prism arcs, each a different element |
+
+The ailments, in controlled form:
+- **Radiant (Flash → Dazzled):** Arcanos' Radiant hits stack Flashes on enemies until they're blinded. On the player, Radiant hits stack Flashes, and at 3 you're **Dazzled** for 2.5s: a bright glare washes over the screen and fades. Controls are never taken away.
+- **Prism (element cycle):** like Arcanos' Prism, each hit is the next of the five base elements, with that element's status (burn, freeze, poison, slow, shock) and colour. This now applies to **every** Prism enemy attack, not just the rebuilt arcana.
+- **Arcanos' own ailments on our enemies** (Blind, its pulse stun, Heat, Soaked, Cracked, Whirl, Magnetized, Curse) apply through Arcanos itself. Our side now respects them: blinded or stunned enemies don't cast arcana or force signatures, rivals don't "unstick" out of them, and the giant watchdog never breaks them.
+
+Next:
+- 🔜 Test: each port's look, size and damage; the Dazzle glare; whether Prism statuses feel fair.
+- 📋 More ports if these work: Radiant Aegis (a reflecting shield), Light Deer (a summon), Supernova, Refraction.
+- ❓ Purified (Arcanos' second Radiant stage: armour broken, extra damage taken) as a short "takes +15% damage" on the player, if Dazzled alone feels too light.
+## 6. Arcana infusion (player feature) 🔜 next major focus
+
+**Idea:** pick an arcana to keep and an arcana to sacrifice. The kept arcana takes the sacrificed arcana's element. For example, Ice Spear plus a sacrificed Fire arcana gives a "Fire-infused Ice Spear": the same move, now dealing fire damage, applying burn and looking fiery.
+
+Why it fits: the enemy side already exists. Variant stages turn arcana into another element's damage and colours ("Radiant Tele Strike"), so infusion hands that engine to the player.
+
+**Decided:**
+- **The player picks which arcana keeps its move** and which one gives its element (the sacrificed one).
+- **Run only:** infusions last for the current run.
+- **Re-infusing is allowed:** it replaces the old infusion.
+- **+10% damage while infused,** so it's worth considering more often. Re-infusing doesn't stack it: always +10%.
+- **Same-element merging: no, for now.** It would turn a flexible idea into an "always merge for a power boost" outcome.
+- **Infused arcana can drop** (rarely) and **be sold by the arcana merchant** (rarely).
+- **The arcana's card sprite and icon are recoloured** to the new element.
+
+Still open: where infusing happens (altar / NPC / merchant service / Plaza) and its cost.
+
+### 6a. Research: how vanilla sells an element's look (v0.6.4)
+
+What the game does (code scan of the arcana classes):
+- **Attacks are hand-coloured animated sprite sheets.** Almost every arcana class drives an `Animator` that swaps sprites each frame (Fireball, Ice Lance, Boulder, Water Blast, Lightning Strike, Flame/Tremor Lance...). The element is painted into the art itself.
+- **Particle systems are accents, not the base.** Only some arcana carry them in code: Fire Blast (`pEmitters`), Flame Slash (`firePartSystems`), Twister (3 systems), Shock Line, Boulder Drop (`explosionEmitter`), Chaos Beam (`lightningEmitter`).
+- **The palette shader** (`_Palette` / `_PaletteIndex`: one sprite, many colour rows) is used for **cards, enemies, outfits** and a few enemy projectiles. For example, `EnemyFireball.SetColor` recolours an enemy mage's fireball per element, and `FlameLance`/`TremorLance` pick a palette row. Player arcana sprites aren't palette sprites.
+- **Cards:** the card frame/back palette row comes from rarity. The element identity on a card is the arcana's own icon art. So recolouring the icon is the way to show an infused card.
+- Ctrl+F9 logs every arcana prefab's makeup (sprites and shaders, animators, particles with their colours and textures, trails, lights) as `VISUALS …` lines, so we can confirm per arcana on a real install.
+
+Why a plain hue shift won't do:
+- Ice and white highlights have almost no saturation, so a hue shift leaves them unchanged.
+- Earth's brown needs darker values and less saturation, and Chaos's near-black purple needs strong darkening. A hue shift keeps brightness.
+- A colour multiply over the sprites (today's variant tint) can only darken, so it reads weakly on bright effects.
+
+**Recommended approach: a gradient map per element.** Each pixel's brightness is mapped onto a 3–5 stop ramp in the element's colours. Shadows, mid-tones and highlights each land where that element puts them, and the animation, shapes and detail are kept.
+
+| Element | Ramp (dark → mid → highlight) |
+|---|---|
+| Fire | deep red → orange → yellow-white |
+| Water | navy → blue → cyan-white |
+| Ice | steel blue → light blue → white |
+| Earth | dark brown → brown / ochre → sand |
+| Thunder | olive → yellow → white |
+| Wind | teal → mint → white |
+| Chaos | near-black purple → dark violet → lilac |
+| Radiant / Prism (Arcanos) | gold → pearl / the Prism cycle colours |
+
+How to apply it:
+1. **Animated sprites:** recolour each sprite atlas once per element (cached). Then, in LateUpdate, swap whatever sprite the Animator just set for its recoloured twin. Exact colours, no shader needed, cheap after the first time. This is the core of infusion.
+2. **Particles, trails, lines, lights:** start colours / gradients / light colour mapped onto the same ramp (already done for variants).
+3. **Element accents** sell it further: a few element particles on the cast or the hit, such as embers for fire, droplets for water, frost for ice, pebbles and dust for earth, sparks for thunder, gusts for wind, wisps for chaos. Use the game's own element effects where they can be reused, and Arcanos' effects when installed (EstallidoDeLlamas, Salpicon, Escarcha, Escombros, ImpactoRayo, Rafaga, ChispasCaos).
+4. **Damage:** the element and its status move over (burn / freeze / slow / poison / shock / Chaos), +10% damage.
+5. **Card sprite and icon:** the same gradient map on the arcana's icon wherever it's shown (pickup card, merchant, spellbook, HUD).
+
+Shared win: the same recolour engine would replace today's variant tint on enemies, giving Chaos/Radiant/Prism enemies proper element looks too.
+
+Pieces to build:
+1. 🧪 **Recolour engine (v0.6.5):** gradient maps per element, recoloured twins of every animated frame, particles/trails/lines/lights on the same ramp, and element accents (Arcanos effects). It's live on Chaos/Radiant/Prism enemies' attacks. **Ctrl+F10 previews each element's look on your own arcana** (look only).
+2. Infusion state per run (which arcana, which element), +10% damage, the element/status conversion on the player's attacks.
+3. The infusing interaction: pick the kept arcana, then the one to sacrifice; the sacrifice is consumed.
+4. Recoloured card sprite and icon in every UI; "Fire-infused X" names.
+5. Rare infused drops, and rare infused stock at the arcana merchant.
+6. Arcanos: Radiant/Prism infusions only from arcana the player has unlocked.
+7. Edge cases: signature versions, basics and dash arcana, co-op, mid-run saves, arcana whose element can't be read.
 ## Shared system: Enemy Arcana 🧪
 
 Lets any enemy cast real player arcana. Used by rivals, champions, arcana giants and chaos enemies.
@@ -176,7 +266,9 @@ Lets any enemy cast real player arcana. Used by rivals, champions, arcana giants
 | F7 | Dump every field of the nearest enemy |
 | F8 | Spawn the next giant beside you |
 | F9 | Dump the element → palette table and the current stage element |
+| Ctrl+F9 | Dump every arcana prefab's makeup (sprites, shaders, animators, particles, trails, lights) for infusion research |
 | F10 | Cycle the nearest giant through all five elements |
+| Ctrl+F10 | Infusion look preview: your own arcana take Fire → Water → Ice → Earth → Thunder → Wind → Chaos → Radiant → off (look only) |
 | F11 | Open a rival portal beside you: selector room → arena → way back (cycles Fire → Water → Earth → Wind → Thunder → Chaos, then Radiant → Prism with Arcanos) |
 | Shift+F11 | Cycle the current stage: normal → Chaos → Radiant → Prism (the last two with Arcanos) |
 | Ctrl+F11 | Skip to the next stage, as if through the exit portal (needs the floor's exit; a Council floor only has one after the fight) |

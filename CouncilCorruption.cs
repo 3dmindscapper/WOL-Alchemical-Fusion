@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Text;
@@ -296,26 +296,44 @@ namespace WolHybridBosses
         internal static void TintAttack(Attack atk, bool stage) { TintAttack(atk, stage, stage ? ChaosStages.PlannedVariant : Variant); }
 
         // stage: an attack outside a Council fight (variant stage, marked caster); v: whose colours.
-        internal static void TintAttack(Attack atk, bool stage, StageVariant v)
+        internal static void TintAttack(Attack atk, bool stage, StageVariant v, Color? elementColor = null, string rampKey = null)
         {
             if (atk == null || v == StageVariant.None || (CurrentBoss == null && !stage)) return;
             if (atk.GetComponentInParent<Player>() != null || (atk.atkInfo != null && atk.atkInfo.entity is Player)) return;
+            if (atk.name.StartsWith("HB_Arcanos")) return;
             GameObject root = VisualRoot(atk);
-            if (root == null || !tinted.Add(root.GetInstanceID())) return;
-            TintTree(root, v);
+            if (root == null) return;
+            // A pooled visual whose recolour removed itself (set up again for a new cast) can be recoloured again.
+            if (!tinted.Add(root.GetInstanceID()) && root.GetComponent<RecolorSprites>() != null) return;
+            TintTree(root, v, elementColor, rampKey, atk);
         }
 
         internal static void TintTree(GameObject root) { TintTree(root, Variant); }
 
+        // A colour remapped onto one element's ramp by brightness (Prism attacks take their cycle element's colour).
+        static Color ElementRamp(Color c, Color element)
+        {
+            float lum = 0.3f * c.r + 0.59f * c.g + 0.11f * c.b;
+            Color r = Color.Lerp(element * 0.45f, Color.Lerp(element, Color.white, 0.55f), Mathf.Clamp01(0.2f + lum * 1.1f));
+            r.a = c.a;
+            return r;
+        }
+
         // Everything visual under root, toward the variant's colours (not a boss's own body, not the player).
-        internal static void TintTree(GameObject root, StageVariant v)
+        internal static void TintTree(GameObject root, StageVariant v, Color? elementColor = null, string rampKey = null, Attack source = null)
         {
             VariantInfo vi = Variants.Info(v);
+            // v0.6.5: the recolour engine (gradient map per element): recoloured sprite frames, particles, trails,
+            // lines and lights on the element's ramp. Chaos / Radiant use their own ramp, Prism its cycle element's.
+            string key = rampKey ?? ElementRamps.ForVariant(v);
+            if (key != null && ElementRamps.Has(key)) { RecolorTree(root, key, source); return; }
+            Func<Color, Color> ramp = elementColor.HasValue ? (Func<Color, Color>)(c => ElementRamp(c, elementColor.Value)) : (c => Variants.Ramp(c, v));
             foreach (SpriteRenderer sr in root.GetComponentsInChildren<SpriteRenderer>(true))
             {
                 if (sr == null || sr.GetComponentInParent<Boss>() != null || origSprites.ContainsKey(sr)) continue;
                 origSprites[sr] = sr.color;
-                sr.color = vi.Rainbow ? Variants.Ramp(sr.color, v) : Multiply(sr.color, vi.AttackTint);
+                // Radiant (v0.6.2) and Prism remap onto their ramp (a strong infusion); Chaos multiplies toward dark purple.
+                sr.color = (elementColor.HasValue || vi.Rainbow || v == StageVariant.Radiant) ? ramp(sr.color) : Multiply(sr.color, vi.AttackTint);
             }
             foreach (ParticleSystem ps in root.GetComponentsInChildren<ParticleSystem>(true))
             {
@@ -324,9 +342,9 @@ namespace WolHybridBosses
                 {
                     ParticleSystem.MainModule main = ps.main;
                     origParticles[ps] = main.startColor;
-                    main.startColor = vi.Rainbow
+                    main.startColor = (vi.Rainbow && !elementColor.HasValue)
                         ? new ParticleSystem.MinMaxGradient(Color.HSVToRGB(UnityEngine.Random.value, 0.7f, 1f), Color.HSVToRGB(UnityEngine.Random.value, 0.7f, 1f))
-                        : new ParticleSystem.MinMaxGradient(Variants.Ramp(main.startColor.color, v));
+                        : new ParticleSystem.MinMaxGradient(ramp(main.startColor.color));
                 }
                 catch (Exception) { }
             }
@@ -334,19 +352,63 @@ namespace WolHybridBosses
             {
                 if (l == null || origLights.ContainsKey(l)) continue;
                 origLights[l] = l.color;
-                l.color = vi.LightTint;
+                l.color = elementColor ?? vi.LightTint;
             }
             foreach (TrailRenderer t in root.GetComponentsInChildren<TrailRenderer>(true))
             {
                 if (t == null || origTrails.ContainsKey(t)) continue;
                 origTrails[t] = new[] { t.startColor, t.endColor };
-                t.startColor = Variants.Ramp(t.startColor, v); t.endColor = Variants.Ramp(t.endColor, v);
+                t.startColor = ramp(t.startColor); t.endColor = ramp(t.endColor);
             }
             foreach (LineRenderer lr in root.GetComponentsInChildren<LineRenderer>(true))
             {
                 if (lr == null || origLines.ContainsKey(lr)) continue;
                 origLines[lr] = new[] { lr.startColor, lr.endColor };
-                lr.startColor = Variants.Ramp(lr.startColor, v); lr.endColor = Variants.Ramp(lr.endColor, v);
+                lr.startColor = ramp(lr.startColor); lr.endColor = ramp(lr.endColor);
+            }
+        }
+
+        // Ctrl+F10 preview: the player's own attack, recoloured (no player check, look only).
+        internal static void PreviewRecolor(Attack atk, string key)
+        {
+            if (atk == null || !ElementRamps.Has(key)) return;
+            GameObject root = VisualRoot(atk);
+            if (root == null) return;
+            tinted.Add(root.GetInstanceID());
+            RecolorTree(root, key, atk);
+        }
+
+        static void RecolorTree(GameObject root, string key, Attack source)
+        {
+            if (root.GetComponentInParent<Boss>() == null) RecolorSprites.Attach(root, key, source);
+            foreach (ParticleSystem ps in root.GetComponentsInChildren<ParticleSystem>(true))
+            {
+                if (ps == null || origParticles.ContainsKey(ps)) continue;
+                try
+                {
+                    ParticleSystem.MainModule main = ps.main;
+                    origParticles[ps] = main.startColor;
+                    main.startColor = RecolorEngine.Map(main.startColor, key);
+                }
+                catch (Exception) { }
+            }
+            foreach (Light l in root.GetComponentsInChildren<Light>(true))
+            {
+                if (l == null || origLights.ContainsKey(l)) continue;
+                origLights[l] = l.color;
+                l.color = ElementRamps.Mid(key);
+            }
+            foreach (TrailRenderer t in root.GetComponentsInChildren<TrailRenderer>(true))
+            {
+                if (t == null || origTrails.ContainsKey(t)) continue;
+                origTrails[t] = new[] { t.startColor, t.endColor };
+                t.startColor = ElementRamps.Map(key, t.startColor); t.endColor = ElementRamps.Map(key, t.endColor);
+            }
+            foreach (LineRenderer lr in root.GetComponentsInChildren<LineRenderer>(true))
+            {
+                if (lr == null || origLines.ContainsKey(lr)) continue;
+                origLines[lr] = new[] { lr.startColor, lr.endColor };
+                lr.startColor = ElementRamps.Map(key, lr.startColor); lr.endColor = ElementRamps.Map(key, lr.endColor);
             }
         }
 
@@ -389,6 +451,7 @@ namespace WolHybridBosses
             foreach (KeyValuePair<TrailRenderer, Color[]> kv in origTrails) if (kv.Key != null) { kv.Key.startColor = kv.Value[0]; kv.Key.endColor = kv.Value[1]; }
             foreach (KeyValuePair<LineRenderer, Color[]> kv in origLines) if (kv.Key != null) { kv.Key.startColor = kv.Value[0]; kv.Key.endColor = kv.Value[1]; }
             origSprites.Clear(); origParticles.Clear(); origLights.Clear(); origTrails.Clear(); origLines.Clear();
+            RecolorSprites.RestoreAll();
             tinted.Clear(); baseline.Clear();
         }
 
@@ -573,8 +636,7 @@ namespace WolHybridBosses
             foreach (Attack a in FindObjectsOfType<Attack>())
             {
                 if (a == null || a.GetComponentInParent<Player>() != null) continue;
-                CouncilCorruption.TintAttack(a);
-                Variants.Convert(a, CouncilCorruption.Variant);
+                Variants.Apply(a, CouncilCorruption.Variant, false);
             }
             CouncilCorruption.TintNewEffects();
         }
@@ -591,7 +653,7 @@ namespace WolHybridBosses
             List<IntroEntry> entries = new List<IntroEntry>();
             foreach (ArcanaDef d in CouncilCorruption.Echoes)
             {
-                IntroEntry ie = new IntroEntry(IntroUI.SkillIcon(d.SkillID), IntroUI.SkillName(d.SkillID));
+                IntroEntry ie = new IntroEntry(IntroUI.SkillIcon(d.SkillID), Variants.Named(d, vi.Prefix));
                 if (ie.Icon == null) ie.Tint = vi.Color;
                 entries.Add(ie);
             }

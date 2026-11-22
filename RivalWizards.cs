@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Text;
@@ -248,19 +248,19 @@ namespace WolHybridBosses
             foreach (ArcanaDef d in mk.Arcana)
             {
                 bool isSig = mk.Signature != null && mk.Signature.SkillID == d.SkillID;
-                IntroEntry ie = new IntroEntry(IntroUI.SkillIcon(d.SkillID), IntroUI.SkillName(d.SkillID) + (isSig ? " (signature)" : ""));
+                IntroEntry ie = new IntroEntry(IntroUI.SkillIcon(d.SkillID), Variants.Named(d, mk.Prefix) + (isSig ? " (signature)" : ""));
                 if (ie.Icon == null) ie.Tint = el;
                 list.Add(ie);
             }
             if (mk.Basic != null)
             {
-                IntroEntry be = new IntroEntry(IntroUI.SkillIcon(mk.Basic.SkillID), IntroUI.SkillName(mk.Basic.SkillID) + " (basic)");
+                IntroEntry be = new IntroEntry(IntroUI.SkillIcon(mk.Basic.SkillID), Variants.Named(mk.Basic, mk.Prefix) + " (basic)");
                 if (be.Icon == null) be.Tint = el;
                 list.Add(be);
             }
             if (mk.Dash != null)
             {
-                IntroEntry de = new IntroEntry(IntroUI.SkillIcon(mk.Dash.SkillID), IntroUI.SkillName(mk.Dash.SkillID) + " (dash)");
+                IntroEntry de = new IntroEntry(IntroUI.SkillIcon(mk.Dash.SkillID), Variants.Named(mk.Dash, mk.Prefix) + " (dash)");
                 if (de.Icon == null) de.Tint = el;
                 list.Add(de);
             }

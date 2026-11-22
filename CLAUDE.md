@@ -71,6 +71,48 @@ Cloning the player GameObject and driving it from script failed:
 - v0.0.7 tested: summon swap works (logged EarthKnight, FlameLancer etc.). SuperCoffin goes **pink** on palettes 4–8, so its sheet has no elemental rows: keep palette 3 and tint or outline it (MiniBoss uses `_OutlineColor`/`_OutlineColor2`). The user wants the coffin (and rivals) to cast **player arcana** instead.
 - Arcana research: `Contestant : Enemy` (PvP wizard) reimplements Tornado/SwordThrow/Fireball as its own states (ctor typed to Contestant). Its FireballState instantiates the prefab and calls `Attack.SetAttackInfo("Player", "ShootFireball", level, isUltimate)`, the same call player arcana make (e.g. `UseFireBeam.CreateFireBeam`: `FireBeam.Prefab` + `ChaosInst` + `SetAttackInfo`). There are 100 `Player+Use*` arcana. Plan: our own data-driven `ArcanaState : Enemy.SkillState` (skillID, prefab, delivery type). See ROADMAP "Enemy Arcana".
 
+## v0.6.5: recolour engine (gradient maps) for variant attacks; Ctrl+F10 infusion preview (built, not yet run in game)
+- **RecolorEngine.cs:**
+  - `ElementRamps`: ramps for Fire / Water / Ice / Earth / Thunder / Wind / Chaos / Radiant. `Map(key, colour)` maps a colour by brightness (70% luminance, 30% max channel, slight contrast stretch).
+  - `RecolorEngine.Twin(sprite, key)`: a recoloured copy of the sprite's textureRect, built from the atlas read once by GPU blit + ReadPixels (last 2 atlases cached). Twins are cached per (sprite, key). Tightly packed sprites throw on textureRect, so they're marked failed and tinted instead.
+  - `RecolorEngine.PaletteSprite`: renderers whose material has `_Palette` are never recoloured (their pixels are palette indices).
+  - `RecolorSprites` (MonoBehaviour on the attack's visual root): in LateUpdate it swaps each frame the Animator sets for its twin. Static sprites are restored on removal. It removes itself when `Source.atkInfo` changes (pooled re-setup), and `RestoreAll` comes from `CouncilCorruption.RestoreTints`.
+- **CouncilCorruption.TintTree:** when a ramp key exists (Chaos, Radiant, or a Prism cycle element via `ElementRamps.ForElement`), `RecolorTree` uses the engine for sprites, particles (`RecolorEngine.Map(MinMaxGradient)`: all modes), lights (ramp mid), trails and lines. A pooled root whose RecolorSprites removed itself can be tinted again.
+- **Variants.Apply** passes the Prism element's key and adds `Accent`: Arcanos effects at the attack (ChispasCaos / Destellos / per-element), at most once per caster every 0.35s.
+- **InfusionPreview (Ctrl+F10)** cycles a ramp onto the player's own attacks (VariantAttackPatch → `CouncilCorruption.PreviewRecolor`). It's look only; off restores.
+
+## v0.6.4: variant stages always get tinted; arcana visuals dump (built, not yet run in game)
+- **Bug:** a Prism Ice stage was planned (`CHAOS stage planned: Prism ... IceTileSet`) but never tinted. ChaosStageRunner gave up 6.5s after the scene change, and big stages finish generating (which is when PlanCurrentStage runs) later than that.
+- **Fix:** the runner now applies whenever `Planned && Active == null` (from 1.5s after the scene change), with no time limit.
+- **Ctrl+F9 → `Debug.DumpArcanaVisuals`** logs each castable arcana prefab's sprites and shaders, animators, particles (start colour mode/colour, texture), trails/lines and lights as `VISUALS ...`, plus a per-element summary. It's for the infusion research (ROADMAP 6a).
+- **Research:** vanilla arcana visuals are Animator-driven, hand-coloured sprite sheets with particle accents on a few. The `_Palette` shader is only used for cards, enemies, outfits and some enemy projectiles (EnemyFireball.SetColor, FlameLance/TremorLance.SetPaletteIndex). The card frame/back palette row is rarity (Card.InitCardBack); the element look is the icon art.
+
+## v0.6.3: Arcanos Radiant/Prism arcana rebuilt for enemies; Prism cycle; Arcanos ailments respected (built, not yet run in game)
+- **ArcanosArts.cs** has 7 ports, registered through ArcanaCatalog (they replace any prefab entry). Each has `ArcanaDef.Port`, and ArcanaCaster.Cast dispatches ports before the prefab lookup.
+  - Radiant: LanzaDeLuz, FogonazoDeLuz, HaloSagrado, LatigoDeLuz, AlasDeLuz (feathers).
+  - Prism: PrismaElemental, Triada.
+- Each port uses:
+  - Arcanos sprites via `ArcanosBridge.Sprite` (= `Recursos.Sprite(name, 16)`; names without .png);
+  - its effects via `ArcanosBridge.Fx` (`Efectos.<name>(Vector2, ...)`, args converted by reflection) and `Sound` (`Efectos.Sonido`);
+  - the game's hitbox: `Globals.ChaosInst<Attack>(Attack.CirclePrefab)`, radius, `MakeEnemyAttack` (Arcanos stat data, re-owned), then `EnableForOneFrame(true, false)`. This is the same recipe as Arcanos' `ManiquiAtacante.Tajo`. Without stat data it falls back to enemy "NeutralKnightAttack".
+- **Port elements are always base ones.** Radiant ports deal Neutral damage plus Flashes; Prism ports use the cycle element and its status.
+- **Prism** (Arcanos `Prismatico.Ciclo`): `Prism.Next(caster)` cycles Fire → Water → Earth → Air → Lightning. Every Prism attack is converted once per AttackInfo (`prismDone`): element plus burn / freeze / poison / slow / shock at 25%. It's tinted with the element's colour (`TintTree(root, v, elementColor)`). `Variants.Apply` is the single convert-plus-tint entry, used by the patch, MakeEnemyAttack and the Council runner.
+- **RadiantFlash** is the controlled player-side version of Arcanos' Flash → Blind. A Radiant port hit that really lowers the player's health adds Flashes, which are forgotten after 6s. At 3, the player is Dazzled for 2.5s: an OnGUI glare that fades. Controls are untouched.
+- **Arcanos ailments:** `ArcanosBridge.Incapacitated(e)` = `Ceguera.Ciego || ParcheEstadosEnemigos.SinControl`.
+  - ArcanaState.IsReady, the SignatureMeter forced cast and RivalUnstuck all skip while it's true.
+  - GiantWatchdog treats it, and any state named "WolArcanos*" (its stun "WolArcanosAturdidoPorPulso"), as free.
+  - Arcanos' elemental ailments (EstadoPropio: Calor, Empapado, Agrietado, Remolino, Magnetizado, Maldicion) need nothing from us: they apply to our enemies through Arcanos itself.
+- **Rivals can't use player versions:** Contestant is an Enemy, while Arcanos' states are Player.SkillState (they need a Player: input, inventory, HUD).
+
+## v0.6.2: Radiant look rebalanced; infused arcana (built, not yet run in game)
+- **Finding:** the catalog had 0 castable Radiant and 1 castable Prism arcana. Almost all of Arcanos' arcana derive from its own `ArcanoDeEstado` / `EstadoDeLanza` state classes, which have no prefab EnemyArcana can fire. Only TriadaEstado (Prism) is a ProjectileAttackState.
+  - Arcanos unlock rules (Desbloqueo.Vigilar text): Fulgor = beating bosses without taking damage; Prisma = the board's challenges.
+  - ArcanaCatalog.LogVariantArcana logs each Radiant/Prism id with the reason it's castable or not.
+- **Radiant tiles** keep more of the stage's colours (HueSpread 0.35, Saturation 0.55, ValueLift 0.18).
+- **Radiant attacks:** TintTree remaps their sprites onto a brighter ramp (gold core 0.95/0.7/0.22 to pearl white, never dim) instead of a faint multiply.
+- **EnemyArcana.MakeEnemyAttack** applies Convert/TintAttack after ReOwn. At SetAttackInfo time the arcana still reads as the player's, so VariantAttackPatch skipped it.
+- **Variants.Named:** intros (rivals, Council echoes, giants) show infused base arcana as "Radiant X" / "Prismatic X".
+
 ## v0.6.1: never write Arcanos' element values onto enemies (built, not yet run in game)
 - **Bug:** a Prism giant Coffin took no damage. Arcanos' ElementType values are huge numbers (log: Radiant 2115412493, Prism -1896111776), and setting `e.element` to one broke the game's damage lookup.
 - **Fix:** ChaosGiants.Apply changes the body element only for Chaos.

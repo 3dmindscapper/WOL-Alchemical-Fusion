@@ -80,6 +80,7 @@ namespace WolHybridBosses
 
         static void Cast(Enemy caster, ArcanaDef def, Vector2 dir, Vector2? originOverride, bool empowered, bool log)
         {
+            if (def.Port != ArcanosPort.None) { ArcanosArts.Cast(caster, def, dir, empowered, log); return; } // Arcanos arcana rebuilt for enemies
             GameObject prefab = EnemyArcana.GetPrefab(def);
             if (prefab == null) return;
 
@@ -263,6 +264,7 @@ namespace WolHybridBosses
         public override bool IsReady()
         {
             if (EnemyArcana.Broken.Contains(def.SkillID)) return false;
+            if (ArcanosBridge.Incapacitated(parent)) return false; // blinded / stunned by an Arcanos ailment: no casting either
             // A ready signature goes out at the next opening, whatever the shared cast gap says.
             if (Signature.IsReady(parent) && Signature.IsSignatureArcana(parent, def)) return base.IsReady();
             return def.Basic ? base.IsReady() : base.IsReady() && Rivals.CanCast(parent);

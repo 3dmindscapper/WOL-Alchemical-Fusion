@@ -57,7 +57,7 @@ namespace WolHybridBosses
                 if (!key.StartsWith("Arcana")) continue;
                 ArcanaDef a = ArcanaCatalog.Get(key.Substring(6));
                 if (a == null) continue;
-                IntroEntry ie = new IntroEntry(IntroUI.SkillIcon(a.SkillID), IntroUI.SkillName(a.SkillID));
+                IntroEntry ie = new IntroEntry(IntroUI.SkillIcon(a.SkillID), Variants.Named(a, prefix));
                 if (ie.Icon == null) ie.Tint = el;
                 list.Add(ie);
             }

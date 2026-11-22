@@ -135,9 +135,54 @@ namespace WolHybridBosses
                 byId[d.SkillID] = d;
                 int n; perElement.TryGetValue(element, out n); perElement[element] = n + 1;
             }
+            // v0.6.3: Arcanos' Radiant / Prism arcana rebuilt for enemies (ArcanosArts). They replace any prefab-based
+            // entry of the same arcana.
+            try
+            {
+                foreach (ArcanaDef port in ArcanosArts.Defs())
+                {
+                    ArcanaDef old;
+                    if (byId.TryGetValue(port.SkillID, out old)) { all.Remove(old); int o; perElement.TryGetValue(old.Element, out o); perElement[old.Element] = o - 1; }
+                    all.Add(port);
+                    byId[port.SkillID] = port;
+                    int n; perElement.TryGetValue(port.Element, out n); perElement[port.Element] = n + 1;
+                }
+            }
+            catch (Exception ex) { Plugin.Log.LogWarning("ARCANA Arcanos ports failed: " + ex.Message); }
             List<string> parts = new List<string>();
             foreach (KeyValuePair<string, int> kv in perElement) parts.Add(kv.Key + " " + kv.Value);
             Plugin.Log.LogInfo("ARCANA catalog: " + all.Count + " castable arcana (" + string.Join(", ", parts.ToArray()) + "), " + Modded.Count + " from other mods");
+            try { LogVariantArcana(player); } catch (Exception ex) { Plugin.Log.LogWarning("ARCANA variant report failed: " + ex.Message); }
+        }
+
+        // v0.6.2: which of Arcanos' Radiant / Prism arcana enemies can cast, and why the others can't. Most are built
+        // on Arcanos' own state classes (no prefab our enemy caster can fire), so variant casters fill in with infused
+        // base arcana.
+        static void LogVariantArcana(Entity player)
+        {
+            if (!ArcanosBridge.Present) return;
+            foreach (StageVariant v in new[] { StageVariant.Radiant, StageVariant.Prism })
+            {
+                List<string> ids = ArcanosBridge.IdsOf(v);
+                List<string> rows = new List<string>();
+                int castable = 0;
+                foreach (string id in ids)
+                {
+                    string why;
+                    if (byId.ContainsKey(id)) { why = "castable"; castable++; }
+                    else
+                    {
+                        GenArcana g = Modded.Find(m => m.SkillID == id);
+                        if (g == null) why = "not found as a skill state";
+                        else if (g.Family == ArcanaFamily.Excluded) why = "excluded kind";
+                        else if (g.PrefabClass == null && g.PrefabPath == null) why = "no prefab (custom Arcanos state)";
+                        else if (ElementOf(player, id) == null) why = "no player stat data";
+                        else why = "filtered";
+                    }
+                    rows.Add(id + " (" + why + ")");
+                }
+                Plugin.Log.LogInfo("ARCANA " + v + ": " + ids.Count + " in Arcanos, " + castable + " castable by enemies: " + string.Join(", ", rows.ToArray()));
+            }
         }
 
         static ArcanaDef FromRow(GenArcana g, string element)

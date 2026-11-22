@@ -32,6 +32,7 @@ namespace WolHybridBosses
         public string EnemyStatID;   // summons: enemy-side stats to use ("FlameSummonerMinion")
         public bool Castable = true;
         public bool Basic;           // a rival's basic attack: replaces its built-in "Attack", no spell gap, not AI-picked
+        public ArcanosPort Port;     // v0.6.3: an Arcanos arcana rebuilt for enemies (ArcanosArts), not a prefab cast
 
         public ArcanaDef(string element, string skillID, string prefabClass, Delivery delivery,
             float windup = 0.6f, float cooldown = 7f, float minRange = 0f, float maxRange = 9f, int priority = 5)
@@ -169,6 +170,14 @@ namespace WolHybridBosses
             AttackInfo info = atk.SetAttackInfo("Player", d.SkillID, 1, ArcanaCaster.SignatureCast); // real arcana damage, element, status effects; signature stats only for a signature cast
             if (info == null) return;
             ReOwn(info, owner);
+            // v0.6.2: the variant applies here, once the arcana belongs to its caster (at SetAttackInfo time it still
+            // reads as the player's, so VariantAttackPatch skipped it and Radiant rivals' arcana kept their own look).
+            try
+            {
+                StageVariant v = Variants.AttackVariant(atk);
+                if (v != StageVariant.None) Variants.Apply(atk, v);
+            }
+            catch (Exception) { }
             if (empowered) info.damage = Mathf.RoundToInt(info.damage * 1.3f);
         }
 

@@ -42,11 +42,13 @@ namespace WolHybridBosses
         static readonly VariantInfo radiant = new VariantInfo
         {
             Variant = StageVariant.Radiant, Prefix = "Radiant", StageTitle = "Radiant", CouncilTitle = "Radiant", ArcanosElement = "Fulgor",
-            Color = new Color(1f, 0.88f, 0.5f), RampDark = new Color(0.72f, 0.56f, 0.28f), RampBright = new Color(1f, 0.98f, 0.9f),
-            BodyTint = new Color(1f, 0.95f, 0.78f), AttackTint = new Color(1f, 0.93f, 0.7f), LightTint = new Color(1f, 0.9f, 0.6f),
+            // v0.6.2: attacks infused much more strongly (bright gold core to pearl white, see TintTree); the stage
+            // itself more gently.
+            Color = new Color(1f, 0.88f, 0.5f), RampDark = new Color(0.95f, 0.7f, 0.22f), RampBright = new Color(1f, 1f, 0.95f),
+            BodyTint = new Color(1f, 0.95f, 0.78f), AttackTint = new Color(1f, 0.93f, 0.7f), LightTint = new Color(1f, 0.92f, 0.65f),
             BoardSquare = new Color(0.62f, 0.52f, 0.28f), BoardIcon = new Color(1f, 0.96f, 0.82f),
-            // Pearl and gold: pale, bright, warm.
-            Tiles = new ChaosVariant("Radiant", new Color(1f, 0.96f, 0.85f), new Color(1f, 0.9f, 0.6f)) { TargetHue = 0.12f, HueSpread = 0.06f, Saturation = 0.3f, SatFloor = 0.06f, Value = 0.55f, ValueLift = 0.42f },
+            // A warm golden wash that keeps much more of the stage's own colours.
+            Tiles = new ChaosVariant("Radiant", new Color(1f, 0.97f, 0.9f), new Color(1f, 0.92f, 0.7f)) { TargetHue = 0.12f, HueSpread = 0.35f, Saturation = 0.55f, SatFloor = 0.04f, Value = 0.8f, ValueLift = 0.18f },
         };
         static readonly VariantInfo prism = new VariantInfo
         {
@@ -106,6 +108,7 @@ namespace WolHybridBosses
                 Color.RGBToHSV(c, out h, out s, out val);
                 r = Color.HSVToRGB(Mathf.Repeat(h * 0.3f + lum * 1.7f + 0.05f, 1f), 0.7f, Mathf.Clamp01(0.55f + lum * 0.5f));
             }
+            else if (v == StageVariant.Radiant) r = Color.Lerp(vi.RampDark, vi.RampBright, Mathf.Clamp01(0.25f + lum * 1.2f)); // never dim
             else r = Color.Lerp(vi.RampDark, vi.RampBright, Mathf.Clamp01(lum * 1.1f));
             r.a = c.a;
             return r;
@@ -129,6 +132,16 @@ namespace WolHybridBosses
             return pool;
         }
 
+        // How an arcana is shown in intros for a Radiant / Prism caster: base arcana infused with the element read
+        // "Radiant Tele Strike" / "Prismatic Tele Strike" (Arcanos' own arcana of the element keep their name).
+        internal static string Named(ArcanaDef d, string prefix)
+        {
+            string name = IntroUI.SkillName(d.SkillID);
+            StageVariant v = FromPrefix(prefix);
+            if ((v != StageVariant.Radiant && v != StageVariant.Prism) || d.Element == prefix) return name;
+            return Info(v).StageTitle + " " + name;
+        }
+
         internal static List<ArcanaDef> DashPool(StageVariant v)
         {
             List<ArcanaDef> pool = ArcanaCatalog.DashPool(Info(v).Prefix);
@@ -147,10 +160,74 @@ namespace WolHybridBosses
             AttackInfo info = atk.atkInfo;
             if (info == null || info.entity is Player || atk.GetComponentInParent<Player>() != null) return;
             if (v == StageVariant.Chaos) { ChaosifyInfo(info); return; }
-            // v0.6.1: Radiant / Prism enemy attacks keep their own damage element and only take the variant's look.
-            // Arcanos' element values are huge numbers the game's damage code doesn't expect (a Prism giant became
-            // unhittable once its element was set to one), so they're never written onto enemy attacks or bodies.
-            // Arcanos' own Radiant / Prism arcana keep the element Arcanos gives them.
+            // v0.6.1: Arcanos' element values are huge numbers the game's damage code doesn't expect (a Prism giant
+            // became unhittable once its element was set to one), so they're never written onto enemy attacks/bodies.
+            // Radiant enemy attacks keep their own damage element and take the Radiant look.
+            // v0.6.3: Prism attacks do what Arcanos' Prism does: each is the next of the five base elements (per
+            // caster), with that element's status. Converted once per attack info (pooled attacks are re-set up).
+            if (v == StageVariant.Prism)
+            {
+                PrismElement el;
+                if (!prismDone.TryGetValue(info, out el))
+                {
+                    el = Prism.Next(info.entity != null ? (Component)info.entity : atk);
+                    prismDone[info] = el;
+                    if (prismDone.Count > 4096) prismDone.Clear();
+                }
+                info.elementType = el.Type;
+                info.burnChance = info.slowChance = info.poisonChance = info.shockChance = info.freezeChance = info.chaosChance = 0f;
+                el.ApplyStatus(info);
+            }
+        }
+
+        static readonly Dictionary<AttackInfo, PrismElement> prismDone = new Dictionary<AttackInfo, PrismElement>();
+
+        // The colour a Prism attack takes: its cycle element's (null for other variants / not yet converted).
+        internal static Color? PrismColor(Attack atk)
+        {
+            PrismElement el;
+            return atk != null && atk.atkInfo != null && prismDone.TryGetValue(atk.atkInfo, out el) ? (Color?)el.Color : null;
+        }
+
+        // Damage type + look, the one entry point for every variant attack.
+        internal static void Apply(Attack atk, StageVariant v, bool stage = true)
+        {
+            if (atk == null || v == StageVariant.None) return;
+            Convert(atk, v);
+            PrismElement el = null;
+            if (v == StageVariant.Prism && atk.atkInfo != null) prismDone.TryGetValue(atk.atkInfo, out el);
+            string key = el != null ? ElementRamps.ForElement(el.Type) : ElementRamps.ForVariant(v);
+            CouncilCorruption.TintAttack(atk, stage, v, PrismColor(atk), key);
+            Accent(atk, v, el);
+        }
+
+        // v0.6.5: a few element particles where the attack starts, to sell the element (Arcanos' effects when
+        // installed). At most one per caster every 0.35s, so busy fights don't fill with sparks.
+        static readonly Dictionary<int, float> lastAccent = new Dictionary<int, float>();
+
+        static void Accent(Attack atk, StageVariant v, PrismElement el)
+        {
+            if (!ArcanosBridge.Present || atk == null || atk.atkInfo == null) return;
+            Entity owner = atk.atkInfo.entity;
+            int id = owner != null ? owner.GetInstanceID() : 0;
+            float last;
+            if (lastAccent.TryGetValue(id, out last) && Time.time - last < 0.35f) return;
+            lastAccent[id] = Time.time;
+            if (lastAccent.Count > 256) lastAccent.Clear();
+            Vector2 p = atk.transform.position;
+            if (v == StageVariant.Chaos) ArcanosBridge.Fx("ChispasCaos", p, 4);
+            else if (v == StageVariant.Radiant) ArcanosBridge.Fx("Destellos", p, 3);
+            else if (el != null)
+            {
+                switch (el.Type)
+                {
+                    case ElementType.Fire: ArcanosBridge.Fx("Chispas", p, Vector2.up, 4); break;
+                    case ElementType.Water: ArcanosBridge.Fx("Salpicon", p, 4); break;
+                    case ElementType.Earth: ArcanosBridge.Fx("Polvo", p, 4, 0.8f); break;
+                    case ElementType.Air: ArcanosBridge.Fx("Rafaga", p, 3); break;
+                    default: ArcanosBridge.Fx("ImpactoRayo", p, 3); break;
+                }
+            }
         }
 
         internal static void ChaosifyInfo(AttackInfo info)
@@ -263,6 +340,26 @@ namespace WolHybridBosses
         }
     }
 
+    // Ctrl+F10 test key: the recolour engine on the player's own arcana, to judge each element's look (look only:
+    // no damage or element change; infusion proper comes later).
+    internal static class InfusionPreview
+    {
+        static readonly string[] Order = { "Fire", "Water", "Ice", "Earth", "Thunder", "Wind", "Chaos", "Radiant" };
+        static int index = -1;
+        internal static string Key { get { return index >= 0 ? Order[index] : null; } }
+
+        internal static void Cycle()
+        {
+            index++;
+            if (index >= Order.Length) index = -1;
+            if (index < 0) CouncilCorruption.RestoreTints();
+            string label = Key == null ? "off" : Key;
+            Plugin.Log.LogInfo("RECOLOR infusion preview: " + label);
+            IntroUI.Show("Infusion preview: " + label, Key == null ? "Your arcana look normal again" : "Your arcana take the " + label + " look (no damage change)",
+                Key == null ? Color.white : ElementRamps.Mid(Key), null, 2f);
+        }
+    }
+
     // A Radiant / Prism rival's (or arena Archon's) chest: the arcana it drops is one of that element the player has
     // already unlocked, never a new unlock (those elements have their own unlock requirements in Arcanos). With none
     // unlocked, the chest keeps its normal drop but can't hand out a locked arcana either.
@@ -334,11 +431,16 @@ namespace WolHybridBosses
         {
             try
             {
-                if (__instance == null || __instance.GetComponentInParent<Player>() != null) return;
+                if (__instance == null) return;
+                if (InfusionPreview.Key != null && (__instance.GetComponentInParent<Player>() != null || (__instance.atkInfo != null && __instance.atkInfo.entity is Player)))
+                {
+                    CouncilCorruption.PreviewRecolor(__instance, InfusionPreview.Key);
+                    return;
+                }
+                if (__instance.GetComponentInParent<Player>() != null) return;
                 StageVariant v = Variants.AttackVariant(__instance);
                 if (v == StageVariant.None) return;
-                Variants.Convert(__instance, v);
-                CouncilCorruption.TintAttack(__instance, true, v);
+                Variants.Apply(__instance, v);
             }
             catch (Exception) { }
         }
@@ -442,6 +544,92 @@ namespace WolHybridBosses
             Init();
             if (!present || elemento == null) return false;
             try { elemento.Invoke(null, new object[] { atk, et }); return true; } catch (Exception) { return false; }
+        }
+
+        // ---------- v0.6.3: Arcanos' own art, effects and ailment checks ----------
+
+        static Type recursos, efectos, ceguera, parcheEstados;
+        static MethodInfo spriteM, ciegoM, sinControlM;
+        static readonly Dictionary<string, MethodInfo> fx = new Dictionary<string, MethodInfo>();
+        static readonly Dictionary<string, Sprite> sprites = new Dictionary<string, Sprite>();
+
+        static void InitArt()
+        {
+            Init();
+            if (!present || recursos != null) return;
+            recursos = AccessTools.TypeByName("WolArcanos.Recursos");
+            efectos = AccessTools.TypeByName("WolArcanos.Efectos");
+            ceguera = AccessTools.TypeByName("WolArcanos.Ceguera");
+            parcheEstados = AccessTools.TypeByName("WolArcanos.ParcheEstadosEnemigos");
+            if (recursos != null) spriteM = AccessTools.Method(recursos, "Sprite", new[] { typeof(string), typeof(float) });
+            if (ceguera != null) ciegoM = AccessTools.Method(ceguera, "Ciego", new[] { typeof(Entity) });
+            if (parcheEstados != null) sinControlM = AccessTools.Method(parcheEstados, "SinControl", new[] { typeof(Enemy) });
+        }
+
+        // One of Arcanos' embedded sprites (it loads them at 16 pixels per unit).
+        internal static Sprite Sprite(string name)
+        {
+            InitArt();
+            if (spriteM == null || string.IsNullOrEmpty(name)) return null;
+            Sprite s;
+            if (sprites.TryGetValue(name, out s)) return s;
+            try { s = spriteM.Invoke(null, new object[] { name, 16f }) as Sprite; } catch (Exception) { s = null; }
+            sprites[name] = s;
+            if (s == null) Plugin.Log.LogWarning("ARCANOS sprite not found: " + name);
+            return s;
+        }
+
+        // One of Arcanos' effects (Efectos.<name>(position, ...)); the args are converted to its parameter types.
+        internal static void Fx(string name, Vector2 at, params object[] rest)
+        {
+            InitArt();
+            if (efectos == null) return;
+            string key = name + "/" + (rest.Length + 1);
+            MethodInfo m;
+            if (!fx.TryGetValue(key, out m))
+            {
+                m = null;
+                foreach (MethodInfo cand in efectos.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static))
+                    if (cand.Name == name && cand.GetParameters().Length == rest.Length + 1) { m = cand; break; }
+                fx[key] = m;
+            }
+            if (m == null) return;
+            try
+            {
+                ParameterInfo[] ps = m.GetParameters();
+                object[] args = new object[ps.Length];
+                args[0] = at;
+                for (int i = 1; i < ps.Length; i++) args[i] = System.Convert.ChangeType(rest[i - 1], ps[i].ParameterType);
+                m.Invoke(null, args);
+            }
+            catch (Exception) { }
+        }
+
+        // A game sound through Arcanos' own player (Efectos.Sonido(id, position, pitch, volume)).
+        internal static void Sound(string id, Vector2 at)
+        {
+            InitArt();
+            if (efectos == null) return;
+            MethodInfo m;
+            if (!fx.TryGetValue("Sonido", out m)) { m = AccessTools.Method(efectos, "Sonido", new[] { typeof(string), typeof(Vector2), typeof(float), typeof(float) }); fx["Sonido"] = m; }
+            if (m == null) return;
+            try { m.Invoke(null, new object[] { id, at, 1f, 1f }); } catch (Exception) { }
+        }
+
+        // Blinded or out of control by one of Arcanos' ailments (Ceguera, its pulse stun and the like): such an enemy
+        // shouldn't cast, and the giant watchdog shouldn't "unstick" it.
+        internal static bool Incapacitated(Enemy e)
+        {
+            if (e == null) return false;
+            InitArt();
+            if (!present) return false;
+            try
+            {
+                if (ciegoM != null && (bool)ciegoM.Invoke(null, new object[] { e })) return true;
+                if (sinControlM != null && (bool)sinControlM.Invoke(null, new object[] { e })) return true;
+            }
+            catch (Exception) { }
+            return false;
         }
 
         internal static Sprite Icon(StageVariant v)

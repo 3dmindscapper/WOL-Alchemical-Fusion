@@ -32,7 +32,10 @@ namespace WolHybridBosses
             if (owner.health == null || owner.health.CurrentHealthValue <= 0) return;
             string now = owner.fsm.currentStateName ?? "";
             if (now != state) { state = now; since = Time.time; return; }
-            if (Free.Contains(now) || now.Contains("Hurt") || now.Contains("Frozen") || IsHurtState(now)) { since = Time.time; return; }
+            // v0.6.3: Arcanos' own states (its pulse stun "WolArcanosAturdidoPorPulso" etc.) and its blind / no-control
+            // ailments are a player's combo window too: never break them.
+            if (Free.Contains(now) || now.Contains("Hurt") || now.Contains("Frozen") || now.StartsWith("WolArcanos") || IsHurtState(now)
+                || ArcanosBridge.Incapacitated(owner)) { since = Time.time; return; }
             if (Time.time - since < MaxSeconds) return;
             since = Time.time;
             try
