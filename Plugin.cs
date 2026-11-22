@@ -165,6 +165,8 @@ namespace WolHybridBosses
 
             Log.LogInfo("WOL Alchemical Fusion " + Version + " starting; patches wait for the game's asset bundles.");
             MantleRobe.TryRegister(); // v1.1.0: the White Mantle robe via LegendAPI (data only: no patches, no assets)
+            PrimordialRobes.TryRegister(); // v1.1.1: a robe per Archon element (data only)
+            GrandmasterRobe.TryRegister(); // v1.1.1: the league's top rank
             StartCoroutine(PatchWhenGameReady());
         }
 

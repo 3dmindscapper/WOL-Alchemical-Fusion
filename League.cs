@@ -27,6 +27,7 @@ namespace WolHybridBosses
 
         static readonly string[] RankNames = { "Novice", "Adept", "Duelist", "Champion", "Grandmaster" };
         static readonly int[] RankPoints = { 0, 6, 16, 32, 55 };
+        internal static int TopRank { get { return RankNames.Length - 1; } } // v1.1.1: Grandmaster unlocks the Grandmaster's Robe
 
         internal static bool On { get { return Plugin.LeagueEnabled.Value; } }
 
@@ -67,7 +68,11 @@ namespace WolHybridBosses
             int bonus = RankIndex * 10 * ((int)Mathf.Min((int)tier, 2) + 1);
             if (bonus > 0) try { LootManager.DropGold(at, bonus); } catch (Exception) { }
             Plugin.Log.LogInfo("LEAGUE beat " + r.Name + " (" + r.Record + "), " + Points + " pts, " + RankName + (bonus > 0 ? ", +" + bonus + " gold" : ""));
-            if (RankIndex > before) IntroUI.Show("League rank: " + RankName, Points + " pts  ·  rivals get tougher, wins pay more", new Color(1f, 0.85f, 0.45f), null, 4f);
+            if (RankIndex > before)
+            {
+                if (RankIndex == TopRank) IntroUI.Show("League rank: " + RankName, "The Grandmaster's Robe is in your wardrobe  ·  +30% damage to wizards", new Color(1f, 0.85f, 0.45f), null, 6f); // v1.1.1
+                else IntroUI.Show("League rank: " + RankName, Points + " pts  ·  rivals get tougher, wins pay more", new Color(1f, 0.85f, 0.45f), null, 4f);
+            }
         }
 
         internal static void RecordLoss(LeagueRival r)

@@ -102,6 +102,7 @@ namespace WolHybridBosses
             if (host.GetComponent<ModifiersMenu>() == null) host.AddComponent<ModifiersMenu>(); // v0.9.16
             if (host.GetComponent<LeagueMenu>() == null) host.AddComponent<LeagueMenu>();       // v1.1.1
             if (host.GetComponent<WhiteMantle>() == null) host.AddComponent<WhiteMantle>();     // v1.1.0
+            if (host.GetComponent<PrimordialRobeWearer>() == null) host.AddComponent<PrimordialRobeWearer>(); // v1.1.1
         }
 
         void Update()

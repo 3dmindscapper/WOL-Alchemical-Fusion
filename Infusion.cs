@@ -237,7 +237,7 @@ namespace WolHybridBosses
 
         // ---------- the player's attacks ----------
 
-        static bool IsPlayersAttack(Attack atk)
+        internal static bool IsPlayersAttack(Attack atk)
         {
             if (atk == null || atk.atkInfo == null) return false;
             if (OwnerContext.Current != null || OwnerContext.OwnerOf(atk) != null) return false; // an enemy casting the same arcana

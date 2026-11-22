@@ -197,6 +197,7 @@ namespace WolHybridBosses
             yield return new WaitForSeconds(1.5f); // let the champion's death play
             FinalChampionBadge.Hide();
             if (FinalRun.Alchemist) try { WhiteAlchemist.Rewards(); } catch (Exception ex) { Plugin.Log.LogWarning("ALCHEMIST rewards failed: " + ex.Message); }
+            else try { PrimordialRobes.Unlock(prefix); } catch (Exception ex) { Plugin.Log.LogWarning("ROBES unlock failed: " + ex.Message); } // v1.1.1: its element's robe
             if (sura == null) yield break;
             Traverse ts = Traverse.Create(sura);
             ts.Field("chaosMode").SetValue(true);      // her death state takes the final ("DeadHoodless") branch
@@ -215,6 +216,7 @@ namespace WolHybridBosses
             if (sura != null && !tr.Field("bossDefeated").GetValue<bool>())
                 Plugin.Log.LogWarning("FINAL victory not declared yet (Sura state " + (sura.fsm != null ? sura.fsm.currentStateName : "?") + ")");
             else Plugin.Log.LogInfo("FINAL victory declared");
+            yield return StartCoroutine(ChampionEpilogue.Play(prefix, FinalRun.Alchemist, title)); // v1.1.1: its own ending
         }
     }
 

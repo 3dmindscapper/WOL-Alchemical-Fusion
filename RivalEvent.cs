@@ -667,6 +667,7 @@ namespace WolHybridBosses
             }
             if (lost) yield break;
             if (league != null) League.RecordWin(league, archon ? RivalTier.Final : tier, rival != null ? (Vector2)rival.transform.position : arenaArrival);
+            if (archon) PrimordialRobes.Unlock(rivalPrefix); // v1.1.1: an Archon's robe
             if (!Fled) Bounties.Report(BountyKind.Rival, null); // v0.9.16
             bool promise = grudge == null && Grudges.MaybeRecord(rivalPrefix, tier, echo, archon); // v0.9.17: maybe a rematch later this run
             yield return new WaitForSeconds(3f);

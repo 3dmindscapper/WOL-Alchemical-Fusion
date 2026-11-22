@@ -110,4 +110,59 @@ namespace WolHybridBosses
             Plugin.Log.LogInfo("FINAL " + speaker + " spoke " + lines.Count + " lines");
         }
     }
+
+    // v1.1.1: alternate endings. Sura keeps the game's own ending. When a champion falls instead, the room's victory
+    // runs as usual (Sura's victory dialogue is off on champion runs), and this epilogue plays in its place: the
+    // champion's last words while you stand in the recoloured castle, then an ending card of its own. The exit portal
+    // and the game's ending scene follow as normal.
+    internal static class ChampionEpilogue
+    {
+        static readonly Dictionary<string, string[]> Last = new Dictionary<string, string[]>
+        {
+            { "Flame", new[] { "So... the spark outshines the fire.", "I return to the first flame. Every ember you light will remember tonight.", "Burn brightly, wizard. Burn for both of us." } },
+            { "Frost", new[] { "The tide... recedes.", "I flow back into every sea and every frost. You will find me in the rain.", "Be like water, wizard. Do not let them hold you." } },
+            { "Earth", new[] { "Even mountains wear away.", "I sink back into the bedrock. Every stone you raise is mine, lent to you.", "Stand firm, wizard. The ground will hold you." } },
+            { "Wind", new[] { "Ha... caught at last.", "I scatter into every breeze. You will feel me on every road you run.", "Run free, wizard. Nothing should cage you." } },
+            { "Thunder", new[] { "The storm... falls quiet.", "I go back into the clouds. Listen for me in every thunderclap.", "Strike first, wizard. Strike true." } },
+            { "Chaos", new[] { "Order wins... for now.", "I unravel into everything at once. You will never be rid of me, and you would not want to be.", "Stay strange, wizard. It suits you." } },
+            { "Radiant", new[] { "The light... dims.", "I return to the dawn. Every morning, I will rise where you can see me.", "Shine, wizard. Someone is always watching for your light." } },
+            { "Prism", new[] { "Every colour... fading to one.", "I split back into the spectrum. Look for me where the light bends.", "Be many things, wizard. Be all of them well." } },
+        };
+
+        static readonly Dictionary<string, string> Endings = new Dictionary<string, string>
+        {
+            { "Flame", "The First Fire Returns" }, { "Frost", "The Tide Goes Out" }, { "Earth", "The Mountain Sleeps" }, { "Wind", "The Gale Is Free" },
+            { "Thunder", "The Storm Falls Silent" }, { "Chaos", "The Sovereign Unravels" }, { "Radiant", "The Last Dawn" }, { "Prism", "The Spectrum Scatters" },
+        };
+
+        static readonly string[] AlchemistLast =
+        {
+            "So this is what it feels like... to be transmuted.",
+            "Do not mourn me. I was never one thing. I was always every element, waiting to be mixed.",
+            "Now I settle into the one who fused me. Carry the essence, wizard. Every spark you cast is mine, and yours.",
+        };
+
+        internal static IEnumerator Play(string prefix, bool alchemist, string title)
+        {
+            // After the victory card and the reward cards.
+            float wait = 0f;
+            while (IntroUI.Busy && wait < 10f) { wait += 0.25f; yield return new WaitForSeconds(0.25f); }
+            yield return new WaitForSeconds(1f);
+            Color colour = alchemist ? WhiteAlchemist.White : ElementalGiants.ElementColor(prefix);
+            string[] last;
+            if (alchemist) last = AlchemistLast;
+            else if (!Last.TryGetValue(prefix ?? "", out last)) last = new[] { "The element returns to its source." };
+            foreach (string l in last)
+            {
+                float t = 3.2f + l.Length * 0.035f;
+                RivalSpeech.Say(title, l, colour, t - 0.4f);
+                yield return new WaitForSeconds(t);
+            }
+            string ending;
+            if (alchemist) ending = "The Primordial Return";
+            else if (!Endings.TryGetValue(prefix ?? "", out ending)) ending = "The Element Returns";
+            IntroUI.Show("Ending: " + ending, alchemist ? "The essence of every element lives on in you" : "Sura's throne stays empty  ·  " + title + " has returned to its element", colour, null, 6f);
+            Plugin.Log.LogInfo("FINAL epilogue: " + ending);
+        }
+    }
 }

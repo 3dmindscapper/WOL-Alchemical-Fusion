@@ -647,7 +647,15 @@ namespace WolHybridBosses
                                 if (!skip.Contains(img) && !squareImages.Contains(img) && img.transform != circle && !img.name.Contains("Dimmer") && !img.name.Contains("Circle"))
                                     portraits.Add(img);
                         Color markColor = infusedEl.HasValue ? Infusion.ColorOf(infusedEl.Value) : Variants.Info(cv).Color;
-                        foreach (Image img in portraits) marks.Add(img, Color.Lerp(img.color, markColor, 0.6f), null);
+                        // v1.1.1: the portrait recoloured onto the element's / variant's ramp (as the member's body is in the
+                        // fight), instead of a 60% colour blend that greyed it out; the blend stays as the fallback (Prism).
+                        string ramp = infusedEl.HasValue ? ElementRamps.ForElement(infusedEl.Value) : ElementRamps.ForVariant(cv);
+                        foreach (Image img in portraits)
+                        {
+                            Sprite twin = ramp != null && img.sprite != null ? RecolorEngine.Twin(img.sprite, ramp) : null;
+                            if (twin != null) marks.Add(img, img.color, twin);
+                            else marks.Add(img, Color.Lerp(img.color, markColor, 0.6f), null);
+                        }
                         plan[plan.Count - 1] += "(" + string.Join("/", portraits.ConvertAll(i => i.name).ToArray()) + ")";
                         councilMarked++;
                     }

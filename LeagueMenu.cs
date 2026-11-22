@@ -158,6 +158,8 @@ namespace WolHybridBosses
             int aw = Progress.GetInt("alchemist.wins");
             Row(box, ref y, WhiteAlchemist.Name, aw > 0 ? "defeated " + aw + (aw == 1 ? " time" : " times") : "not yet defeated", text);
             Row(box, ref y, "White Mantle", !WhiteMantle.Unlocked ? "locked" : WhiteMantle.Worn ? "worn" : "in the wardrobe", text);
+            Row(box, ref y, GrandmasterRobe.Name, GrandmasterRobe.Unlocked ? (GrandmasterRobe.Worn ? "worn" : "in the wardrobe") : "reach Grandmaster", text);
+            Row(box, ref y, "Primordial robes (beat Archons)", PrimordialRobes.UnlockedCount + " / " + PrimordialRobes.All.Length + (PrimordialRobes.Worn != null ? "  ·  wearing " + PrimordialRobes.Worn.Element : ""), text);
             if (Bounties.Active && Plugin.BountiesEnabled.Value)
                 Row(box, ref y, "Next run's bounty:  " + Bounties.Text, Bounties.Reward + "+ gold", text);
             if (Plugin.TestMode) Row(box, ref y, "Test hotkeys on: nothing is saved this session", null, new Color(1f, 0.55f, 0.45f));

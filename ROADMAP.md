@@ -106,27 +106,40 @@ Expansions are themed updates built on the systems already in place. Each sectio
 - **Testing:** Alt+1-6 keys (tournament, team, Alchemist final, Archon final, Archon portal, instakill); with the hotkeys on, nothing unlocks for good.
 - **Fixes:** the final victory after a champion (softlock), Tomi's book in your house, the bounty on the title screen, robe icons in loadouts, red boxes on elite ghosts and after-images.
 
-### Planned 📋
-- **Alternate endings (M).** Beating Sura keeps the standard ending. Beating an Archon or the Primordial Alchemist plays its own: a short epilogue scene in the champion's colours with its own lines (an Archon returning to its element; the Alchemist dissolving into you, which ties into the White Mantle), then the credits.
-- **Primordial robes (M).** Beating each Archon unlocks its element's primordial look as a wardrobe robe (LegendAPI), like the White Mantle: a collection goal across runs, with a small bonus to that element's arcana.
-- **League rewards (S).** Reaching each rank unlocks something: a named rival's robe, a relic in the shop, or a Hub title. The board at the statue shows what's next.
-- **Choose your ally (S).** In team matches, pick the ally from league rivals you've beaten (shown at the portal).
-- **Bounty choice (S).** Pick one of three bounties at the statue, with bigger rewards for harder ones.
+### Also in 1.1.1 🧪
+- **Primordial robes.** Beating an Archon (in the final room or behind a Hard portal) unlocks its element's robe in the wardrobe. Wearing one gives the Archon's look and aura, and that element's arcana (infused or dual halves count) get stronger:
 
-### Still ideas 💡
-- **Fused signatures (A).** Firing a dual arcana's signature triggers both elements together for one big effect. (Everyday element combos are already covered by WoL Arcanos' ailments.)
-- **Rival League extras (B):**
-  - a league side mode in the game's PvP arena
+  | Robe | Arcana | Damage | Cooldown | Status chance |
+  |---|---|---|---|---|
+  | Primordial Flame Robe | Fire | +20% | −20% | burn +15% |
+  | Primordial Tide Robe | Water and Ice | +15% | −20% | slow / freeze +20% |
+  | Primordial Stone Robe | Earth | +25% | −15% | poison +15% |
+  | Primordial Gale Robe | Wind | +15% | −25% | slow +10% |
+  | Primordial Storm Robe | Thunder | +25% | −15% | shock +15% |
+  | Primordial Chaos Robe | Chaos | +20% | −20% | chaos +15% |
+  | Primordial Dawn Robe | Radiant (Arcanos) | +20% | −20% | |
+  | Primordial Prism Robe | Prism (Arcanos) | +20% | −20% | |
+- **Grandmaster's Robe.** Reaching the league's top rank (Grandmaster) unlocks it: +30% damage to wizards (rivals, the Echo, Archons, the Primordial Alchemist, the Council and Sura), with a gold aura.
+- **Alternate endings.** Sura keeps the standard ending. After an Archon or the Primordial Alchemist, its last words play in the recoloured castle, followed by an ending card of its own ("The First Fire Returns", "The Primordial Return"...). Then the exit portal and the game's ending scene as usual.
+
+- **Hit flair.** Elemental ghouls, blobs and golems (and elemental Coffin Knights / Cyclops) throw a small burst of their element when they hit you.
+- **Council portraits** on the loading board are recoloured onto their element's or variant's ramp.
+
+### To be discussed 💬
+Future ideas, none scheduled. Sizes are rough (S / M / L).
+- **Fused signatures (M).** Firing a dual arcana's signature triggers both elements together for one big effect. (Everyday element combos are already covered by WoL Arcanos' ailments.)
+- **Rival League extras (M–L):**
+  - a standalone league / tournament mode in the game's PvP arena (today the league ranks up from every rival fight inside runs: duels, tournaments, team matches)
   - rival duos that fuse attacks
   - Echo upgrades (inherits your most-killed elite trait)
-- **Council Reforged (C):**
+- **Council Reforged (L):**
   - Council members summoning a special you beat this run
   - fused Council phases
   - Sura cycling the elements you infused most
-- **Bestiary extras (D):**
+- **Bestiary extras (M):**
   - elite pairs at high loops
   - Zoners, Golems and Turrets taking stage variants
-- **Records and presentation (E):**
+- **Records and presentation (M):**
   - fight records in the Hub
   - a run summary card
   - modifier presets
@@ -153,6 +166,9 @@ Expansions are themed updates built on the systems already in place. Each sectio
   - **League board:** the prompt shows at the central statue.
   - **Robe icons:** in the robe's colours (log `ROBE icon from ...`).
   - **Elite ghosts / after-images:** no box, and they still fade.
+  - **Primordial robes:** unlock after an Archon (log `ROBES unlocked`), appear in the wardrobe, recolour you with an aura; the element's arcana cool down faster and hit harder.
+  - **Grandmaster's Robe:** in the wardrobe at Grandmaster; extra damage on rivals, the Council and Sura only.
+  - **Epilogues:** the last words and the ending card after a champion (log `FINAL epilogue`), then the exit portal works.
 
 ---
 ## 4. What shipped in 1.0.0

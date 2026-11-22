@@ -12,6 +12,11 @@
 - **The whole final castle** takes the champion's colours from the moment you arrive, not just the arena.
 - **The arcana merchant** often sells arcana you've unlocked infused versions of as one of those versions (config Infusion.UnlockedStockChance, 50%).
 - **Fixed:** robe icons in rival loadouts show the robe in its colours instead of a solid block; the Haunting ghost, Hasted after-images and the Vengeful soul no longer draw as red boxes.
+- **Primordial robes:** beating an Archon unlocks its element's robe in the wardrobe: the Archon's look and aura, and that element's arcana hit harder, cool down faster and inflict their status more often (numbers differ per element).
+- **Grandmaster's Robe:** reach the league's top rank for a gold robe that deals +30% damage to wizards.
+- **Alternate endings:** after an Archon or the Primordial Alchemist, its last words and an ending of its own; Sura keeps the standard ending.
+- **Elemental ghouls, blobs and golems** (and elemental Coffin Knights / Cyclops) throw a burst of their element when they hit you: sparks, embers, droplets, shards, dust, gusts.
+- **Council portraits** on the loading board are recoloured in their element or variant (no more greyed-out tint).
 - **Polish:** NPCs, shop wares and pickups keep their colours in the recoloured castle; no bounty card on the title screen; in team matches the rivals fight your ally too; one menu at a time in the Hub.
 - **Loading board:** the final circle shows a white Sura for the Primordial Alchemist and an element-coloured one for an Archon.
 - **Archons** look like primordial versions of their element: the whole body in the element's colours, with a permanent aura.
