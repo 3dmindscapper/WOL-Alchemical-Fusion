@@ -30,15 +30,25 @@ namespace WolHybridBosses
         // True while a signature-version cast is being spawned (read by MakeEnemyAttack / InitPrefabFields).
         internal static bool SignatureCast;
 
+        // The caster's target: its own target info when it points at something, else the nearest living player.
+        // (Bosses track targets their own way; with no target info a cast used to land beside the caster.)
+        internal static Vector2? TargetOf(Enemy caster)
+        {
+            if (caster == null) return null;
+            if (caster.closestTargetInfo != null && caster.closestTargetInfo.hurtBoxTransform != null) return caster.closestTargetInfo.position;
+            return CouncilCorruption.NearestPlayer(caster.transform.position);
+        }
+
         static IEnumerator Chain(Enemy caster, ArcanaDef def, Vector2 aim, int shots, bool empowered, bool signature)
         {
             for (int i = 0; i < shots; i++)
             {
                 if (caster == null || caster.health == null || caster.health.CurrentHealthValue <= 0) yield break;
                 Vector2 dir = aim;
-                if (caster.closestTargetInfo != null)
+                Vector2? tgt = TargetOf(caster);
+                if (tgt.HasValue)
                 {
-                    Vector2 to = (Vector2)caster.closestTargetInfo.position - (Vector2)caster.transform.position;
+                    Vector2 to = tgt.Value - (Vector2)caster.transform.position;
                     if (to.sqrMagnitude > 0.01f) dir = to.normalized; // re-aim each shot
                 }
                 SafeCast(caster, def, dir, null, empowered, i == 0, signature);
@@ -74,7 +84,8 @@ namespace WolHybridBosses
             if (prefab == null) return;
 
             Vector2 origin = originOverride ?? (caster.hurtBoxTransform != null ? (Vector2)caster.hurtBoxTransform.position : (Vector2)caster.transform.position);
-            Vector2 target = caster.closestTargetInfo != null ? (Vector2)caster.closestTargetInfo.position : origin + dir * 4f;
+            Vector2? tgt = TargetOf(caster);
+            Vector2 target = tgt.HasValue ? tgt.Value : origin + dir * 4f;
             Quaternion rot = Globals.GetRotationQuaternion(dir);
 
             if (def.Delivery == Delivery.Summon) { Summons.Spawn(caster, def, prefab, origin, target, empowered, log); return; }

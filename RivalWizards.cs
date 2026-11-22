@@ -383,39 +383,7 @@ namespace WolHybridBosses
             return p ?? ElementalGiants.RandomPrefix();
         }
 
-        // ---------- level hook: turn the misc room into an arena ----------
-
-        internal static void TryReplaceMiscRoom()
-        {
-            if (!Plugin.RivalEvents.Value || !Level.miscRoomFound) return;
-            if (UnityEngine.Random.value >= Plugin.RivalEventChance.Value) return;
-
-            Component miscRoom = FindMiscRoom();
-            if (miscRoom == null) { Plugin.Log.LogWarning("RIVAL misc room not found"); return; }
-
-            // Hide the room's NPC and other interactables; keep its Portal (arrival/return points).
-            Transform inter = miscRoom.transform.Find("Interactables");
-            if (inter != null)
-                foreach (Transform t in inter)
-                    if (t.name != "Portal") t.gameObject.SetActive(false);
-
-            RivalArena.Create(Level.miscRoomPortalInPosition, StagePrefixOrRandom());
-            Plugin.Log.LogInfo("RIVAL event replaces the misc room on " + Level.tileSetName);
-        }
-
-        static Component FindMiscRoom()
-        {
-            IEnumerable list = Traverse.Create(typeof(Level)).Property("GridRoomTupleList").GetValue() as IEnumerable;
-            if (list == null) return null;
-            foreach (object tuple in list)
-            {
-                Component room = Traverse.Create(tuple).Property("Second").GetValue() as Component;
-                if (room == null) continue;
-                object type = Traverse.Create(room).Field("type").GetValue();
-                if (type != null && type.ToString() == "Misc") return room;
-            }
-            return null;
-        }
+        // (The event used to take over the stage's misc room; since v0.5.4 it has its own portal and rooms: RivalEvent.)
     }
 
     // Marks a spawned Contestant as a rival before its Start runs.
@@ -435,121 +403,42 @@ namespace WolHybridBosses
         public int RobeColor = -1;
     }
 
-    // Tags one of the three arena portals.
+    // Tags one of the selector room's three difficulty portals.
     internal class RivalPortal : MonoBehaviour
     {
-        public RivalArena Arena;
+        public RivalEvent Event;
         public RivalTier Tier;
-    }
-
-    // The arena controller: three portals -> pick -> intro (camera on rival + arcana preview) -> fight.
-    internal class RivalArena : MonoBehaviour
-    {
-        string prefix;
-        Vector2 arrival;
-        readonly List<GameObject> portals = new List<GameObject>();
-        bool chosen;
-        Enemy rival;
-        string banner;
-        float bannerUntil;
-
-        static readonly Vector2[] PortalOffsets = { new Vector2(-3f, 2.5f), new Vector2(0f, 3.5f), new Vector2(3f, 2.5f) };
-        static readonly Vector2 FightOffset = new Vector2(0f, 1f);
-        static readonly Vector2 RivalOffset = new Vector2(0f, 5.5f);
-
-        internal static RivalArena Create(Vector2 arrivalPos, string elementPrefix)
-        {
-            GameObject go = new GameObject("HybridBosses_RivalArena");
-            RivalArena a = go.AddComponent<RivalArena>();
-            a.prefix = elementPrefix;
-            a.arrival = arrivalPos;
-            return a;
-        }
-
-        void Start()
-        {
-            GameObject prefab = Portal.Prefab;
-            if (prefab == null) { Plugin.Log.LogWarning("RIVAL no portal prefab"); return; }
-            for (int i = 0; i < 3; i++)
-            {
-                RivalTier tier = (RivalTier)i;
-                GameObject go = Instantiate(prefab, arrival + PortalOffsets[i], Quaternion.identity) as GameObject;
-                Portal p = go.GetComponent<Portal>();
-                Traverse tp = Traverse.Create(p);
-                tp.Field("targetLocation").SetValue((Vector3)(arrival + FightOffset));
-                tp.Field("targetSpawnOffset").SetValue(Vector3.zero);
-                tp.Field("color").SetValue(Rivals.TierColor(tier));
-                tp.Field("createReturnPortal").SetValue(false);
-                RivalPortal rp = go.AddComponent<RivalPortal>();
-                rp.Arena = this;
-                rp.Tier = tier;
-                portals.Add(go);
-            }
-            IntroUI.Show(ElementalGiants.ElementColorName(prefix) + " rival awaits", "Easy (green)  ·  Medium (yellow)  ·  Hard (red)",
-                ElementalGiants.ElementColor(prefix), null, 5f);
-        }
-
-        // Called from the Portal.OnTriggerEnter2D prefix when the player steps into one of our portals.
-        internal void Choose(RivalTier tier)
-        {
-            if (chosen) return;
-            chosen = true;
-            Plugin.Log.LogInfo("RIVAL tier chosen: " + tier);
-            StartCoroutine(Run(tier));
-        }
-
-        IEnumerator Run(RivalTier tier)
-        {
-            yield return new WaitForSeconds(1.2f); // let the teleport finish
-            foreach (GameObject p in portals) if (p != null) Destroy(p);
-
-            // The Hard portal sometimes holds an Archon (a final champion, with its half-health phase) instead.
-            bool archon = tier == RivalTier.Hard && UnityEngine.Random.value < Plugin.ArchonRivalChance.Value;
-            rival = Rivals.Spawn(arrival + RivalOffset, prefix, archon ? RivalTier.Final : tier, archon);
-            if (rival == null) yield break;
-            yield return null; // Start (and our hostile postfix) runs
-            yield return null;
-
-            string title = archon
-                ? (prefix == "Chaos" ? "Chaos Sovereign" : ElementalGiants.ElementColorName(prefix) + " Archon")
-                : ElementalGiants.ElementColorName(prefix) + " Rival Wizard";
-            if (archon) Plugin.Log.LogInfo("RIVAL Hard portal holds an Archon: " + title);
-            yield return StartCoroutine(Rivals.Intro(rival, title, archon ? "Hard  ·  Archon" : tier.ToString()));
-        }
-
-        void Show(string text, float seconds)
-        {
-            banner = text;
-            bannerUntil = Time.time + seconds;
-        }
-
-        static GUIStyle style;
-
-        void OnGUI()
-        {
-            if (string.IsNullOrEmpty(banner) || Time.time > bannerUntil) return;
-            if (style == null)
-            {
-                style = new GUIStyle(GUI.skin.label) { fontSize = 26, alignment = TextAnchor.MiddleCenter, fontStyle = FontStyle.Bold };
-                style.normal.textColor = Color.white;
-            }
-            Rect r = new Rect(0, Screen.height * 0.12f, Screen.width, 90);
-            GUIStyle shadow = new GUIStyle(style); shadow.normal.textColor = Color.black;
-            GUI.Label(new Rect(r.x + 2, r.y + 2, r.width, r.height), banner, shadow);
-            GUI.Label(r, banner, style);
-        }
     }
 
     // ---------- patches ----------
 
+    // Stage generation: plan Chaos, and arm the rival event for the end of generation (the stage's rooms, start and
+    // exit are placed; LevelGenerator.levelGeneratedEventHandlers fires right after, in the same coroutine).
     [HarmonyPatch(typeof(LevelGenerator), "SetExitAndStorePositions")]
     static class LevelGenPatch
     {
+        static readonly System.Reflection.FieldInfo handlers = AccessTools.Field(typeof(LevelGenerator), "levelGeneratedEventHandlers");
+        static Delegate oneShot;
+
         static void Postfix()
         {
             try { ChaosStages.PlanCurrentStage(); } catch (Exception ex) { Plugin.Log.LogError("CHAOS plan failed: " + ex); }
-            try { Rivals.TryReplaceMiscRoom(); }
-            catch (Exception ex) { Plugin.Log.LogError("RIVAL misc room hook failed: " + ex); }
+            try
+            {
+                if (handlers == null) return;
+                if (oneShot == null)
+                    oneShot = Delegate.CreateDelegate(handlers.FieldType, typeof(LevelGenPatch).GetMethod("Generated", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic));
+                Delegate cur = handlers.GetValue(null) as Delegate;
+                handlers.SetValue(null, Delegate.Combine(Delegate.Remove(cur, oneShot), oneShot));
+            }
+            catch (Exception ex) { Plugin.Log.LogError("RIVAL event hook failed: " + ex); }
+        }
+
+        // Runs once per stage, then unhooks itself.
+        static void Generated()
+        {
+            try { handlers.SetValue(null, Delegate.Remove(handlers.GetValue(null) as Delegate, oneShot)); } catch (Exception) { }
+            RivalEvent.OnLevelGenerated();
         }
     }
 
@@ -559,9 +448,9 @@ namespace WolHybridBosses
         static void Prefix(Portal __instance, Collider2D col)
         {
             RivalPortal rp = __instance.GetComponent<RivalPortal>();
-            if (rp == null || rp.Arena == null || col == null) return;
+            if (rp == null || rp.Event == null || col == null) return;
             if (col.GetComponentInParent<Player>() == null) return;
-            rp.Arena.Choose(rp.Tier);
+            rp.Event.Choose(rp.Tier);
         }
     }
 

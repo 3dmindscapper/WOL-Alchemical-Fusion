@@ -155,11 +155,10 @@ namespace WolHybridBosses
             }
         }
 
-        static string Key()
-        {
-            string order = GameController.levelNameList != null ? string.Join(",", GameController.levelNameList.ToArray()) : "";
-            return GameController.loopCount + "|" + order;
-        }
+        // A run = from leaving the Hub until back in it; a new loop (after beating the final boss) counts as a new run.
+        // (The level order used to be part of the key, but the game reshuffles it during a run, which re-rolled the
+        // seed mid-run: the Chaos stages and the champion changed between stages.)
+        static string Key() { return GameController.loopCount.ToString(); }
 
         internal static void Tick()
         {
@@ -195,6 +194,11 @@ namespace WolHybridBosses
     {
         const string OverlayName = "HB_ChampionIcon";
         static bool loggedLayout;
+        static readonly Dictionary<Image, KeyValuePair<Color, bool>> original = new Dictionary<Image, KeyValuePair<Color, bool>>();
+
+        static Color Multiply(Color a, Color b) { return new Color(a.r * b.r, a.g * b.g, a.b * b.b, a.a); }
+
+        static BoardMarks BoardMarksFor(GameProgressBoard b) { return b.GetComponent<BoardMarks>() ?? b.gameObject.AddComponent<BoardMarks>(); }
 
         static void Postfix(GameProgressBoard __instance)
         {
@@ -206,40 +210,34 @@ namespace WolHybridBosses
                 if (circle == null) return;
                 if (!loggedLayout) { loggedLayout = true; LogLayout(circle, dimmer); }
 
+                // Layout (logged): FinalBossCircle (ring), BossCircleInner, BossPortrait (Sura), ChaosIcon, dimmers.
+                // On champion runs Sura's own portrait and circle take the champion's element colour; the Chaos symbol
+                // stays only for the Chaos Sovereign. (The old placeholder arcana icon is removed.)
                 Transform existing = circle.Find(OverlayName);
-                bool champion = FinalRun.ChampionPrefix != null;
+                if (existing != null) UnityEngine.Object.Destroy(existing.gameObject);
+                string prefix = FinalRun.ChampionPrefix;
+                bool champion = prefix != null;
+                Color el = champion ? ElementalGiants.ElementColor(prefix) : Color.white;
                 foreach (Image img in circle.GetComponentsInChildren<Image>(true))
                 {
-                    if (img == dimmer || img.name == OverlayName) continue;
-                    if (img.transform == circle)
-                        img.color = champion ? ElementalGiants.ElementColor(FinalRun.ChampionPrefix) : Color.white; // the ring
-                    else img.enabled = !champion; // the Chaos symbol
+                    if (img == dimmer || img.name.Contains("Dimmer")) continue;
+                    if (!original.ContainsKey(img)) original[img] = new KeyValuePair<Color, bool>(img.color, img.enabled);
+                    KeyValuePair<Color, bool> o = original[img];
+                    img.color = o.Key;
+                    img.enabled = o.Value;
+                    if (!champion) continue;
+                    switch (img.name)
+                    {
+                        case "BossPortrait":                                    // Sura in the element's colour (the game hides
+                            img.enabled = true;                                 // her portrait behind the Chaos symbol by default)
+                            img.color = Multiply(o.Key, Color.Lerp(Color.white, el, 0.7f));
+                            BoardMarksFor(__instance).Add(img, img.color, null, true); // keep it shown if the board toggles it
+                            break;
+                        case "BossCircleInner": img.color = Multiply(o.Key, Color.Lerp(el, Color.black, 0.35f)); break;
+                        case "ChaosIcon": img.enabled = prefix == "Chaos"; break;
+                        default: if (img.transform == circle) img.color = Multiply(o.Key, el); break;              // the ring
+                    }
                 }
-                if (!champion) { if (existing != null) existing.gameObject.SetActive(false); return; }
-
-                Image icon;
-                if (existing == null)
-                {
-                    GameObject go = new GameObject(OverlayName, typeof(RectTransform));
-                    go.transform.SetParent(circle, false);
-                    icon = go.AddComponent<Image>();
-                    icon.preserveAspect = true;
-                    icon.raycastTarget = false;
-                    RectTransform rt = (RectTransform)go.transform;
-                    rt.anchorMin = new Vector2(0.18f, 0.18f);
-                    rt.anchorMax = new Vector2(0.82f, 0.82f);
-                    rt.offsetMin = rt.offsetMax = Vector2.zero;
-                    if (dimmer != null && dimmer.transform.parent == circle) go.transform.SetSiblingIndex(dimmer.transform.GetSiblingIndex());
-                }
-                else
-                {
-                    existing.gameObject.SetActive(true);
-                    icon = existing.GetComponent<Image>();
-                }
-                List<ArcanaDef> pool = ArcanaCatalog.Pool(FinalRun.ChampionPrefix);
-                Sprite s = pool.Count > 0 ? IntroUI.SkillIcon(pool[0].SkillID) : null;
-                icon.sprite = s;
-                icon.color = s != null ? Color.white : ElementalGiants.ElementColor(FinalRun.ChampionPrefix);
             }
             catch (Exception ex) { Plugin.Log.LogWarning("FINAL board icon failed: " + ex.Message); }
         }

@@ -115,10 +115,11 @@ namespace WolHybridBosses
             yield return null;
             yield return new WaitForSeconds(0.1f);
             if (go == null || caster == null) yield break;
-            if (caster.closestTargetInfo != null)
+            Vector2? tgt = ArcanaCaster.TargetOf(caster);
+            if (tgt.HasValue)
             {
-                Vector2 d = (Vector2)caster.closestTargetInfo.position - (Vector2)go.transform.position;
-                if (d.sqrMagnitude > 0.01f) { dir = d.normalized; target = caster.closestTargetInfo.position; }
+                Vector2 d = tgt.Value - (Vector2)go.transform.position;
+                if (d.sqrMagnitude > 0.01f) { dir = d.normalized; target = tgt.Value; }
             }
             foreach (MonoBehaviour mb in go.GetComponentsInChildren<MonoBehaviour>(true))
             {

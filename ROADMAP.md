@@ -5,7 +5,7 @@ It mostly reuses the game's own assets. Custom art is possible, but so far every
 
 Status key: ✅ done · 🧪 built, needs in-game testing · 🔜 next · 📋 planned · ❓ needs research first · 💬 dev note (idea to consider)
 
-Current version: **0.5.1**. Technical details (game internals, file layout, pitfalls) live in `CLAUDE.md`.
+Current version: **0.5.7**. Technical details (game internals, file layout, pitfalls) live in `CLAUDE.md`.
 
 ---
 
@@ -39,7 +39,7 @@ Next:
 A rival is the game's PvP wizard (`Contestant`), turned hostile and given player arcana.
 
 Built:
-- 🧪 **Event:** the misc-room portal (assumed to be the red one) sometimes (`RivalWizards.Chance` 0.3) leads to an arena with three portals: Easy (green), Medium (yellow), Hard (red).
+- 🧪 **Event (own portal, v0.5.4):** on some stages (`RivalWizards.Chance` 0.3) a **rival portal** opens somewhere on the floor ("A rival's portal has opened"). It leads to a **selector room** with three portals: Easy (green), Medium (yellow), Hard (red), plus a white one back. After that comes the **arena**, and after the fight a portal back to where you came in. Both rooms are real rooms of the stage's own tileset, built off-map in the same scene, so stage progress is untouched. The misc room keeps its NPC.
 - 🧪 **Intro:** the rival is frozen and the camera moves to it. Its arcana, dash arcana, signature spells, robe and relic appear one by one, then the fight starts.
 - 🧪 **Tiers:**
 
@@ -71,8 +71,8 @@ Built:
 - 🧪 Player-style fall protection.
 
 Next:
-- 🔜 Arena layout tuning (portal and rival positions are guesses).
-- 💬 **Dedicated rival portal instead of the red portal room:** a new portal that can appear on each 2nd stage of a tier (the X-2 stages, just before the Council member fights). WoL Arcanos or Tournament Edition have custom portals, so this should be possible. If adopted, the event above moves to that portal.
+- 🔜 Check the built rooms in game. 0.5.4 showed walls but no visible floor; v0.5.5 picks the game's fight rooms (Survival/Challenge) for the arena, never Start/Exit rooms, spreads the portals on open floor, tries a floor-visibility fix, and logs each room (`RIVAL room ...`).
+- 💬 Limit the portal to the 2nd stage of each tier (just before the Council fight), as in the earlier dev note, if one random stage per run feels better.
 - 💬 **Fight in the real PvP arena:** if the game has a PvP arena scene, teleport the player there for the rival fight and back, without losing the stage's state.
 - 💬 **Evil echo of your last run:** remember the previous lost run (robe, arcana, relics) and bring it back as an evil rival.
 - ✅ **Boss health bar (v0.4.9):** the game's own boss bar (the Council's and Sura's) with the rival's name, shown when the intro ends. Champions and elemental giants get it too (`BossBar.Enabled`, `BossBar.Giants`).
@@ -89,14 +89,17 @@ Built:
 - 🧪 **Enemies (v0.4.5):** the types that have elemental versions on other stages (**Knight, Rogue (thief), Archer, Mage (wizard), Summoner, Lancer**, including their elemental versions) each have a 50% chance (`ChaosStages.EnemyChance`) to be a Chaos version: **1 Chaos arcana and their purple palette row**. That's like elemental stages, where not all of them are elemental. Other regular enemies keep their normal kit. **Giants become Chaos giants** instead of taking the stage element: Chaos element, 2 Chaos arcana, no borrowed elemental skills. They wear their own purple palette row, found automatically by reading each giant's palette texture (`ChaosStages.GiantPalette` = -1). A giant with no purple row (the Coffin) gets a purple tint instead.
 - 🧪 **Rival:** the stage's rival arena features a Chaos rival casting Chaos arcana. Rivals never appear outside their arenas.
 - 🧪 **Rewards:** gold and item drops ×1.5 (`ChaosStages.RewardMultiplier`).
-- 🧪 **Shown:** "Chaos <stage>" title, and a purple marker on the loading-screen board. The board and the stage always agree.
+- 🧪 **Shown:** "Chaos <stage>" title. On the loading-screen board (v0.5.4) the stage's square turns dark purple and shows the Chaos symbol instead of its element icon. The board and the stage always agree.
 - Shift+F11 toggles Chaos on the current stage (test key).
 
 Next:
 - 🔜 Check in game that the automatic purple row looks right on each giant (the log shows `CHAOS palette for <giant>: row N`). If it's wrong, set `ChaosStages.GiantPalette`; F6 cycles rows on the nearest enemy to find the right one.
 - 🧪 **Corrupted Council (v0.5.0):** if Chaos reached a tier (any of its regular stages is a Chaos stage), that tier's Council member is corrupted. Their sprites get a dark purple tint and outline, and all their attacks are tinted like Chaos arcana. The boss bar reads "Corrupted <name>". Their intro and victory lines come out glitched, with Chaos whispers, a purple-tinted portrait and purple text. Their circle on the loading-screen board is purple. Moves and stats are unchanged for now. `ChaosStages.CorruptedCouncil`; Shift+F12 forces it for testing.
   - 🧪 **v0.5.1:** their chest drops a **Chaos arcana** instead of an element arcana. Their attacks deal **Chaos damage** (their elemental status effect becomes Chaos). They get 2 **Chaos echoes**: between their own attacks they sometimes flash and cast a Chaos arcana at you, so their whole moveset (and fight identity) stays intact. A card at fight start shows the echoes.
-  - 📋 Maybe: a corrupted phase at low health.
+  - 🧪 **v0.5.2:** **custom corrupted voicelines** for each Council member, in place of their intro and victory lines (the earlier glitch effect never reached the screen). Their **room's tiles and lights** turn Chaos purple. All their attacks and effects are tinted a **darker, near-black Chaos purple**. Their Chaos echoes now aim at you (Chaos Beam was landing beside the boss).
+  - 🧪 **v0.5.3:** the voicelines are rewritten in the game's upbeat tone: each member has been dabbling in Chaos and wants to trade their element in for it, and comes back to it once beaten. No glitching.
+  - 🧪 **v0.5.3 fix:** Chaos stages never appeared on their own before (a stage-numbering bug). They now really roll 15% per regular stage, and the board marks the corrupted Council portrait itself.
+  - 📋 Maybe: a corrupted phase at low health; voicelines in the game's other languages (custom lines are English only).
 - 📋 Chaos boss floors.
 
 ### 3b. Radiant and Prismatic stages 📋 💬
@@ -110,7 +113,7 @@ Same approach as Chaos, once Chaos is nailed down:
 
 Built:
 - 🧪 Each run has a 35% chance (`FinalBoss.Chance`) that the final boss is a **champion** instead of Sura: an elemental **Archon**, or the **Chaos Sovereign** (30% of champions) with arcana from every element. It's the rival kit at a Final tier: 2600 HP, 5 arcana, dash arcana, signature, robe and relic.
-- 🧪 **Loading-screen icon:** on champion runs, the board's final circle (where Sura's Chaos icon sits) shows the champion instead: element-coloured ring with one of its arcana icons (placeholder art).
+- 🧪 **Loading-screen icon (v0.5.3):** on champion runs, Sura's own portrait on the board's final circle is tinted in the champion's element colour (ring included). The Chaos symbol stays only for the Chaos Sovereign.
 - 🧪 **Normal ending kept:** beating the champion ends the run exactly like beating Sura, including the Chaos arcana unlock.
 
 Next:
@@ -147,10 +150,11 @@ Lets any enemy cast real player arcana. Used by rivals, champions, arcana giants
 | F8 | Spawn the next giant beside you |
 | F9 | Dump the element → palette table and the current stage element |
 | F10 | Cycle the nearest giant through all five elements |
-| F11 | Open a rival arena around you (cycles Fire → Water → Earth → Wind → Thunder → Chaos) |
+| F11 | Open a rival portal beside you: selector room → arena → way back (cycles Fire → Water → Earth → Wind → Thunder → Chaos) |
 | Shift+F11 | Toggle the Chaos version of the current stage |
+| Ctrl+F11 | Skip to the next stage, as if through the exit portal (needs the floor's exit; a Council floor only has one after the fight) |
 | F12 | Final champion test (this final room, or spawn one here and make this run's final boss a champion) |
 | Shift+F12 | Force Corrupted Council on/off (every Council fight, including the current room) |
-| Ctrl+F12 | Jump straight to this tier's Council floor, corrupted (from any regular stage of a run) |
+| Ctrl+F12 | Jump straight to this tier's Council floor, corrupted for that fight (from any regular stage of a run) |
 
 Config: `BepInEx\config\osi.wol.hybridbosses.cfg` (created on first launch).

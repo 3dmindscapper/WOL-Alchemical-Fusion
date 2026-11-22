@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
@@ -13,7 +13,7 @@ namespace WolHybridBosses
     [BepInPlugin("osi.wol.hybridbosses", "Hybrid Bosses", Version)]
     public class Plugin : BaseUnityPlugin
     {
-        public const string Version = "0.5.1";
+        public const string Version = "0.5.13";
         internal static ManualLogSource Log;
 
         internal static ConfigEntry<bool> ElementalGiants;
@@ -84,9 +84,9 @@ namespace WolHybridBosses
             GiantBossBars = Config.Bind("BossBar", "Giants", true,
                 "Elemental giants get the boss health bar too, when their intro shows.");
             RivalEvents = Config.Bind("RivalWizards", "Enabled", true,
-                "The misc-room portal can lead to a rival-wizard arena with Easy/Medium/Hard portals instead of the usual NPC room.");
+                "A rival portal can open somewhere on a stage: it leads to a selector room (Easy/Medium/Hard portals) and an arena, then back. The stage's misc room is left alone.");
             RivalEventChance = Config.Bind("RivalWizards", "Chance", 0.3f,
-                "Chance (0 to 1) per stage that the misc room becomes a rival arena.");
+                "Chance (0 to 1) per regular stage that a rival portal opens.");
             RivalIntroSeconds = Config.Bind("RivalWizards", "IntroSeconds", 4f,
                 "How long the camera shows the rival and their arcana before the fight.");
             RivalRobes = Config.Bind("RivalWizards", "Robes", true,
@@ -159,9 +159,10 @@ namespace WolHybridBosses
             if (Input.GetKeyDown(KeyCode.F9)) Debug.DumpElementPalette();
             if (Input.GetKeyDown(KeyCode.F10)) Debug.RerollNearestGiant();
             bool shift = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
-            if (Input.GetKeyDown(KeyCode.F11) && shift) ChaosStages.ToggleOnCurrentStage();
-            else if (Input.GetKeyDown(KeyCode.F11)) Debug.OpenRivalArenaHere();
             bool ctrl = Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl);
+            if (Input.GetKeyDown(KeyCode.F11) && ctrl) Debug.SkipToNextStage();
+            else if (Input.GetKeyDown(KeyCode.F11) && shift) ChaosStages.ToggleOnCurrentStage();
+            else if (Input.GetKeyDown(KeyCode.F11)) Debug.OpenRivalArenaHere();
             if (Input.GetKeyDown(KeyCode.F12) && ctrl) CouncilCorruption.JumpToCouncil();
             else if (Input.GetKeyDown(KeyCode.F12) && shift) CouncilCorruption.ToggleForce();
             else if (Input.GetKeyDown(KeyCode.F12)) Debug.FinalChampionTest();
@@ -756,6 +757,20 @@ namespace WolHybridBosses
         // F11: open a rival arena around the player (stage element, or random on neutral stages).
         static int rivalTestIndex;
 
+        // Ctrl+F11: leave this stage as if through its exit portal (NextLevelLoader.LoadNextLevel: next regular
+        // stage, the Council floor after a tier's last stage, the next tier after a Council floor).
+        internal static void SkipToNextStage()
+        {
+            NextLevelLoader loader = UnityEngine.Object.FindObjectOfType<NextLevelLoader>();
+            if (loader == null)
+            {
+                Plugin.Log.LogWarning("SKIP: no exit on this floor (NextLevelLoader not found; a Council floor opens its exit after the fight)");
+                return;
+            }
+            Plugin.Log.LogInfo("SKIP: leaving " + Application.loadedLevelName + " (tier " + GameController.tierCount + ", stage " + GameController.stageCount + ")");
+            AccessTools.Method(typeof(NextLevelLoader), "LoadNextLevel").Invoke(loader, null);
+        }
+
         internal static void OpenRivalArenaHere()
         {
             Player p = GetPlayer();
@@ -763,8 +778,8 @@ namespace WolHybridBosses
             // Cycles Fire, Water, Earth, Wind, Thunder, Chaos so every pool can be tested on one stage.
             string[] order = { "Flame", "Frost", "Earth", "Wind", "Thunder", "Chaos" };
             string prefix = order[rivalTestIndex++ % order.Length];
-            RivalArena.Create(p.transform.position, prefix);
-            Log.LogInfo("RIVAL test arena opened (" + prefix + ") at " + p.transform.position);
+            RivalEvent.OpenHere(prefix); // the full event: portal beside you -> selector room -> arena -> way back
+            Log.LogInfo("RIVAL test event opened (" + prefix + ") at " + p.transform.position);
         }
 
         // F10: give the nearest giant the next element in order (testing all five quickly).

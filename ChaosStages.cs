@@ -31,13 +31,16 @@ namespace WolHybridBosses
         static readonly Color Purple = new Color(0.62f, 0.32f, 1f);
         internal static Color Color { get { return Purple; } }
 
-        // Regular floors only: the last stage of each tier (the boss floor) and non-run scenes stay normal.
+        // tier, stage = the regular stage's 0-based index within its tier (0 or 1: the game has stagesPerTier = 2 regular
+        // stages, then the boss floor, which is its own scene and never Chaos). During a stage GameController.stageCount
+        // is 1-based (LoadLevel adds 1 as the tier scene loads), so the stage itself is stageCount - 1.
+        // (Before v0.5.3 the boss-floor guard used "stage >= stagesPerTier - 1", which rejected every in-game stage.)
         internal static bool IsChaos(int tier, int stage)
         {
             float chance = Plugin.ChaosStageChance.Value;
-            if (chance <= 0f) return false;
+            if (chance <= 0f || stage < 0) return false;
             int per = GameController.stagesPerTier;
-            if (per > 0 && stage >= per - 1) return false;
+            if (per > 0 && stage >= per) return false;
             unchecked
             {
                 int h = FinalRun.Seed;
@@ -51,11 +54,11 @@ namespace WolHybridBosses
         internal static bool IsCurrentStageChaos()
         {
             string scene = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name ?? "";
-            if (scene == "Hub" || scene == "Tutorial" || scene.Contains("PvP")) return false;
+            if (scene == "Hub" || scene == "Tutorial" || scene.Contains("PvP") || scene.Contains("BossLevel")) return false;
             if (Level.isBossRushMode) return false;
-            if (UnityEngine.Object.FindObjectOfType<FinalBossRoomEventHandler>() != null) return false;
+            if (UnityEngine.Object.FindObjectOfType<BossRoomEventHandler>() != null) return false;
             FinalRun.Tick();
-            return IsChaos(GameController.tierCount, GameController.stageCount);
+            return IsChaos(GameController.tierCount, GameController.stageCount - 1);
         }
     }
 
@@ -94,7 +97,8 @@ namespace WolHybridBosses
             else { planned = true; plannedKey = StageKey(); Apply(); }
         }
 
-        internal static void Apply()
+        // visualOnly: tiles, decorations and lights only (the Corrupted Council's room): no reward bonus, no enemies armed.
+        internal static void Apply(bool visualOnly = false)
         {
             Revert();
             ChaosVariant v = Chaos;
@@ -102,9 +106,12 @@ namespace WolHybridBosses
             float t0 = Time.realtimeSinceStartup;
             int meshes = 0, sprites = 0, lights = 0;
 
+            // Hand-built boss floors may not keep their tiles under "Meshes": there (visualOnly) any non-body mesh counts.
+            bool anyStageMesh = false;
+            foreach (MeshRenderer mr in UnityEngine.Object.FindObjectsOfType<MeshRenderer>()) if (IsStageMesh(mr)) { anyStageMesh = true; break; }
             foreach (MeshRenderer mr in UnityEngine.Object.FindObjectsOfType<MeshRenderer>())
             {
-                if (!IsStageMesh(mr)) continue;
+                if (anyStageMesh ? !IsStageMesh(mr) : (!visualOnly || mr.GetComponentInParent<Entity>() != null || mr.GetComponentInParent<Canvas>() != null)) continue;
                 Material[] mats = mr.sharedMaterials;
                 Material[] swapped = new Material[mats.Length];
                 bool any = false;
@@ -115,11 +122,15 @@ namespace WolHybridBosses
                 meshes++;
             }
 
+            // Generated stages keep their decorations under Level.levelContainer; hand-built boss floors don't have one,
+            // so there every scene sprite that isn't a body or UI counts as decoration.
             Transform level = Level.levelContainer;
-            if (level != null)
-                foreach (SpriteRenderer sr in level.GetComponentsInChildren<SpriteRenderer>(true))
+            IEnumerable<SpriteRenderer> decor = level != null
+                ? (IEnumerable<SpriteRenderer>)level.GetComponentsInChildren<SpriteRenderer>(true)
+                : (visualOnly ? UnityEngine.Object.FindObjectsOfType<SpriteRenderer>() : new SpriteRenderer[0]);
+            foreach (SpriteRenderer sr in decor)
                 {
-                    if (sr == null || sr.GetComponentInParent<Entity>() != null) continue;
+                    if (sr == null || sr.GetComponentInParent<Entity>() != null || sr.GetComponentInParent<Canvas>() != null) continue;
                     origSpriteColors[sr] = sr.color;
                     sr.color = new Color(sr.color.r * v.SpriteTint.r, sr.color.g * v.SpriteTint.g, sr.color.b * v.SpriteTint.b, sr.color.a);
                     sprites++;
@@ -132,8 +143,12 @@ namespace WolHybridBosses
                 lights++;
             }
 
-            AddRewards();
-            int armed = ChaosEnemies.ArmAll();
+            int armed = 0;
+            if (!visualOnly)
+            {
+                AddRewards();
+                armed = ChaosEnemies.ArmAll();
+            }
 
             Plugin.Log.LogInfo("CHAOS stage on " + Level.tileSetName + ": " + meshes + " tile meshes, " + sprites + " decorations, " + lights + " lights, "
                 + armed + " enemies turned Chaos, " + Mathf.RoundToInt((Time.realtimeSinceStartup - t0) * 1000f) + " ms");
@@ -460,43 +475,145 @@ namespace WolHybridBosses
         }
     }
 
-    // Loading-screen board: Chaos stages' markers are tinted purple.
+    // Loading-screen board: a Chaos stage's square turns dark purple with the Chaos symbol (the one on Sura's final
+    // circle) in place of its element icon; a corrupted Council member's portrait is tinted purple. The board recolours
+    // squares it has reached after Enable, so BoardMarks re-applies the marks every frame while the board shows.
     [HarmonyPatch(typeof(GameProgressBoard), "Enable")]
     static class ChaosBoardPatch
     {
-        static readonly Dictionary<Image, Color> tinted = new Dictionary<Image, Color>();
+        // 0.5.11: much darker (almost black purple) so it can't be mistaken for the Air tier's own lavender squares.
+        static readonly Color SquareColor = new Color(0.17f, 0.06f, 0.26f), IconColor = new Color(0.8f, 0.55f, 1f);
+        static bool loggedSquare;
 
+        [HarmonyPriority(Priority.First)] // clears the marks, so it runs before the champion portrait patch adds its own
         static void Postfix(GameProgressBoard __instance)
         {
             try
             {
-                foreach (KeyValuePair<Image, Color> kv in tinted) if (kv.Key != null) kv.Key.color = kv.Value;
-                tinted.Clear();
+                BoardMarks marks = __instance.GetComponent<BoardMarks>() ?? __instance.gameObject.AddComponent<BoardMarks>();
+                marks.Clear();
                 FinalRun.Tick();
+                if (Level.isBossRushMode) return;
                 Traverse tr = Traverse.Create(__instance);
                 RectTransform[] stages = tr.Field("stagesInOrder").GetValue() as RectTransform[];
+                RectTransform[] bosses = tr.Field("bossesInOrder").GetValue() as RectTransform[];
+                RectTransform finalCircle = tr.Field("finalBossCircle").GetValue() as RectTransform;
+                RectTransform startCircle = tr.Field("startCircle").GetValue() as RectTransform;
                 Image[] dimmers = tr.Field("dimmersInOrder").GetValue() as Image[];
-                int per = tr.Field("curMaxStagesPerTier").GetValue<int>();
-                int final = tr.Field("curFinalStageIndex").GetValue<int>();
-                if (stages == null || per <= 0) return;
+                if (stages == null) return;
+                int regular = Mathf.Max(1, GameController.stagesPerTier); // 2 regular stage squares per tier
                 HashSet<Image> skip = new HashSet<Image>(dimmers ?? new Image[0]);
-                int marked = 0;
-                for (int i = 0; i < stages.Length && i < final; i++)
+                // stagesInOrder starts with the Start circle (logged layout) and may hold boss circles: skip all of them.
+                HashSet<RectTransform> bossSet = new HashSet<RectTransform>(bosses ?? new RectTransform[0]);
+                if (finalCircle != null) bossSet.Add(finalCircle);
+                if (startCircle != null) bossSet.Add(startCircle);
+                Sprite chaosIcon = null;
+                if (finalCircle != null)
                 {
-                    // Chaos stages, and the boss circle of a tier whose Council member is corrupted.
-                    bool councilCorrupted = i % per == per - 1 && CouncilCorruption.IsCorrupted(i / per);
-                    if (stages[i] == null || !(ChaosRun.IsChaos(i / per, i % per) || councilCorrupted)) continue;
-                    foreach (Image img in stages[i].GetComponentsInChildren<Image>(true))
+                    Transform ci = finalCircle.Find("ChaosIcon");
+                    Image cimg = ci != null ? ci.GetComponent<Image>() : null;
+                    if (cimg != null) chaosIcon = cimg.sprite;
+                }
+                int chaosMarked = 0, councilMarked = 0, k = 0;
+                // Regular stage squares in order (boss circles skipped, in case the list holds them): k-th square =
+                // tier k / regular, stage k % regular, the same numbering the stage itself uses.
+                foreach (RectTransform s in stages)
+                {
+                    if (s == null || bossSet.Contains(s)) continue;
+                    int tier = k / regular, stage = k % regular;
+                    k++;
+                    if (!loggedSquare) { loggedSquare = true; LogLayout(s, skip); }
+                    if (!ChaosRun.IsChaos(tier, stage)) continue;
+                    foreach (Image img in s.GetComponentsInChildren<Image>(true))
                     {
                         if (skip.Contains(img)) continue;
-                        tinted[img] = img.color;
-                        img.color = Color.Lerp(img.color, ChaosRun.Color, 0.75f);
+                        if (img.transform == s) marks.Add(img, SquareColor, null);                     // the square
+                        else marks.Add(img, IconColor, chaosIcon);                                      // its element icon
                     }
-                    marked++;
+                    chaosMarked++;
                 }
-                if (marked > 0) Plugin.Log.LogInfo("CHAOS board: " + marked + " chaos stage(s) marked this run");
+                // Council portraits of tiers whose member is corrupted. 0.5.12: only the portrait image itself (tinting
+                // every image in the circle turned the whole Air tier lavender, squares included), and tiers counted
+                // over the real Council circles in board order (no start / final / empty entries), like the squares.
+                if (bosses != null)
+                {
+                    HashSet<Image> squareImages = new HashSet<Image>();
+                    foreach (RectTransform s in stages)
+                        if (s != null && !bossSet.Contains(s)) foreach (Image img in s.GetComponentsInChildren<Image>(true)) squareImages.Add(img);
+                    int t = 0;
+                    List<string> plan = new List<string>();
+                    foreach (RectTransform circle in bosses)
+                    {
+                        if (circle == null || circle == finalCircle || circle == startCircle) continue;
+                        bool corrupted = CouncilCorruption.IsCorrupted(t);
+                        plan.Add(circle.name + "=" + (corrupted ? "corrupted" : "-"));
+                        t++;
+                        if (!corrupted) continue;
+                        List<Image> portraits = new List<Image>();
+                        foreach (Image img in circle.GetComponentsInChildren<Image>(true))
+                            if (!skip.Contains(img) && !squareImages.Contains(img) && img.name.Contains("Portrait")) portraits.Add(img);
+                        if (portraits.Count == 0)
+                            foreach (Image img in circle.GetComponentsInChildren<Image>(true))
+                                if (!skip.Contains(img) && !squareImages.Contains(img) && img.transform != circle && !img.name.Contains("Dimmer") && !img.name.Contains("Circle"))
+                                    portraits.Add(img);
+                        foreach (Image img in portraits) marks.Add(img, Color.Lerp(img.color, ChaosRun.Color, 0.6f), null);
+                        plan[plan.Count - 1] += "(" + string.Join("/", portraits.ConvertAll(i => i.name).ToArray()) + ")";
+                        councilMarked++;
+                    }
+                    List<string> squaresPlan = new List<string>();
+                    for (int q = 0; q < k; q++) squaresPlan.Add(ChaosRun.IsChaos(q / regular, q % regular) ? "C" : ".");
+                    Plugin.Log.LogInfo("CHAOS board plan: squares " + string.Join("", squaresPlan.ToArray()) + " | council " + string.Join(", ", plan.ToArray()));
+                }
+                if (chaosMarked + councilMarked > 0)
+                    Plugin.Log.LogInfo("CHAOS board: " + chaosMarked + " chaos stage(s), " + councilMarked + " corrupted Council member(s) this run");
             }
             catch (Exception ex) { Plugin.Log.LogWarning("CHAOS board marker failed: " + ex.Message); }
+        }
+
+        static void LogLayout(RectTransform s, HashSet<Image> skip)
+        {
+            List<string> parts = new List<string>();
+            foreach (Image img in s.GetComponentsInChildren<Image>(true))
+                parts.Add(img.name + "[" + (img.sprite != null ? img.sprite.name : "-") + (skip.Contains(img) ? " dimmer" : "") + (img.transform == s ? " root" : "") + "]");
+            Plugin.Log.LogInfo("CHAOS board square layout: " + string.Join(", ", parts.ToArray()));
+        }
+    }
+
+    // Keeps the board's Chaos marks in place (the board recolours reached squares after Enable); restores the
+    // originals when the marks are cleared for the next Enable.
+    internal class BoardMarks : MonoBehaviour
+    {
+        sealed class Mark { public Image Img; public Color Color, OrigColor; public Sprite Sprite, OrigSprite; public bool Show, OrigEnabled; }
+        readonly List<Mark> marks = new List<Mark>();
+
+        // show: keep the image enabled too (Sura's portrait on champion runs).
+        internal void Add(Image img, Color c, Sprite s, bool show = false)
+        {
+            if (img == null) return;
+            marks.RemoveAll(m => m.Img == img && !m.Show && show); // a "show" mark wins over a plain one
+            if (marks.Exists(m => m.Img == img)) return;
+            marks.Add(new Mark { Img = img, Color = c, OrigColor = img.color, Sprite = s, OrigSprite = img.sprite, Show = show, OrigEnabled = img.enabled });
+            Apply();
+        }
+
+        internal void Clear()
+        {
+            foreach (Mark m in marks) if (m.Img != null) { m.Img.color = m.OrigColor; m.Img.sprite = m.OrigSprite; if (m.Show) m.Img.enabled = m.OrigEnabled; }
+            marks.Clear();
+        }
+
+        void LateUpdate() { Apply(); }
+
+        void Apply()
+        {
+            foreach (Mark m in marks)
+            {
+                if (m.Img == null) continue;
+                Color c = new Color(m.Color.r, m.Color.g, m.Color.b, m.Img.color.a); // keep the board's fades
+                if (m.Img.color != c) m.Img.color = c;
+                if (m.Sprite != null && m.Img.sprite != m.Sprite) m.Img.sprite = m.Sprite;
+                if (m.Show && !m.Img.enabled) m.Img.enabled = true;
+            }
         }
     }
 

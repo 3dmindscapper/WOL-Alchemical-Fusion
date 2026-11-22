@@ -1,0 +1,578 @@
+﻿using System;
+using System.Collections;
+using System.Collections.Generic;
+using HarmonyLib;
+using UnityEngine;
+
+namespace WolHybridBosses
+{
+    // The rival event, with its own portal (the misc room is left alone):
+    //   a rival portal opens somewhere on the stage -> a selector room with the Easy / Medium / Hard portals (and a way
+    //   back) -> the arena -> after the fight, a portal back to where you came in.
+    // Both rooms are real rooms of the stage's own tileset, loaded off-map with Room.Load and built with
+    // Room.Generate (floor, walls, pits, decorations and checkpoints under the room's own transform), so it all happens
+    // in the same scene: nothing reloads and the stage's progress is untouched. Checkpoints (safe floor spots) place
+    // the arrival points, the portals and the rival.
+    internal class RivalEvent : MonoBehaviour
+    {
+        static readonly Vector2 SelectorOffset = new Vector2(0f, -420f), ArenaOffset = new Vector2(0f, -780f);
+        internal static bool Building; // true while one of our rooms runs Room.Generate (see RivalRoomMeshPatch)
+        static readonly Vector2[] PortalOffsets = { new Vector2(-5f, 3f), new Vector2(0f, 5f), new Vector2(5f, 3f) };
+        const float PortalSpacing = 4f; // minimum distance between portals and from where the player lands
+
+        internal static RivalEvent Current;
+
+        string prefix;
+        Room selectorRoom, arenaRoom;
+        List<Vector2> selectorSpots = new List<Vector2>(), arenaSpots = new List<Vector2>();
+        Vector2 selectorArrival, arenaArrival, entrancePos;
+        GameObject entrance, leavePortal;
+        readonly List<GameObject> tierPortals = new List<GameObject>();
+        bool chosen;
+        Enemy rival;
+
+        // ---------- setup ----------
+
+        // LevelGenerator.levelGeneratedEventHandlers: the stage is fully built.
+        internal static void OnLevelGenerated()
+        {
+            try
+            {
+                if (!Plugin.RivalEvents.Value || Level.isBossRushMode) return;
+                if (UnityEngine.Random.value >= Plugin.RivalEventChance.Value) return;
+                Vector2? spot = PickEntrance(Level.startPosition);
+                if (!spot.HasValue) { Plugin.Log.LogWarning("RIVAL event: no spot for the portal on this stage"); return; }
+                Open(spot.Value, Rivals.StagePrefixOrRandom(), true);
+            }
+            catch (Exception ex) { Plugin.Log.LogWarning("RIVAL event setup failed: " + ex); }
+        }
+
+        // F11: open one beside the player right now (element given by the test key's cycle).
+        internal static void OpenHere(string prefix)
+        {
+            Player p = GameController.playerScripts != null && GameController.playerScripts.Length > 0 ? GameController.playerScripts[0] : null;
+            if (p == null) return;
+            Open((Vector2)p.transform.position + new Vector2(2.5f, 0f), prefix ?? Rivals.StagePrefixOrRandom(), false);
+        }
+
+        static void Open(Vector2 entranceAt, string prefix, bool announce)
+        {
+            if (Current != null) Current.Close();
+            GameObject go = new GameObject("HybridBosses_RivalEvent");
+            RivalEvent ev = go.AddComponent<RivalEvent>();
+            ev.prefix = prefix;
+            ev.entrancePos = entranceAt;
+            if (!ev.Build()) { Destroy(go); return; }
+            Current = ev;
+            if (announce)
+                IntroUI.Show("A rival's portal has opened", "Somewhere on this floor  Â·  " + ElementalGiants.ElementColorName(prefix) + " rival",
+                    ElementalGiants.ElementColor(prefix), null, 4f);
+        }
+
+        bool Build()
+        {
+            Vector2 basePos = Level.startPosition;
+            selectorRoom = BuildRoom(basePos + SelectorOffset, false, selectorSpots);
+            arenaRoom = BuildRoom(basePos + ArenaOffset, true, arenaSpots);
+            if (selectorRoom == null || arenaRoom == null || selectorSpots.Count == 0 || arenaSpots.Count == 0)
+            {
+                Plugin.Log.LogWarning("RIVAL event: could not build the rooms (selector " + (selectorRoom != null) + ", " + selectorSpots.Count
+                    + " spots; arena " + (arenaRoom != null) + ", " + arenaSpots.Count + " spots)");
+                if (selectorRoom != null) Destroy(selectorRoom.gameObject);
+                if (arenaRoom != null) Destroy(arenaRoom.gameObject);
+                return false;
+            }
+            selectorArrival = Central(selectorRoom, selectorSpots);
+            arenaArrival = Central(arenaRoom, arenaSpots);
+
+            entrance = MakePortal(entrancePos, selectorArrival, ElementalGiants.ElementColor(prefix));
+            StartCoroutine(PlaceSelectorPortals());
+            Plugin.Log.LogInfo("RIVAL event: portal at " + entrancePos + " -> selector " + selectorRoom.name + " (" + selectorSpots.Count + " spots) -> arena "
+                + arenaRoom.name + " (" + arenaSpots.Count + " spots), " + prefix);
+            return true;
+        }
+
+        // A couple of physics steps after building, so the new rooms' wall/pit colliders are registered for the checks.
+        IEnumerator PlaceSelectorPortals()
+        {
+            yield return new WaitForFixedUpdate();
+            yield return new WaitForFixedUpdate();
+            // 0.5.11: land on the most open floor (not the checkpoint under a wall), and move the stage entrance off
+            // walls / out of door nooks the same way.
+            selectorArrival = Roomy(selectorArrival, Mean(selectorSpots), selectorRoom);
+            arenaArrival = Roomy(arenaArrival, Mean(arenaSpots), arenaRoom);
+            if (entrance != null)
+            {
+                entrancePos = Roomy(entrancePos, entrancePos);
+                entrance.transform.position = entrancePos;
+                Portal ep = entrance.GetComponent<Portal>();
+                if (ep != null) ep.targetLocation = selectorArrival;
+            }
+            // Spread on open floor around the arrival point (rooms have only a few checkpoints, so snapping to them
+            // stacked every portal on the same spot).
+            List<Vector2> used = new List<Vector2> { selectorArrival };
+            for (int i = 0; i < 3; i++)
+            {
+                RivalTier tier = (RivalTier)i;
+                Vector2 at = OpenSpot(selectorRoom, selectorArrival, PortalOffsets[i], used);
+                used.Add(at);
+                GameObject p = MakePortal(at, arenaArrival, Rivals.TierColor(tier));
+                if (p == null) continue;
+                RivalPortal rp = p.AddComponent<RivalPortal>();
+                rp.Event = this;
+                rp.Tier = tier;
+                tierPortals.Add(p);
+            }
+            Vector2 leaveAt = OpenSpot(selectorRoom, selectorArrival, new Vector2(0f, -5f), used);
+            leavePortal = MakePortal(leaveAt, entrancePos + new Vector2(0f, -1.5f), new Color(0.85f, 0.85f, 0.85f));
+            Plugin.Log.LogInfo("RIVAL selector portals at " + string.Join(", ", used.ConvertAll(u => u.ToString("0.0")).ToArray()) + ", way back at " + leaveAt.ToString("0.0"));
+        }
+
+        // A real room of this stage's tileset, built on its own far off-map. Arena: a room the game designs for fights
+        // (Survival / Challenge: the closed rooms where waves and mini-bosses happen), else the largest Standard room.
+        // Selector: a small Standard room. Never Start / Exit rooms: they bring the stage's start/exit setup with them
+        // (a Start room copy pulled the player's spawn out of the real start room). Emptied of enemies, interactables
+        // and portals.
+        static Room BuildRoom(Vector2 at, bool arena, List<Vector2> spots)
+        {
+            Dictionary<string, Room> dict = Level.LoadedRoomDict;
+            if (dict == null || dict.Count == 0) return null;
+            string pick = null;
+            int best = int.MinValue;
+            foreach (KeyValuePair<string, Room> kv in dict)
+            {
+                Room t = kv.Value;
+                if (t == null) continue;
+                int size;
+                try { size = t.Width * t.Height; } catch (Exception) { continue; }
+                if (size < 120) continue; // too cramped for portals / a fight
+                int score;
+                if (arena)
+                {
+                    if (t.type == RoomType.Survival || t.type == RoomType.RandomSurvival) score = 2000000 + size;
+                    else if (t.type == RoomType.Challenge) score = 1000000 + size;
+                    else if (t.type == RoomType.Standard) score = size;
+                    else continue;
+                }
+                else
+                {
+                    if (t.type != RoomType.Standard) continue;
+                    score = -size; // smallest
+                }
+                if (score > best) { best = score; pick = kv.Key; }
+            }
+            if (pick == null) return null;
+            // Room.Load(name, instantiate, parent, position): with false it hands back the PREFAB ASSET from the bundle
+            // (ChaosBundle.GetWithComponent); only true makes a scene instance (ChaosInst + parent + position). 0.5.4-0.5.6
+            // passed false, so they generated onto the prefab asset in memory: nothing rendered, positions didn't stick.
+            Room r = Room.Load(pick, true, null, at);
+            if (r == null) return null;
+            if (!r.gameObject.scene.IsValid()) { Plugin.Log.LogWarning("RIVAL room " + pick + " is not a scene object; skipped"); return null; }
+            r.gameObject.SetActive(true);
+            r.name = "HybridBosses_" + (arena ? "Arena_" : "Selector_") + pick;
+            r.randomEnemies = false;
+            // 0.5.11: keep the room's props and let the game scatter its breakables (pots, crates, statues): clearing
+            // them left black holes on the obstacle tiles they stand on. Chests / portals / NPCs are removed after.
+            r.randomInteractables = true;
+            r.randomPits = false;
+            r.generateCheckpoints = true;
+            if (r.enemies != null) r.enemies.Clear();
+            if (r.enemyFactories != null) r.enemyFactories.Clear();
+            ClearChildren(r.EnemiesTrans);
+            HashSet<GameObject> rootsBefore = new HashSet<GameObject>(r.gameObject.scene.GetRootGameObjects());
+            // 0.5.8: the game's generators make every part with new GameObject() at the WORLD origin and then
+            // SetParent(room) keeping that world spot, and MeshGenerator static-batches the floor/wall meshes right
+            // there. Generating at (268,-1050) put the art near (0,0) (over the real stage) while our room sat far
+            // away. So: generate at the origin (parts line up with their room), without static batching
+            // (RivalRoomMeshPatch), then move the whole room into place - unbatched meshes follow their root.
+            r.transform.position = Vector3.zero;
+            Building = true;
+            try { r.Generate(); }
+            finally { Building = false; }
+            // Anything the decorators put at the scene root (instead of under the room) moves with the room too.
+            int adopted = 0;
+            foreach (GameObject g in r.gameObject.scene.GetRootGameObjects())
+                if (g != null && g != r.gameObject && !rootsBefore.Contains(g) && !g.name.StartsWith("HybridBosses") && g.GetComponentInChildren<Player>() == null)
+                { g.transform.SetParent(r.InteractablesTrans != null ? r.InteractablesTrans : r.transform, true); adopted++; }
+            r.transform.position = at;
+            Activate(r.transform, r.EnemiesTrans, r.InteractablesTrans);
+            int removed = 0;
+            foreach (Portal p in r.GetComponentsInChildren<Portal>(true)) { Destroy(p.gameObject); removed++; } // no stray start/exit portals
+            foreach (TreasureChest c in r.GetComponentsInChildren<TreasureChest>(true)) { Destroy(c.gameObject); removed++; }
+            foreach (Enemy e in r.GetComponentsInChildren<Enemy>(true)) { Destroy(e.gameObject); removed++; }
+            foreach (Component c in r.GetComponentsInChildren<Component>(true))
+            {
+                if (c == null) continue;
+                string tn = c.GetType().Name;
+                if (tn.Contains("Shop") || tn.Contains("Merchant") || tn.Contains("Npc") || tn.Contains("NPC") || tn.Contains("Pedestal") || tn.Contains("Relic"))
+                { Destroy(c.gameObject); removed++; }
+            }
+            int breakables = r.GetComponentsInChildren<Destructible>(true).Length;
+            Plugin.Log.LogInfo("RIVAL room " + r.name + ": " + breakables + " breakables, " + adopted + " root objects adopted, " + removed + " unwanted objects removed");
+            foreach (Checkpoint cp in r.GetComponentsInChildren<Checkpoint>(true)) spots.Add(cp.transform.position);
+            MatchStageSorting(r);
+            Diagnose(r, spots);
+            return r;
+        }
+
+        static void Activate(Transform t, Transform skipA, Transform skipB)
+        {
+            if (t == null || t == skipA || t == skipB) return;
+            if (!t.gameObject.activeSelf) t.gameObject.SetActive(true);
+            foreach (MeshRenderer rd in t.GetComponents<MeshRenderer>()) rd.enabled = true; // floor/walls; sprites keep their own state
+            foreach (Transform c in t) Activate(c, skipA, skipB);
+        }
+
+        // Fix attempt for floors that didn't show (the player saw the stage's sky background with walls they couldn't
+        // see): give the room's meshes the same sorting layer/order as the stage's own floor meshes.
+        static void MatchStageSorting(Room r)
+        {
+            MeshRenderer stage = null;
+            foreach (MeshRenderer mr in FindObjectsOfType<MeshRenderer>())
+            {
+                if (mr == null || mr.transform.root.name.StartsWith("HybridBosses") || mr.GetComponentInParent<Room>() == r) continue;
+                for (Transform t = mr.transform; t != null; t = t.parent) if (t.name == "Meshes") { stage = mr; break; }
+                if (stage != null) break;
+            }
+            if (stage == null) return;
+            foreach (MeshRenderer mr in r.GetComponentsInChildren<MeshRenderer>(true))
+            {
+                mr.sortingLayerID = stage.sortingLayerID;
+                if (mr.sortingOrder == 0) mr.sortingOrder = stage.sortingOrder;
+                mr.enabled = true;
+                mr.gameObject.SetActive(true);
+            }
+        }
+
+        static void Diagnose(Room r, List<Vector2> spots)
+        {
+            try
+            {
+                MeshRenderer[] meshes = r.GetComponentsInChildren<MeshRenderer>(true);
+                Collider2D[] cols = r.GetComponentsInChildren<Collider2D>(true);
+                List<string> m = new List<string>();
+                foreach (MeshRenderer mr in meshes)
+                {
+                    if (m.Count >= 4) break;
+                    MeshFilter mf = mr.GetComponent<MeshFilter>();
+                    m.Add(mr.name + "{" + (mr.enabled && mr.gameObject.activeInHierarchy ? "on" : "OFF") + " bounds " + mr.bounds.center.ToString("0") + " size "
+                        + mr.bounds.size.ToString("0") + " verts " + (mf != null && mf.sharedMesh != null ? mf.sharedMesh.vertexCount : -1)
+                        + " mat " + (mr.sharedMaterial != null ? mr.sharedMaterial.name : "none") + " layer " + mr.sortingLayerName + "/" + mr.sortingOrder + "}");
+                }
+                Vector2 c = Vector2.zero;
+                foreach (Vector2 s in spots) c += s;
+                if (spots.Count > 0) c /= spots.Count;
+                int on = 0;
+                foreach (MeshRenderer mr in meshes) if (mr.enabled && mr.gameObject.activeInHierarchy) on++;
+                Plugin.Log.LogInfo("RIVAL room " + r.name + " (" + r.type + ", " + r.Width + "x" + r.Height + ") at " + r.transform.position.ToString("0")
+                    + " (root active " + r.gameObject.activeInHierarchy + ", parent " + (r.transform.parent != null ? r.transform.parent.name : "none") + ", " + on + " meshes on)"
+                    + ": " + meshes.Length + " meshes, " + cols.Length + " colliders, " + spots.Count + " checkpoints around " + c.ToString("0") + " | " + string.Join(" ", m.ToArray()));
+            }
+            catch (Exception ex) { Plugin.Log.LogWarning("RIVAL room diagnose failed: " + ex.Message); }
+        }
+
+        // An open floor spot near arrival + offset: no wall or pit collider of the room there, nothing solid in between,
+        // and not on top of an earlier portal. Tries the offset, then rotated/shorter versions; falls back to arrival.
+        static Vector2 OpenSpot(Room r, Vector2 arrival, Vector2 offset, List<Vector2> used)
+        {
+            float[] angles = { 0f, 30f, -30f, 60f, -60f, 90f, -90f, 135f, -135f, 180f };
+            for (int step = 0; step < 4; step++)
+            {
+                float scale = 1f - step * 0.2f;
+                foreach (float ang in angles)
+                {
+                    Vector2 want = arrival + ArcanaCaster.Rotate(offset * scale, ang);
+                    if (used.Exists(u => (u - want).sqrMagnitude < PortalSpacing * PortalSpacing)) continue;
+                    if (Clearance(want) < 1f || !InsideFloor(r, want)) continue; // not hugging a wall, not out a doorway
+                    if (Blocked(r, arrival, want)) continue;
+                    return want;
+                }
+            }
+            Plugin.Log.LogWarning("RIVAL no open spot near " + arrival.ToString("0.0") + " offset " + offset + " (last block: " + lastBlock + ")");
+            return arrival;
+        }
+
+        // 0.5.9: only the game's wall layers (WallGenerator: "Wall" for walls/upper walls, "LowerWall" for the wall
+        // faces) and pits count. 0.5.8 counted every solid collider of the room and something room-wide made every
+        // spot "blocked", so all portals stacked on the arrival point and the rival fell back into a wall.
+        // 0.5.10: "LowerWall" turned out to be walkable (the arrival checkpoint sits inside a LowerWalls collider), so
+        // the mask is now built from what the player's own solid colliders actually collide with (the physics matrix).
+        static int wallMask = -1;
+        static int WallMask
+        {
+            get
+            {
+                if (wallMask != -1) return wallMask;
+                int playerLayers = 0;
+                Player pl = FindObjectOfType<Player>();
+                if (pl != null)
+                    foreach (Collider2D c in pl.GetComponentsInChildren<Collider2D>(true))
+                        if (c != null && !c.isTrigger) playerLayers |= 1 << c.gameObject.layer;
+                if (playerLayers == 0) return LayerMask.GetMask("Wall"); // try again next time
+                int mask = 0;
+                for (int pLayer = 0; pLayer < 32; pLayer++)
+                {
+                    if ((playerLayers & (1 << pLayer)) == 0) continue;
+                    for (int l = 0; l < 32; l++)
+                        if (!Physics2D.GetIgnoreLayerCollision(pLayer, l)) mask |= 1 << l;
+                }
+                // 0.5.11: the matrix lets through a lot of non-terrain layers (Default, Minimap, PlayerDetector, Attack
+                // ...); keep only what is terrain.
+                mask &= LayerMask.GetMask("Wall", "Pit", "Obstacle", "Destructible", "Environment");
+                wallMask = mask;
+                string names = "";
+                for (int l = 0; l < 32; l++) if ((mask & (1 << l)) != 0) names += LayerMask.LayerToName(l) + "(" + l + ") ";
+                Plugin.Log.LogInfo("RIVAL open-spot check blocks on layers: " + names);
+                return wallMask;
+            }
+        }
+
+        static string lastBlock;
+
+        static bool Solid(Collider2D c)
+        {
+            return c != null && !c.isTrigger && ((1 << c.gameObject.layer) & WallMask) != 0 && c.GetComponentInParent<Player>() == null && c.GetComponentInParent<Enemy>() == null;
+        }
+
+        static bool Blocked(Room r, Vector2 from, Vector2 to)
+        {
+            foreach (Collider2D c in Physics2D.OverlapCircleAll(to, 0.8f))
+            {
+                if (c == null) continue;
+                if (c.CompareTag("BottomlessPit")) { lastBlock = "pit " + c.name; return true; }
+                if (Solid(c)) { lastBlock = "wall " + c.name + " [" + LayerMask.LayerToName(c.gameObject.layer) + "]"; return true; }
+            }
+            // 0.5.11: a real linecast (0.5.10's half-unit steps jumped over thin wall-base colliders, so a spot up on a
+            // wall face looked reachable), ignoring only colliders the start point is already inside.
+            foreach (RaycastHit2D h in Physics2D.LinecastAll(from, to))
+            {
+                Collider2D c = h.collider;
+                if (!Solid(c) || c.OverlapPoint(from)) continue;
+                lastBlock = "line " + c.name + " [" + LayerMask.LayerToName(c.gameObject.layer) + "]";
+                return true;
+            }
+            return false;
+        }
+
+        // Inside the room's floor art, 2 units in from its edge (so nothing lands out through a doorway into the void).
+        static readonly Dictionary<Room, Bounds> roomBounds = new Dictionary<Room, Bounds>();
+        static bool InsideFloor(Room r, Vector2 p)
+        {
+            if (r == null) return true;
+            Bounds b;
+            if (!roomBounds.TryGetValue(r, out b))
+            {
+                bool any = false;
+                b = new Bounds();
+                foreach (MeshRenderer mr in r.GetComponentsInChildren<MeshRenderer>(true))
+                {
+                    if (mr == null || mr.bounds.size.sqrMagnitude < 0.01f) continue;
+                    if (!any) { b = mr.bounds; any = true; } else b.Encapsulate(mr.bounds);
+                }
+                if (!any) return true;
+                roomBounds[r] = b;
+            }
+            return p.x > b.min.x + 2f && p.x < b.max.x - 2f && p.y > b.min.y + 2f && p.y < b.max.y - 2f;
+        }
+
+        // How far from p the nearest wall / pit / obstacle is (capped at 5).
+        static float Clearance(Vector2 p)
+        {
+            for (float rad = 1f; rad <= 5f; rad += 0.5f)
+                foreach (Collider2D c in Physics2D.OverlapCircleAll(p, rad))
+                    if (c != null && (c.CompareTag("BottomlessPit") || Solid(c))) return rad - 0.5f;
+            return 5f;
+        }
+
+        // The most open floor reachable from 'from' within 6 units, leaning toward 'centre' (checkpoints often sit
+        // right under a wall). Used for where the player lands in each room and for the stage entrance.
+        static Vector2 Roomy(Vector2 from, Vector2 centre, Room inRoom = null)
+        {
+            Vector2 best = from;
+            float bestScore = Clearance(from) * 10f - Vector2.Distance(from, centre) * 0.4f;
+            for (int x = -6; x <= 6; x++)
+                for (int y = -6; y <= 6; y++)
+                {
+                    Vector2 p = from + new Vector2(x, y);
+                    if ((p - from).sqrMagnitude > 36f || !InsideFloor(inRoom, p) || Blocked(null, from, p)) continue;
+                    float score = Clearance(p) * 10f - Vector2.Distance(p, centre) * 0.4f;
+                    if (score > bestScore) { bestScore = score; best = p; }
+                }
+            return best;
+        }
+
+        static void ClearChildren(Transform t)
+        {
+            if (t == null) return;
+            foreach (Transform c in t) Destroy(c.gameObject);
+        }
+
+        // The checkpoint nearest the middle of the room's floor.
+        static Vector2 Central(Room r, List<Vector2> spots)
+        {
+            return Snap(Mean(spots), spots);
+        }
+
+        static Vector2 Mean(List<Vector2> spots)
+        {
+            Vector2 c = Vector2.zero;
+            if (spots.Count == 0) return c;
+            foreach (Vector2 s in spots) c += s;
+            return c / spots.Count;
+        }
+
+        static Vector2 Snap(Vector2 want, List<Vector2> spots)
+        {
+            Vector2 best = want;
+            float d = float.MaxValue;
+            foreach (Vector2 s in spots) { float e = (s - want).sqrMagnitude; if (e < d) { d = e; best = s; } }
+            return best;
+        }
+
+        // A random checkpoint of the stage, not too close to the start and not in our rooms.
+        static Vector2? PickEntrance(Vector2 start)
+        {
+            List<Vector2> far = new List<Vector2>(), any = new List<Vector2>();
+            foreach (Checkpoint cp in FindObjectsOfType<Checkpoint>())
+            {
+                if (cp == null || cp.transform.root.name.StartsWith("HybridBosses")) continue;
+                Vector2 p = cp.transform.position;
+                float d = Vector2.Distance(p, start);
+                if (d < 6f) continue;
+                any.Add(p);
+                if (d >= 15f && d <= 70f) far.Add(p);
+            }
+            List<Vector2> from = far.Count > 0 ? far : any;
+            if (from.Count == 0) return null;
+            return from[UnityEngine.Random.Range(0, from.Count)];
+        }
+
+        static GameObject MakePortal(Vector2 at, Vector2 target, Color color)
+        {
+            GameObject prefab = Portal.Prefab;
+            if (prefab == null) return null;
+            GameObject go = Instantiate(prefab, at, Quaternion.identity) as GameObject;
+            Portal p = go != null ? go.GetComponent<Portal>() : null;
+            if (p == null) return go;
+            p.targetLocation = target;
+            p.targetSpawnOffset = Vector3.zero;
+            p.color = color;
+            p.createReturnPortal = false;
+            return go;
+        }
+
+        // ---------- the fight ----------
+
+        // Portal.OnTriggerEnter2D prefix: the player stepped into a tier portal.
+        internal void Choose(RivalTier tier)
+        {
+            if (chosen) return;
+            chosen = true;
+            Plugin.Log.LogInfo("RIVAL tier chosen: " + tier);
+            StartCoroutine(Run(tier));
+        }
+
+        IEnumerator Run(RivalTier tier)
+        {
+            yield return new WaitForSeconds(1.2f); // let the teleport finish
+            // 0.5.10: a portal that appeared on top of the player registered the choice without teleporting. Make sure
+            // every player is in the arena before the fight starts.
+            foreach (Player pl in FindObjectsOfType<Player>())
+            {
+                if (pl == null || pl.IsDead) continue;
+                if (Vector2.Distance(pl.transform.position, arenaArrival) > 40f)
+                {
+                    pl.transform.position = arenaArrival + new Vector2(0f, -1f);
+                    Plugin.Log.LogInfo("RIVAL moved a player into the arena (the portal didn't teleport them)");
+                }
+            }
+            foreach (GameObject p in tierPortals) if (p != null) Destroy(p);
+            if (leavePortal != null) Destroy(leavePortal);
+            if (entrance != null) Destroy(entrance); // one fight per portal
+
+            // The Hard portal sometimes holds an Archon (a final champion, with its half-health phase) instead.
+            bool archon = tier == RivalTier.Hard && UnityEngine.Random.value < Plugin.ArchonRivalChance.Value;
+            Vector2 rivalAt = OpenSpot(arenaRoom, arenaArrival, new Vector2(0f, 6f), new List<Vector2> { arenaArrival });
+            if ((rivalAt - arenaArrival).sqrMagnitude < 4f) rivalAt = FarthestWithin(arenaArrival, 9f);
+            rival = Rivals.Spawn(rivalAt, prefix, archon ? RivalTier.Final : tier, archon);
+            if (rival == null) { OpenWayBack(); yield break; }
+            yield return null; // Start (and our hostile postfix) runs
+            yield return null;
+
+            string title = archon
+                ? (prefix == "Chaos" ? "Chaos Sovereign" : ElementalGiants.ElementColorName(prefix) + " Archon")
+                : ElementalGiants.ElementColorName(prefix) + " Rival Wizard";
+            if (archon) Plugin.Log.LogInfo("RIVAL Hard portal holds an Archon: " + title);
+            yield return StartCoroutine(Rivals.Intro(rival, title, archon ? "Hard  Â·  Archon" : tier.ToString()));
+
+            // After the fight (and its chests): the way back to where the player came in.
+            while (rival != null && rival.health != null && rival.health.CurrentHealthValue > 0) yield return new WaitForSeconds(0.25f);
+            yield return new WaitForSeconds(3f);
+            OpenWayBack();
+        }
+
+        Vector2 FarthestWithin(Vector2 from, float max)
+        {
+            Vector2 best = from;
+            float bd = -1f;
+            foreach (Vector2 s in arenaSpots)
+            {
+                float d = Vector2.Distance(s, from);
+                if (d <= max && d > bd && !Blocked(arenaRoom, s, s)) { bd = d; best = s; }
+            }
+            return best;
+        }
+
+        void OpenWayBack()
+        {
+            MakePortal(arenaArrival, entrancePos + new Vector2(0f, -1.5f), new Color(0.85f, 0.85f, 0.85f));
+            IntroUI.Show("The way back is open", "Return to the floor", new Color(0.9f, 0.9f, 0.9f), null, 3f);
+            Plugin.Log.LogInfo("RIVAL event: way back opened");
+        }
+
+        void Close()
+        {
+            if (entrance != null) Destroy(entrance);
+            if (selectorRoom != null) Destroy(selectorRoom.gameObject);
+            if (arenaRoom != null) Destroy(arenaRoom.gameObject);
+            Destroy(gameObject);
+        }
+
+        void OnDestroy() { if (Current == this) Current = null; }
+    }
+
+    // MeshGenerator.GenerateMeshes ends with StaticBatchingUtility.Combine, which bakes the meshes where they are, so
+    // a room generated at the origin and moved afterwards would leave its floor behind. For our rooms only, run the
+    // same steps without the batching (two rooms' worth of extra draw calls).
+    [HarmonyPatch(typeof(MeshGenerator), "GenerateMeshes")]
+    internal static class RivalRoomMeshPatch
+    {
+        static System.Reflection.MethodInfo makeObj, makeMesh;
+
+        static bool Prefix(TileGrid __0, Transform __1, string __2, bool __3)
+        {
+            if (!RivalEvent.Building) return true;
+            try
+            {
+                if (makeObj == null) makeObj = AccessTools.Method(typeof(MeshGenerator), "CreateLayerMeshObj");
+                if (makeMesh == null) makeMesh = AccessTools.Method(typeof(MeshGenerator), "CreateLayerMesh");
+                Transform parent = __1;
+                if (__3) parent = Globals.FindOrCreateGameObject("Meshes", __1).transform;
+                foreach (string layer in Tile.tileLayerNames)
+                {
+                    object pair = makeObj.Invoke(null, new object[] { layer, parent });
+                    object mesh = makeMesh.Invoke(null, new object[] { __0, layer, __2 });
+                    Traverse p = Traverse.Create(pair), m = Traverse.Create(mesh);
+                    p.Property("First").GetValue<MeshFilter>().sharedMesh = m.Property("First").GetValue<Mesh>();
+                    p.Property("Second").GetValue<MeshRenderer>().materials = m.Property("Second").GetValue<Material[]>();
+                }
+                return false;
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log.LogWarning("RIVAL unbatched mesh build failed, using the game's: " + ex.Message);
+                return true;
+            }
+        }
+    }
+}

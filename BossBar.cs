@@ -12,6 +12,7 @@ namespace WolHybridBosses
         static BossBar shown;
         EnemyHealthBar bar;
         Enemy owner;
+        bool borrowed; // the giant's own bar (MiniBoss.InitComponents already creates one): renamed, never destroyed
         float deadSince = -1f;
 
         // Creates the bar for this enemy (hidden until Show), or returns the one it already has.
@@ -22,6 +23,15 @@ namespace WolHybridBosses
             if (bb != null && bb.bar != null) { bb.SetName(name); return bb; }
             if (bb == null) bb = e.gameObject.AddComponent<BossBar>();
             bb.owner = e;
+            MiniBoss mb = e as MiniBoss;
+            if (mb != null && mb.healthBar != null)
+            {
+                bb.bar = mb.healthBar;
+                bb.borrowed = true;
+                mb.bossDisplayName = name;
+                bb.SetName(name);
+                return bb;
+            }
             try
             {
                 bb.bar = Globals.ChaosInst<EnemyHealthBar>(EnemyHealthBar.Prefab, null, null, null);
@@ -50,7 +60,7 @@ namespace WolHybridBosses
 
         internal void Show()
         {
-            if (bar == null) return;
+            if (bar == null || borrowed) return; // a giant's own bar is shown by the game
             if (shown != null && shown != this) shown.Hide(); // one boss bar at a time: the newest fight wins
             shown = this;
             try { bar.FadeIn(); } catch (Exception ex) { Plugin.Log.LogWarning("BOSSBAR fade-in failed: " + ex.Message); bar.gameObject.SetActive(true); }
@@ -65,7 +75,7 @@ namespace WolHybridBosses
 
         void Update()
         {
-            if (bar == null) return;
+            if (bar == null || borrowed) return;
             bool dead = owner == null || owner.health == null || owner.health.CurrentHealthValue <= 0;
             if (!dead) { deadSince = -1f; return; }
             if (deadSince < 0f) deadSince = Time.time;
@@ -75,6 +85,7 @@ namespace WolHybridBosses
         void Remove()
         {
             if (shown == this) shown = null;
+            if (borrowed) { bar = null; return; }
             if (bar != null)
             {
                 Destroy(bar.gameObject);
