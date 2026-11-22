@@ -432,6 +432,7 @@ namespace WolHybridBosses
             try
             {
                 if (__instance == null) return;
+                if (Infusion.ApplyToAttack(__instance)) return; // the player's infused arcana (v0.7.0)
                 if (InfusionPreview.Key != null && (__instance.GetComponentInParent<Player>() != null || (__instance.atkInfo != null && __instance.atkInfo.entity is Player)))
                 {
                     CouncilCorruption.PreviewRecolor(__instance, InfusionPreview.Key);

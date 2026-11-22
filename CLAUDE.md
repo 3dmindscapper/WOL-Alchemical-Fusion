@@ -71,6 +71,44 @@ Cloning the player GameObject and driving it from script failed:
 - v0.0.7 tested: summon swap works (logged EarthKnight, FlameLancer etc.). SuperCoffin goes **pink** on palettes 4–8, so its sheet has no elemental rows: keep palette 3 and tint or outline it (MiniBoss uses `_OutlineColor`/`_OutlineColor2`). The user wants the coffin (and rivals) to cast **player arcana** instead.
 - Arcana research: `Contestant : Enemy` (PvP wizard) reimplements Tornado/SwordThrow/Fireball as its own states (ctor typed to Contestant). Its FireballState instantiates the prefab and calls `Attack.SetAttackInfo("Player", "ShootFireball", level, isUltimate)`, the same call player arcana make (e.g. `UseFireBeam.CreateFireBeam`: `FireBeam.Prefab` + `ChaosInst` + `SetAttackInfo`). There are 100 `Player+Use*` arcana. Plan: our own data-driven `ArcanaState : Enemy.SkillState` (skillID, prefab, delivery type). See ROADMAP "Enemy Arcana".
 
+## v0.7.1: real attack recolour; infusion moved to Tomi; persistent infused versions (built, not yet run in game)
+- **Bug:** the icon was recoloured, but attacks weren't. There were two causes:
+  - effect sprites are tightly packed in atlases, so `textureRect` throws, the twin failed and only a weak tint was applied;
+  - `RecolorSprites` skipped any sprite with an Entity anywhere above it, which includes effects parented to the player.
+- **Fix:**
+  - `RecolorEngine.TightTwin`: a whole-atlas recolour (`AtlasTwin`, cached per atlas + ramp), `Sprite.Create` over the original's UV box, then `OverrideGeometry` with the original mesh. The pivot comes from vertex 0.
+  - `BodyWithin` only skips bodies inside the recolour root.
+  - `PreviewRecolor` (player attacks) climbs up to 3 parents (stopping at an Entity, more than 8 children, or names containing "Pool") so the whole effect is covered.
+- **Tomi (`SpellBookNpc`) replaces the crystal altar:**
+  - `TomiAtMerchantPatch` (SkillStoreItem.Start, once per stage) calls the merchant's own `SpawnTomi` 0.5s later unless he's already there. The fallback is `ChaosInst(SpellBookNpc.Prefab)`.
+  - `TomiRunListPatch` (SpellBookUI.LoadEleSkillDict postfix): in a run, the `eleSpellDict` lists are filtered to `LootManager.currentPlayerSkills` plus equipped. During runs, `Player.skillsDict` holds every unlocked arcana, so v0.7.0's altar listed arcana the player didn't own.
+  - `TomiInfusion` (follows SpellBookUI Activate/Deactivate) handles [I] presses on `currentSkill`: keep, then sacrifice, then confirm. It pays gold, calls `RemoveSkill`, removes the id from currentPlayerSkills, calls `Infusion.Set`, then refreshes (LoadEleSkillDict, LoadSpellPage(false), SetEquipSlots, LoadInfoPage). An OnGUI hint bar sits at the bottom.
+- **InfusionUnlocks:** stored in `BepInEx/config/osi.wol.hybridbosses.infusions.txt` as `skillID|Fire,Water|Fire`.
+  - `Infusion.Set` unlocks the version (altar, Tomi, or picking up a pre-infused arcana).
+  - In the Hub, [I] at Tomi cycles the arcana under the cursor: original → each unlocked version.
+  - `Infusion.TryGet` falls back to the chosen version, so it applies in runs and on icons. Run infusions override it, and Clear keeps the choices.
+- Ctrl+F8 now spawns Tomi beside you.
+
+## v0.7.0: arcana infusion (built, not yet run in game)
+- **Infusion.cs state:** `infused` (skillID → ElementType) and `pending` (pre-infused drops/stock until `Player.PickUpSkill`). Cleared in the Hub (ChaosStageRunner.Update).
+- **Applied in VariantAttackPatch first** (`Infusion.ApplyToAttack`). It counts as the player's attack only if there's no OwnerContext and no `OwnerOf`, and the entity is the Player (or null, category "Player", and not under an Enemy).
+- **Once per AttackInfo:**
+  - damage ×1.10, so re-infusing never stacks;
+  - the element switches, and the strongest existing status chance (min 0.15) moves to the new element's status: Fire burn, Water/Wind slow, Ice freeze, Earth poison, Thunder shock, Chaos chaos;
+  - Radiant uses `ArcanosBridge.SetElement` (Arcanos' element on a player attack, as its own arcana do);
+  - Prism cycles base elements via `Prism.Next(player)`;
+  - the look comes from `CouncilCorruption.PreviewRecolor` with the element's ramp.
+- **Icons:** `IconManager.GetSkillIcon` postfix returns `RecolorEngine.Twin(icon, ramp)` for infused/pending ids, which covers HUD, spellbook, cards and shop.
+- **Drops:** the `LootManager.DropSkill` prefix rolls `Infusion.InfusedDropChance` (0.04). `GetSkillID` postfix keeps only the latest candidate pending.
+- **Stock:** the `SkillStoreItem.Initialize` postfix rolls `InfusedStockChance` (0.08). It adds a ×1.25 `costStat` mod, then calls `SetCardSprite` again.
+- **Altar:** `SkillStoreItem.Start` postfix → `InfusionAltar.EnsureNear` places one per scene at the first shop item + (-4.5, -1.5), on open floor.
+  - It uses Arcanos' `cristal_prisma` sprite (fallback: Fireball icon) with a shifting glow. Proximity is 2.2 units; F or E opens it.
+  - The OnGUI picker pauses the game (timeScale 0). Steps: keep → sacrifice → confirm.
+  - Sacrifice rules: not the signature, not the same current element, not an equipped basic/dash.
+  - Cost is `80 + 40×tier` gold from `Player.goldWallet` (static). `Player.RemoveSkill(sacrifice)`, then `AnnounceSkillChanged(keep)`.
+- **Test keys:** Ctrl+F8 spawns an altar beside you (Debug F8 stays the giant spawn). Config section `Infusion`: Enabled, InfusedDropChance, InfusedStockChance.
+- **Not done yet:** "Fire-infused X" names in the game's own UI (spellbook/HUD text); controller input for the altar (keyboard F/E and mouse only).
+
 ## v0.6.5: recolour engine (gradient maps) for variant attacks; Ctrl+F10 infusion preview (built, not yet run in game)
 - **RecolorEngine.cs:**
   - `ElementRamps`: ramps for Fire / Water / Ice / Earth / Thunder / Wind / Chaos / Radiant. `Map(key, colour)` maps a colour by brightness (70% luminance, 30% max channel, slight contrast stretch).

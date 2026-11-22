@@ -725,6 +725,8 @@ namespace WolHybridBosses
         void Update()
         {
             FinalRun.Tick(); // rolls the run (Chaos plan, champion) on arriving in the Hub
+            string sceneName = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
+            if (sceneName == "Hub" || sceneName == "Tutorial") Infusion.Clear(); // infusions last one run
             string stage =UnityEngine.SceneManagement.SceneManager.GetActiveScene().name + "|" + Level.tileSetName + "|" + GameController.tierCount + "|" + GameController.stageCount;
             if (stage != lastStage)
             {

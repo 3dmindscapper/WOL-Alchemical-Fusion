@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
@@ -14,7 +14,7 @@ namespace WolHybridBosses
     [BepInDependency("wolarcanos.arcanos", BepInDependency.DependencyFlags.SoftDependency)] // optional: Radiant / Prism variants
     public class Plugin : BaseUnityPlugin
     {
-        public const string Version = "0.6.5";
+        public const string Version = "0.7.1";
         internal static ManualLogSource Log;
 
         internal static ConfigEntry<bool> ElementalGiants;
@@ -41,6 +41,8 @@ namespace WolHybridBosses
         internal static ConfigEntry<float> ChaosStageChance;
         internal static ConfigEntry<float> ChaosStageRewards;
         internal static ConfigEntry<float> VariantChaosShare, VariantRadiantShare, VariantPrismShare, VariantArchonChance, RadiantHealthDropChance;
+        internal static ConfigEntry<bool> InfusionEnabled;
+        internal static ConfigEntry<float> InfusedDropChance, InfusedStockChance;
         internal static ConfigEntry<int> ChaosGiantPalette;
         internal static ConfigEntry<float> ChaosEnemyChance;
         internal static ConfigEntry<int> GiantMinElementMoves;
@@ -113,6 +115,9 @@ namespace WolHybridBosses
             VariantRadiantShare = Config.Bind("StageVariants", "RadiantShare", 0.35f, "With WoL Arcanos installed, the share of variant stages that are Radiant (Arcanos' Fulgor element).");
             VariantPrismShare = Config.Bind("StageVariants", "PrismShare", 0.15f, "With WoL Arcanos installed, the share of variant stages that are Prism (Arcanos' Prisma element).");
             VariantArchonChance = Config.Bind("StageVariants", "ArchonChance", 0.25f, "With WoL Arcanos installed, chance that an elemental Archon (final champion or arena Archon) is a Radiant or Prism Archon instead.");
+            InfusionEnabled = Config.Bind("Infusion", "Enabled", true, "An Infusion Altar stands beside the arcana merchant: keep one arcana, sacrifice another, and the kept one takes the sacrificed one's element (+10% damage). Run only.");
+            InfusedDropChance = Config.Bind("Infusion", "InfusedDropChance", 0.04f, "Chance that a dropped arcana comes already infused with another element.");
+            InfusedStockChance = Config.Bind("Infusion", "InfusedStockChance", 0.08f, "Chance that an arcana in the merchant's stock is already infused (25% pricier).");
             RadiantHealthDropChance = Config.Bind("StageVariants", "RadiantHealthDrop", 0.15f, "Chance that an enemy on a Radiant stage leaves a health pickup when it dies.");
             ChaosEnemyChance = Config.Bind("ChaosStages", "EnemyChance", 0.5f,
                 "On a Chaos stage, chance (0 to 1) that each Knight, Rogue, Archer, Mage, Summoner or Lancer is a Chaos version (1 Chaos arcana + purple colours). Like elemental stages, not every one is. Giants are always Chaos there.");
@@ -162,7 +167,8 @@ namespace WolHybridBosses
             if (Input.GetKeyDown(KeyCode.F5)) Debug.ListEnemies();
             if (Input.GetKeyDown(KeyCode.F6)) Debug.CyclePalette();
             if (Input.GetKeyDown(KeyCode.F7)) Debug.DumpNearestEnemy();
-            if (Input.GetKeyDown(KeyCode.F8)) Debug.SpawnNextTestGiant();
+            if (Input.GetKeyDown(KeyCode.F8) && (Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl))) TomiInfusion.SpawnHere();
+            else if (Input.GetKeyDown(KeyCode.F8)) Debug.SpawnNextTestGiant();
             if (Input.GetKeyDown(KeyCode.F9) && (Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl))) Debug.DumpArcanaVisuals();
             else if (Input.GetKeyDown(KeyCode.F9)) Debug.DumpElementPalette();
             if (Input.GetKeyDown(KeyCode.F10) && (Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl))) InfusionPreview.Cycle();

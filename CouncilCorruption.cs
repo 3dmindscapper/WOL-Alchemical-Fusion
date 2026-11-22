@@ -374,6 +374,16 @@ namespace WolHybridBosses
             if (atk == null || !ElementRamps.Has(key)) return;
             GameObject root = VisualRoot(atk);
             if (root == null) return;
+            // v0.7.1: the whole effect, not just the hitbox's branch: climb (up to 3 levels) while the parent is a
+            // small object that isn't a body (the player) or a big container (pools, rooms).
+            Transform t = root.transform;
+            for (int i = 0; i < 3 && t.parent != null; i++)
+            {
+                Transform p = t.parent;
+                if (p.GetComponent<Entity>() != null || p.childCount > 8 || p.name.IndexOf("Pool", StringComparison.OrdinalIgnoreCase) >= 0) break;
+                t = p;
+            }
+            root = t.gameObject;
             tinted.Add(root.GetInstanceID());
             RecolorTree(root, key, atk);
         }

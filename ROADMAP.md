@@ -5,7 +5,7 @@ It mostly reuses the game's own assets. Custom art is possible, but so far every
 
 Status key: ✅ done · 🧪 built, needs in-game testing · 🔜 next · 📋 planned · ❓ needs research first · 💬 dev note (idea to consider)
 
-Current version: **0.6.5**. Technical details (game internals, file layout, pitfalls) live in `CLAUDE.md`.
+Current version: **0.7.1**. Technical details (game internals, file layout, pitfalls) live in `CLAUDE.md`.
 
 **Next major focus: Arcana infusion (section 6).**
 
@@ -185,7 +185,7 @@ Next:
 - 🔜 Test: each port's look, size and damage; the Dazzle glare; whether Prism statuses feel fair.
 - 📋 More ports if these work: Radiant Aegis (a reflecting shield), Light Deer (a summon), Supernova, Refraction.
 - ❓ Purified (Arcanos' second Radiant stage: armour broken, extra damage taken) as a short "takes +15% damage" on the player, if Dazzled alone feels too light.
-## 6. Arcana infusion (player feature) 🔜 next major focus
+## 6. Arcana infusion (player feature) 🧪 v0.7.1
 
 **Idea:** pick an arcana to keep and an arcana to sacrifice. The kept arcana takes the sacrificed arcana's element. For example, Ice Spear plus a sacrificed Fire arcana gives a "Fire-infused Ice Spear": the same move, now dealing fire damage, applying burn and looking fiery.
 
@@ -200,8 +200,18 @@ Why it fits: the enemy side already exists. Variant stages turn arcana into anot
 - **Infused arcana can drop** (rarely) and **be sold by the arcana merchant** (rarely).
 - **The arcana's card sprite and icon are recoloured** to the new element.
 
-Still open: where infusing happens (altar / NPC / merchant service / Plaza) and its cost.
+**Where and cost (v0.7.1):** **Tomi** teleports in beside the arcana merchant on every shop visit. In a run, his spellbook only shows **your own arcana**, and infusing happens right in that menu:
+- Point at the arcana to **keep** and press **[I]**, then point at the arcana to **sacrifice** and press **[I]**, then **[I]** again to infuse. Cost: the sacrificed arcana plus **80 + 40 gold per tier**. A hint bar at the bottom shows each step.
+- You can't sacrifice your signature, an arcana that already has the kept one's element, or your equipped basic or dash.
+- Infused arcana get the element's look on their **actual attacks** (every animation frame recoloured, particles, trails, lights) and on every icon. They also take its damage type, status and +10%.
+- Rarely, a dropped arcana (4%) or one in the merchant's stock (8%, 25% pricier) is already infused; its card shows it.
+- **Every infused version you get stays unlocked.** Back in the Hub, point at an arcana in Tomi's spellbook and press **[I]** to switch between its original and its unlocked infused versions. The chosen version is what you cast in runs, until you infuse it differently during a run.
+- Test: **Ctrl+F8** brings Tomi beside you.
 
+Still to do:
+- 📋 "Fire-infused X" names in the game's own spellbook / HUD text (the hint bar already says it).
+- 📋 Controller button for [I] (keyboard only for now).
+- 📋 Element accents for infused player attacks (enemy variants have them).
 ### 6a. Research: how vanilla sells an element's look (v0.6.4)
 
 What the game does (code scan of the arcana classes):
@@ -240,10 +250,10 @@ Shared win: the same recolour engine would replace today's variant tint on enemi
 
 Pieces to build:
 1. 🧪 **Recolour engine (v0.6.5):** gradient maps per element, recoloured twins of every animated frame, particles/trails/lines/lights on the same ramp, and element accents (Arcanos effects). It's live on Chaos/Radiant/Prism enemies' attacks. **Ctrl+F10 previews each element's look on your own arcana** (look only).
-2. Infusion state per run (which arcana, which element), +10% damage, the element/status conversion on the player's attacks.
-3. The infusing interaction: pick the kept arcana, then the one to sacrifice; the sacrifice is consumed.
-4. Recoloured card sprite and icon in every UI; "Fire-infused X" names.
-5. Rare infused drops, and rare infused stock at the arcana merchant.
+2. 🧪 Infusion state per run, +10% damage, the element/status conversion on the player's attacks (v0.7.0).
+3. 🧪 The infusing interaction: in Tomi's spellbook, Tomi beside the arcana merchant (v0.7.1); infused versions stay unlocked and are chosen at Tomi in the Hub.
+4. 🧪 Recoloured card sprite and icon in every UI (v0.7.0); 📋 "Fire-infused X" names in the game's own text.
+5. 🧪 Rare infused drops and merchant stock (v0.7.0).
 6. Arcanos: Radiant/Prism infusions only from arcana the player has unlocked.
 7. Edge cases: signature versions, basics and dash arcana, co-op, mid-run saves, arcana whose element can't be read.
 ## Shared system: Enemy Arcana 🧪
@@ -268,6 +278,7 @@ Lets any enemy cast real player arcana. Used by rivals, champions, arcana giants
 | F9 | Dump the element → palette table and the current stage element |
 | Ctrl+F9 | Dump every arcana prefab's makeup (sprites, shaders, animators, particles, trails, lights) for infusion research |
 | F10 | Cycle the nearest giant through all five elements |
+| Ctrl+F8 | Bring Tomi beside you (infusing in his spellbook with [I]) |
 | Ctrl+F10 | Infusion look preview: your own arcana take Fire → Water → Ice → Earth → Thunder → Wind → Chaos → Radiant → off (look only) |
 | F11 | Open a rival portal beside you: selector room → arena → way back (cycles Fire → Water → Earth → Wind → Thunder → Chaos, then Radiant → Prism with Arcanos) |
 | Shift+F11 | Cycle the current stage: normal → Chaos → Radiant → Prism (the last two with Arcanos) |

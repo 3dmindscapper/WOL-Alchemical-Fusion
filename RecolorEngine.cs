@@ -123,11 +123,24 @@ namespace WolHybridBosses
             string k = sid + "|" + key;
             Sprite tw;
             if (twins.TryGetValue(k, out tw)) return tw;
+            // v0.7.1: tightly packed atlas sprites (most effect animations) have no textureRect: twin them from a
+            // recoloured copy of the whole atlas with the sprite's own mesh (OverrideGeometry).
+            bool tight = false;
+            try { Rect probe = src.textureRect; } catch (Exception) { tight = true; }
+            if (tight)
+            {
+                tw = TightTwin(src, key);
+                if (tw == null) { failed.Add(sid); return null; }
+                made.Add(tw.GetInstanceID());
+                twins[k] = tw;
+                if (loggedTwins++ < 8) Plugin.Log.LogInfo("RECOLOR twin (tight) " + tw.name);
+                return tw;
+            }
             try
             {
                 Texture2D tex = src.texture;
                 if (tex == null) { failed.Add(sid); return null; }
-                Rect r = src.textureRect; // throws for tightly packed sprites
+                Rect r = src.textureRect;
                 int x0 = Mathf.RoundToInt(r.x), y0 = Mathf.RoundToInt(r.y), rw = Mathf.RoundToInt(r.width), rh = Mathf.RoundToInt(r.height);
                 if (rw <= 0 || rh <= 0) { failed.Add(sid); return null; }
                 Color32[] atlas = AtlasPixels(tex);
@@ -163,6 +176,72 @@ namespace WolHybridBosses
             catch (Exception)
             {
                 failed.Add(sid);
+                return null;
+            }
+        }
+
+        // A whole atlas recoloured onto a ramp, cached per (atlas, ramp).
+        static readonly Dictionary<string, Texture2D> atlasTwins = new Dictionary<string, Texture2D>();
+
+        static Texture2D AtlasTwin(Texture2D tex, string key)
+        {
+            string k = tex.GetInstanceID() + "|" + key;
+            Texture2D t;
+            if (atlasTwins.TryGetValue(k, out t) && t != null) return t;
+            Color32[] src = AtlasPixels(tex);
+            Color32[] px = new Color32[src.Length];
+            Dictionary<int, Color32> map = new Dictionary<int, Color32>();
+            for (int i = 0; i < src.Length; i++)
+            {
+                Color32 c = src[i];
+                if (c.a == 0) { px[i] = c; continue; }
+                int ck = (c.r << 24) | (c.g << 16) | (c.b << 8) | c.a;
+                Color32 o;
+                if (!map.TryGetValue(ck, out o)) { o = ElementRamps.Map(key, c); map[ck] = o; }
+                px[i] = o;
+            }
+            t = new Texture2D(tex.width, tex.height, TextureFormat.RGBA32, false);
+            t.SetPixels32(px);
+            t.filterMode = tex.filterMode;
+            t.wrapMode = TextureWrapMode.Clamp;
+            t.Apply(false);
+            t.name = tex.name + " (" + key + ")";
+            atlasTwins[k] = t;
+            Plugin.Log.LogInfo("RECOLOR atlas " + tex.name + " " + tex.width + "x" + tex.height + " -> " + key);
+            return t;
+        }
+
+        // Tightly packed sprite: a sprite on the recoloured atlas covering the original's UV box, with the original
+        // mesh (vertices moved into that box's pixel space), and the same pivot and pixels-per-unit.
+        static Sprite TightTwin(Sprite src, string key)
+        {
+            try
+            {
+                Texture2D tex = src.texture;
+                if (tex == null) return null;
+                Vector2[] uv = src.uv, verts = src.vertices;
+                ushort[] tris = src.triangles;
+                if (uv == null || verts == null || uv.Length == 0 || uv.Length != verts.Length) return null;
+                float minX = float.MaxValue, minY = float.MaxValue, maxX = float.MinValue, maxY = float.MinValue;
+                foreach (Vector2 u in uv) { minX = Mathf.Min(minX, u.x); minY = Mathf.Min(minY, u.y); maxX = Mathf.Max(maxX, u.x); maxY = Mathf.Max(maxY, u.y); }
+                Rect box = new Rect(Mathf.Floor(minX * tex.width), Mathf.Floor(minY * tex.height), 0f, 0f);
+                box.width = Mathf.Max(1f, Mathf.Ceil(maxX * tex.width) - box.x);
+                box.height = Mathf.Max(1f, Mathf.Ceil(maxY * tex.height) - box.y);
+                float ppu = src.pixelsPerUnit;
+                // Each vertex in the box's pixel space; the pivot from vertex 0 (local units = (pixel - pivot) / ppu).
+                Vector2[] px = new Vector2[uv.Length];
+                for (int i = 0; i < uv.Length; i++)
+                    px[i] = new Vector2(Mathf.Clamp(uv[i].x * tex.width - box.x, 0f, box.width), Mathf.Clamp(uv[i].y * tex.height - box.y, 0f, box.height));
+                Vector2 pivotPx = px[0] - verts[0] * ppu;
+                Vector2 pivot = new Vector2(pivotPx.x / box.width, pivotPx.y / box.height);
+                Sprite tw = Sprite.Create(AtlasTwin(tex, key), box, pivot, ppu, 0, SpriteMeshType.Tight);
+                tw.OverrideGeometry(px, tris);
+                tw.name = src.name + " (" + key + ")";
+                return tw;
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log.LogWarning("RECOLOR tight twin failed for " + src.name + ": " + ex.Message);
                 return null;
             }
         }
@@ -247,7 +326,9 @@ namespace WolHybridBosses
         {
             foreach (SpriteRenderer sr in GetComponentsInChildren<SpriteRenderer>(true))
             {
-                if (sr == null || sr.sprite == null || sr.GetComponentInParent<Entity>() != null) continue;
+                // v0.7.1: only bodies *inside* this visual are skipped (an effect parented to the player is still an
+                // effect: checking every parent up the scene skipped all of those).
+                if (sr == null || sr.sprite == null || BodyWithin(sr.transform)) continue;
                 Sprite cur = sr.sprite;
                 Sprite done;
                 if (lastSet.TryGetValue(sr, out done) && done == cur) continue; // our twin still on
@@ -263,6 +344,16 @@ namespace WolHybridBosses
                 }
                 else lastSet[sr] = cur;
             }
+        }
+
+        bool BodyWithin(Transform t)
+        {
+            for (; t != null; t = t.parent)
+            {
+                if (t.GetComponent<Entity>() != null) return true;
+                if (t == transform) return false;
+            }
+            return false;
         }
 
         void Restore()
