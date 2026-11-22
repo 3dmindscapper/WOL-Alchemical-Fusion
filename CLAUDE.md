@@ -71,6 +71,35 @@ Cloning the player GameObject and driving it from script failed:
 - v0.0.7 tested: summon swap works (logged EarthKnight, FlameLancer etc.). SuperCoffin goes **pink** on palettes 4–8, so its sheet has no elemental rows: keep palette 3 and tint or outline it (MiniBoss uses `_OutlineColor`/`_OutlineColor2`). The user wants the coffin (and rivals) to cast **player arcana** instead.
 - Arcana research: `Contestant : Enemy` (PvP wizard) reimplements Tornado/SwordThrow/Fireball as its own states (ctor typed to Contestant). Its FireballState instantiates the prefab and calls `Attack.SetAttackInfo("Player", "ShootFireball", level, isUltimate)`, the same call player arcana make (e.g. `UseFireBeam.CreateFireBeam`: `FireBeam.Prefab` + `ChaosInst` + `SetAttackInfo`). There are 100 `Player+Use*` arcana. Plan: our own data-driven `ArcanaState : Enemy.SkillState` (skillID, prefab, delivery type). See ROADMAP "Enemy Arcana".
 
+## v0.6.1: never write Arcanos' element values onto enemies (built, not yet run in game)
+- **Bug:** a Prism giant Coffin took no damage. Arcanos' ElementType values are huge numbers (log: Radiant 2115412493, Prism -1896111776), and setting `e.element` to one broke the game's damage lookup.
+- **Fix:** ChaosGiants.Apply changes the body element only for Chaos.
+- **Fix:** Variants.Convert now changes damage type only for Chaos. Radiant/Prism enemy attacks keep their own element and only get the variant's tint. ArcanosBridge.SetElement is no longer called on enemy attacks.
+- **Rule:** don't put Fulgor/Prisma ElementType values on enemy bodies or enemy attacks. Arcanos' own arcana keep whatever element Arcanos gives them.
+
+## v0.6.0: stage variants Chaos / Radiant / Prism (built, not yet run in game)
+- **Variants.cs** holds the shared layer:
+  - `StageVariant` {None, Chaos, Radiant, Prism}, with a `VariantInfo` per variant: prefix, titles, colours, ramp, board colours and tile recolour.
+  - `Variants.Split` (shares from config), `Ramp`, `CastPool`/`DashPool`, `Convert` (damage type), `AttackVariant`, `TintBody`.
+  - Components and patches: `VariantMark` (on casters; Radiant health drop), `PrismCycle` (hue-cycling bodies), `VariantAttackPatch` (SetAttackInfo postfix; replaces the old ChaosStageAttackPatch and CouncilAttackTintPatch), `VariantChest` with `VariantRewards`, and `Archons.MaybeVariant`.
+- **ArcanosBridge** reads WoL Arcanos (`wolarcanos.arcanos`) by reflection; the plugin declares it as a SoftDependency.
+  - `Desbloqueo.ElementoDe/IdsDe/Desbloqueado` (Arcanos' element names "Fulgor"/"Prisma").
+  - `ElementosNuevos.Fulgor/Prisma` (ElementType values), `Icono(ElementType, Uso)`, `Elemento(Attack, ElementType)`. All of these are static on internal classes.
+- **Plan:** ChaosRun.IsChaos is still the 15% "variant stage" roll. `VariantOf(tier, stage)` picks the variant from a second hash of the same seed, and `TierVariant` gives the Council its tier's first variant. Without Arcanos the split always returns Chaos.
+- **ChaosStages:** `PlannedVariant`/`ActiveVariant`; `Apply(visualOnly, which)`.
+  - `ChaosVariant` is now target-hue / rainbow recolour. The old relative hue shift turned grass red.
+  - Rewards per variant. Title uses `StageTitle`. Board squares get the variant's colour and icon; plan letters C/R/P. Shift+F11 cycles off → Chaos → Radiant → Prism.
+- **Enemies/giants:** humanoids and giants get a VariantMark. Chaos uses the purple row; Radiant a tint; Prism PrismCycle. They cast from the variant's pool. A Radiant/Prism giant's element is set to Arcanos' element type.
+- **Catalog:** `ElementOf` returns "Radiant"/"Prism" for Arcanos' arcana via `ArcanosBridge.PrefixOf`. `Pool("Chaos")` still means every element, so the Sovereign and Chaos rivals can roll them too.
+- **Council (CouncilCorruption rewritten):**
+  - `Variant`, `CouncilVariant(tier)`, and line sets per variant (`ChaosLines`/`RadiantLines`/`PrismLines`). Titles are Corrupted/Radiant/Prismatic; echoes come from `CastPool`.
+  - Shift+F12 cycles a forced variant.
+  - **Chest:** only unlocked arcana of the variant (`ArcanosBridge.Unlocked`: the game's private lockedSkillList plus Arcanos' Desbloqueado), and lockedRate is set to 0. With none unlocked, the chest keeps its normal drop.
+- **Rivals:** Radiant/Prism rivals get a VariantMark, `CastPool` arcana and `DashPool`. A Chaos melee is used as their basic if they have none, converted when swung. Own spells: Prism all, Radiant none. `StagePrefixOrRandom` gives a variant stage's rival its variant, and the off-element rival roll uses the split.
+  - Their chests are `VariantChest`: unlocked arcana of their element only.
+- **Archons:** `FinalRun.Pick` and the arena Archon may become Radiant/Prism (`StageVariants.ArchonChance` 0.25). ChampionPhase gives them an Ascendant/Refracted phase instead of a hybrid.
+- **New config section `StageVariants`:** ChaosShare 0.5, RadiantShare 0.35, PrismShare 0.15, ArchonChance 0.25, RadiantHealthDrop 0.15.
+
 ## v0.5.15: board / stage Chaos plan agree and stay stable (built, not yet run in game)
 - **GameController.stagesPerTier is 1.** NextLevelLoader goes to the boss once stageCount > stagesPerTier, so a tier has stagesPerTier + 1 = 2 regular stages, with stageCount 1 and 2.
   - Before, the board used regular = 1, giving every square its own tier, and IsChaos rejected each tier's 2nd stage.

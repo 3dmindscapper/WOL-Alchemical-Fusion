@@ -54,6 +54,15 @@ namespace WolHybridBosses
                 newTitle = title + ", Unbound";
                 mk.GapMultiplier = 0.7f;
             }
+            else if (mk.Prefix == "Radiant" || mk.Prefix == "Prism")
+            {
+                // v0.6.0: every attack of theirs becomes their element (VariantMark), so no elemental hybrid: they
+                // intensify instead, with 2 more arcana of their own pool and faster casts.
+                StageVariant v = Variants.FromPrefix(mk.Prefix);
+                gained = Rivals.PickVaried(Others(Variants.CastPool(v)), 2, false);
+                newTitle = title + (v == StageVariant.Radiant ? ", Ascendant" : ", Refracted");
+                mk.GapMultiplier = 0.75f;
+            }
             else
             {
                 List<string> options = new List<string>(ElementalGiants.Prefixes);

@@ -177,10 +177,16 @@ namespace WolHybridBosses
 
             // Basic attack: a basic arcana of its element replaces the Contestant's built-in Wind Slash basic (which has
             // no stats outside its ally category, so it swung for nothing and the rival looked stuck in place).
-            List<ArcanaDef> pool = ArcanaCatalog.Pool(mk.Prefix);
+            // v0.6.0: Radiant / Prism rivals cast that element's arcana (topped up with base arcana that turn into it:
+            // VariantMark converts their attacks), and wear its look.
+            StageVariant variant = Variants.FromPrefix(mk.Prefix);
+            bool exotic = variant == StageVariant.Radiant || variant == StageVariant.Prism;
+            if (exotic) { VariantMark.Set(e, variant); if (variant == StageVariant.Prism) Variants.TintBody(e, variant); }
+            List<ArcanaDef> pool = exotic ? Variants.CastPool(variant, false) : ArcanaCatalog.Pool(mk.Prefix);
             List<ArcanaDef> basics = (mk.Prefix == "Chaos" && ChaosStages.Planned) ? ArcanaCatalog.PoolExact("Chaos") : new List<ArcanaDef>(pool);
             basics.RemoveAll(d => d.Family != ArcanaFamily.Melee);
             if (basics.Count == 0) { basics = new List<ArcanaDef>(pool); basics.RemoveAll(d => d.Family != ArcanaFamily.Melee); }
+            if (basics.Count == 0 && exotic) { basics = ArcanaCatalog.Pool("Chaos"); basics.RemoveAll(d => d.Family != ArcanaFamily.Melee); } // converted when swung
             if (basics.Count > 0)
             {
                 ArcanaDef b = basics[UnityEngine.Random.Range(0, basics.Count)].Scaled(1f, 1f);
@@ -210,7 +216,7 @@ namespace WolHybridBosses
             EnemyArcana.Give(e, mk.Arcana, TierCooldown(mk.Tier) * mk.Bonus.Cooldown, TierWindup(mk.Tier));
 
             // Dash arcana: fired from its own dashes, like the player's.
-            List<ArcanaDef> dashes = ArcanaCatalog.DashPool(mk.Prefix);
+            List<ArcanaDef> dashes = exotic ? Variants.DashPool(variant) : ArcanaCatalog.DashPool(mk.Prefix);
             if (dashes.Count > 0)
             {
                 mk.Dash = dashes[UnityEngine.Random.Range(0, dashes.Count)].Scaled(TierCooldown(mk.Tier) * mk.Bonus.Cooldown, 1f);
@@ -353,7 +359,8 @@ namespace WolHybridBosses
         // The Contestant's own spells are elemental too: keep each only for rivals of its element (Chaos keeps all).
         internal static bool SignatureAllowed(RivalMarker mk, string spell)
         {
-            if (mk == null || mk.Prefix == "Chaos") return true;
+            if (mk == null || mk.Prefix == "Chaos" || mk.Prefix == "Prism") return true; // Prism mixes every element
+            if (mk.Prefix == "Radiant") return false;
             string el;
             switch (spell)
             {
@@ -377,8 +384,9 @@ namespace WolHybridBosses
 
         internal static string StagePrefixOrRandom()
         {
-            if (ChaosStages.Planned) return "Chaos"; // a Chaos stage's rival challenge casts Chaos arcana
-            if (UnityEngine.Random.value < Plugin.ChaosRivalChance.Value) return "Chaos";
+            if (ChaosStages.Planned) return ChaosStages.PlannedInfo.Prefix; // a variant stage's rival is of that variant
+            // The occasional off-element rival: Chaos, or (with Arcanos) Radiant / Prism by the same 50/35/15 split.
+            if (UnityEngine.Random.value < Plugin.ChaosRivalChance.Value) return Variants.Info(Variants.RandomVariant()).Prefix;
             string p = ElementalGiants.StagePrefix();
             return p ?? ElementalGiants.RandomPrefix();
         }

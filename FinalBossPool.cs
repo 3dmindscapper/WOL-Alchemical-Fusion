@@ -190,7 +190,7 @@ namespace WolHybridBosses
 
         static void Pick()
         {
-            ChampionPrefix = UnityEngine.Random.value < Plugin.FinalChaosChance.Value ? "Chaos" : ElementalGiants.RandomPrefix();
+            ChampionPrefix = UnityEngine.Random.value < Plugin.FinalChaosChance.Value ? "Chaos" : Archons.MaybeVariant(ElementalGiants.RandomPrefix());
         }
     }
 

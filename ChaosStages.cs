@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using HarmonyLib;
@@ -14,15 +14,19 @@ namespace WolHybridBosses
     //   - Shown: "Chaos <stage>" title, and Chaos stages are marked on the loading-screen board.
     // Which stages are Chaos is derived from the run seed + tier + stage (ChaosRun), so the board and the stage agree.
     // Shift+F11 toggles Chaos on the current stage for testing.
+    // How a variant recolours the tileset (v0.6.0): every colour pulled to TargetHue keeping HueSpread of its own
+    // variation (Chaos violet, Radiant gold), or spread around the hue wheel by brightness (Prism, Rainbow).
+    // (The old relative hue shift turned grass red instead of purple.)
     internal class ChaosVariant
     {
         public string Name;
-        public float HueShift, Saturation, Value;
+        public float TargetHue = -1f, HueSpread = 0.1f, Saturation = 1f, SatFloor, Value = 1f, ValueLift;
+        public bool Rainbow;
         public Color SpriteTint, LightTint;
 
-        public ChaosVariant(string name, float hue, float sat, float val, Color sprite, Color light)
+        public ChaosVariant(string name, Color sprite, Color light)
         {
-            Name = name; HueShift = hue; Saturation = sat; Value = val; SpriteTint = sprite; LightTint = light;
+            Name = name; SpriteTint = sprite; LightTint = light;
         }
     }
 
@@ -55,27 +59,55 @@ namespace WolHybridBosses
             }
         }
 
-        internal static bool IsCurrentStageChaos()
+        // v0.6.0: which variant a variant stage is (Chaos / Radiant / Prism), from a second hash of the same seed, so
+        // the board, the stage, its rival and the tier's Council always agree. (IsChaos above = "is a variant stage".)
+        internal static StageVariant VariantOf(int tier, int stage)
+        {
+            if (!IsChaos(tier, stage)) return StageVariant.None;
+            unchecked
+            {
+                int h = FinalRun.Seed ^ 0x2f6b9a1;
+                h = h * 37 + tier * 6151;
+                h = h * 37 + stage * 92821;
+                h ^= h >> 13; h *= 0x5bd1e995; h ^= h >> 15;
+                return Variants.Split(((h & 0x7fffffff) % 10000) / 10000f);
+            }
+        }
+
+        // A tier's Council takes the variant of its first variant stage (None when its stages were all normal).
+        internal static StageVariant TierVariant(int tier)
+        {
+            for (int s = 0; s < RegularStages; s++)
+            {
+                StageVariant v = VariantOf(tier, s);
+                if (v != StageVariant.None) return v;
+            }
+            return StageVariant.None;
+        }
+
+        internal static StageVariant CurrentStageVariant()
         {
             string scene = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name ?? "";
-            if (scene == "Hub" || scene == "Tutorial" || scene.Contains("PvP") || scene.Contains("BossLevel")) return false;
-            if (Level.isBossRushMode) return false;
-            if (UnityEngine.Object.FindObjectOfType<BossRoomEventHandler>() != null) return false;
+            if (scene == "Hub" || scene == "Tutorial" || scene.Contains("PvP") || scene.Contains("BossLevel")) return StageVariant.None;
+            if (Level.isBossRushMode) return StageVariant.None;
+            if (UnityEngine.Object.FindObjectOfType<BossRoomEventHandler>() != null) return StageVariant.None;
             FinalRun.Tick();
-            return IsChaos(GameController.tierCount, GameController.stageCount - 1);
+            return VariantOf(GameController.tierCount, GameController.stageCount - 1);
         }
     }
 
     internal static class ChaosStages
     {
-        internal static readonly ChaosVariant Chaos =
-            new ChaosVariant("Chaos", 0.72f, 0.85f, 0.80f, new Color(0.75f, 0.60f, 1.00f), new Color(0.55f, 0.35f, 1.00f));
-
-        // Decided when the stage is generated (before the misc room / rival arena is set up), and only valid for
-        // that stage (so the Hub or a boss room after a Chaos stage isn't Chaos).
+        // Decided when the stage is generated (before the rival portal is set up), and only valid for that stage (so
+        // the Hub or a boss room after a variant stage isn't one). v0.6.0: which variant too.
         static bool planned;
         static string plannedKey;
+        static StageVariant plannedVariant = StageVariant.Chaos;
         internal static bool Planned { get { return planned && plannedKey == StageKey(); } }
+        internal static StageVariant PlannedVariant { get { return Planned ? plannedVariant : StageVariant.None; } }
+        internal static VariantInfo PlannedInfo { get { return Variants.Info(plannedVariant); } }
+        static StageVariant activeVariant = StageVariant.None;
+        internal static StageVariant ActiveVariant { get { return Active != null ? activeVariant : StageVariant.None; } }
         internal static bool WasPlanned { get { return planned; } }
         internal static string PlannedKey { get { return plannedKey; } }
         internal static ChaosVariant Active { get; private set; }
@@ -91,23 +123,34 @@ namespace WolHybridBosses
 
         internal static void PlanCurrentStage()
         {
-            planned = ChaosRun.IsCurrentStageChaos();
+            StageVariant v = ChaosRun.CurrentStageVariant();
+            planned = v != StageVariant.None;
+            if (planned) plannedVariant = v;
             plannedKey = StageKey();
-            if (planned) Plugin.Log.LogInfo("CHAOS stage planned: tier " + GameController.tierCount + " stage " + GameController.stageCount + " (" + Level.tileSetName + ")");
+            if (planned) Plugin.Log.LogInfo("CHAOS stage planned: " + v + ", tier " + GameController.tierCount + " stage " + GameController.stageCount + " (" + Level.tileSetName + ")");
         }
 
-        // Shift+F11 test toggle.
+        // Shift+F11 test key: cycles this stage through normal -> Chaos -> Radiant -> Prism (the last two with Arcanos).
         internal static void ToggleOnCurrentStage()
         {
-            if (Active != null) { Revert(); planned = false; Plugin.Log.LogInfo("CHAOS stage: off (test)"); }
-            else { planned = true; plannedKey = StageKey(); Apply(); }
+            StageVariant next;
+            if (Active == null) next = StageVariant.Chaos;
+            else if (activeVariant == StageVariant.Chaos && ArcanosBridge.Present) next = StageVariant.Radiant;
+            else if (activeVariant == StageVariant.Radiant) next = StageVariant.Prism;
+            else next = StageVariant.None;
+            Revert();
+            if (next == StageVariant.None) { planned = false; Plugin.Log.LogInfo("CHAOS stage: off (test)"); return; }
+            planned = true; plannedKey = StageKey(); plannedVariant = next;
+            Apply();
         }
 
         // visualOnly: tiles, decorations and lights only (the Corrupted Council's room): no reward bonus, no enemies armed.
-        internal static void Apply(bool visualOnly = false)
+        internal static void Apply(bool visualOnly = false, StageVariant which = StageVariant.None)
         {
             Revert();
-            ChaosVariant v = Chaos;
+            if (which == StageVariant.None) which = plannedVariant;
+            ChaosVariant v = Variants.Info(which).Tiles;
+            activeVariant = which;
             Active = v;
             float t0 = Time.realtimeSinceStartup;
             int meshes = 0, sprites = 0, lights = 0;
@@ -152,12 +195,12 @@ namespace WolHybridBosses
             int armed = 0;
             if (!visualOnly)
             {
-                AddRewards();
+                AddRewards(which);
                 armed = ChaosEnemies.ArmAll();
             }
 
-            Plugin.Log.LogInfo("CHAOS stage on " + Level.tileSetName + ": " + meshes + " tile meshes, " + sprites + " decorations, " + lights + " lights, "
-                + armed + " enemies turned Chaos, " + Mathf.RoundToInt((Time.realtimeSinceStartup - t0) * 1000f) + " ms");
+            Plugin.Log.LogInfo("CHAOS stage on (" + which + ") " + Level.tileSetName + ": " + meshes + " tile meshes, " + sprites + " decorations, " + lights + " lights, "
+                + armed + " enemies turned " + which + ", " + Mathf.RoundToInt((Time.realtimeSinceStartup - t0) * 1000f) + " ms");
         }
 
         internal static void Revert()
@@ -169,19 +212,26 @@ namespace WolHybridBosses
             if (CouncilCorruption.CurrentBoss == null) { try { CouncilCorruption.RestoreTints(); CouncilCorruption.ClearTinted(); } catch (Exception) { } }
             RemoveRewards();
             Active = null;
+            activeVariant = StageVariant.None;
         }
 
         // ---------- rewards: more gold and item drops while on a Chaos stage ----------
 
-        static void AddRewards()
+        // Per variant (v0.6.0): Chaos more gold and item drops; Radiant a bit more gold, and its enemies may leave a
+        // health pickup (VariantMark); Prism more item drops and more Chaos gems.
+        static void AddRewards(StageVariant which)
         {
             if (rewardMods) return;
             rewardMods = true;
             float m = Plugin.ChaosStageRewards.Value;
+            float gold = which == StageVariant.Prism ? 1f : which == StageVariant.Radiant ? 1f + (m - 1f) * 0.5f : m;
+            float drops = which == StageVariant.Radiant ? 1f : m;
+            float plat = which == StageVariant.Prism ? m : 1f;
             try
             {
-                LootManager.globalGoldModifier.AddMod(new NumVarStatMod("HB_ChaosGold", m, 10, VarStatModType.Multiplicative, false));
-                LootManager.itemDropModifier.AddMod(new NumVarStatMod("HB_ChaosDrops", m, 10, VarStatModType.Multiplicative, false));
+                if (gold != 1f) LootManager.globalGoldModifier.AddMod(new NumVarStatMod("HB_ChaosGold", gold, 10, VarStatModType.Multiplicative, false));
+                if (drops != 1f) LootManager.itemDropModifier.AddMod(new NumVarStatMod("HB_ChaosDrops", drops, 10, VarStatModType.Multiplicative, false));
+                if (plat != 1f) LootManager.globalPlatModifier.AddMod(new NumVarStatMod("HB_ChaosPlat", plat, 10, VarStatModType.Multiplicative, false));
             }
             catch (Exception ex) { Plugin.Log.LogWarning("CHAOS rewards failed: " + ex.Message); }
         }
@@ -194,6 +244,7 @@ namespace WolHybridBosses
             {
                 LootManager.globalGoldModifier.RemoveMod("HB_ChaosGold");
                 LootManager.itemDropModifier.RemoveMod("HB_ChaosDrops");
+                LootManager.globalPlatModifier.RemoveMod("HB_ChaosPlat");
             }
             catch (Exception) { }
         }
@@ -266,9 +317,10 @@ namespace WolHybridBosses
         {
             float h, s, val;
             Color.RGBToHSV(c, out h, out s, out val);
-            h = Mathf.Repeat(h + v.HueShift, 1f);
-            s = Mathf.Clamp01(s * v.Saturation);
-            val = Mathf.Clamp01(val * v.Value);
+            if (v.Rainbow) h = Mathf.Repeat(h * 0.3f + val * 1.7f, 1f);
+            else if (v.TargetHue >= 0f) h = Mathf.Repeat(v.TargetHue + (h - 0.5f) * v.HueSpread, 1f);
+            s = Mathf.Clamp01(s * v.Saturation + v.SatFloor);
+            val = Mathf.Clamp01(val * v.Value + v.ValueLift);
             Color o = Color.HSVToRGB(h, s, val);
             return new Color32((byte)(o.r * 255f), (byte)(o.g * 255f), (byte)(o.b * 255f), c.a);
         }
@@ -312,20 +364,23 @@ namespace WolHybridBosses
             // 0.5.14: every humanoid with elemental versions turns Chaos (the 50% roll left half the stage's elemental
             // knights / lancers as they were). Their own attacks become Chaos via ChaosStageAttackPatch.
             e.gameObject.AddComponent<ChaosArmed>();
-            int idx = Plugin.ChaosGiantPalette.Value >= 0 ? Plugin.ChaosGiantPalette.Value : ChaosGiants.PurpleRow(e);
-            if (idx >= 0) ElementalGiants.SetPaletteIndexAll(e, idx);
-            else ElementalGiants.Tint(e, ChaosRun.Color);
-            List<ArcanaDef> pool = Pool();
+            // v0.6.0: the stage's variant. Chaos: their purple palette row; Radiant: pale gold tint; Prism: cycling hues.
+            StageVariant v = ChaosStages.ActiveVariant != StageVariant.None ? ChaosStages.ActiveVariant : ChaosStages.PlannedVariant;
+            if (v == StageVariant.None) v = StageVariant.Chaos;
+            VariantMark.Set(e, v);
+            if (v == StageVariant.Chaos)
+            {
+                int idx = Plugin.ChaosGiantPalette.Value >= 0 ? Plugin.ChaosGiantPalette.Value : ChaosGiants.PurpleRow(e);
+                if (idx >= 0) ElementalGiants.SetPaletteIndexAll(e, idx);
+                else ElementalGiants.Tint(e, ChaosRun.Color);
+            }
+            else Variants.TintBody(e, v);
+            List<ArcanaDef> pool = Variants.CastPool(v);
             if (pool.Count > 0) EnemyArcana.Give(e, Rivals.PickVaried(pool, 1, false), 1.6f); // slower than a giant's
             return true;
         }
 
-        internal static List<ArcanaDef> Pool()
-        {
-            List<ArcanaDef> pool = ArcanaCatalog.PoolExact("Chaos");
-            pool.RemoveAll(d => d.Family == ArcanaFamily.Minion || d.Family == ArcanaFamily.Seeker || d.Family == ArcanaFamily.Ward);
-            return pool;
-        }
+        internal static List<ArcanaDef> Pool() { return Variants.CastPool(StageVariant.Chaos); }
     }
 
     // Chaos giants: Chaos element, the giant's own purple palette row (found by reading its palette texture), or a
@@ -336,17 +391,29 @@ namespace WolHybridBosses
         {
             if (e == null || e.GetComponent<ChaosArmed>() != null) return;
             e.gameObject.AddComponent<ChaosArmed>();
-            e.element = ElementType.Chaos;
+            // v0.6.0: a Radiant / Prism giant on those stages (tint / cycling hues, 2 arcana of that element).
+            StageVariant v = ChaosStages.ActiveVariant != StageVariant.None ? ChaosStages.ActiveVariant : ChaosStages.PlannedVariant;
+            if (v == StageVariant.None) v = StageVariant.Chaos;
+            VariantInfo vi = Variants.Info(v);
+            VariantMark.Set(e, v);
+            // v0.6.1: only Chaos changes the body's element. Arcanos' Radiant / Prism element values are huge numbers
+            // (e.g. -1896111776) the game's damage lookup can't handle: a Prism Coffin took no damage at all.
+            if (v == StageVariant.Chaos) e.element = ElementType.Chaos;
 
-            int idx = Plugin.ChaosGiantPalette.Value >= 0 ? Plugin.ChaosGiantPalette.Value : PurpleRow(e);
-            if (idx >= 0 && !ElementalGiants.NoElementPalettes(e)) ElementalGiants.SetPaletteIndexAll(e, idx);
-            else { ElementalGiants.Tint(e, ChaosRun.Color); idx = -1; }
+            int idx = -1;
+            if (v == StageVariant.Chaos)
+            {
+                idx = Plugin.ChaosGiantPalette.Value >= 0 ? Plugin.ChaosGiantPalette.Value : PurpleRow(e);
+                if (idx >= 0 && !ElementalGiants.NoElementPalettes(e)) ElementalGiants.SetPaletteIndexAll(e, idx);
+                else { ElementalGiants.Tint(e, ChaosRun.Color); idx = -1; }
+            }
+            else Variants.TintBody(e, v);
 
             int arcana = 0;
-            List<ArcanaDef> pool = ChaosEnemies.Pool();
+            List<ArcanaDef> pool = Variants.CastPool(v);
             if (pool.Count > 0) arcana = EnemyArcana.Give(e, Rivals.PickVaried(pool, 2, false));
-            if (Plugin.GiantIntros.Value) GiantIntro.Attach(e, "Chaos", "");
-            Plugin.Log.LogInfo("GIANT " + e.GetType().Name + " -> Chaos giant, palette " + (idx < 0 ? "purple tint" : idx.ToString()) + ", chaos arcana " + arcana);
+            if (Plugin.GiantIntros.Value) GiantIntro.Attach(e, vi.Prefix, "");
+            Plugin.Log.LogInfo("GIANT " + e.GetType().Name + " -> " + v + " giant, palette " + (idx < 0 ? "tint" : idx.ToString()) + ", arcana " + arcana);
         }
 
         // Palette texture per material: which row is purple, cached by texture.
@@ -454,25 +521,6 @@ namespace WolHybridBosses
 
     internal class ChaosArmed : MonoBehaviour { }
 
-    // Chaos stage: enemy attacks that carry an element (an elemental knight's lightning slash, an archer's frost
-    // arrow...) become Chaos damage, tinted Chaos purple. Restored on ChaosStages.Revert.
-    [HarmonyPatch(typeof(Attack), "SetAttackInfo", new Type[] { typeof(string), typeof(string), typeof(int), typeof(bool) })]
-    static class ChaosStageAttackPatch
-    {
-        static void Postfix(Attack __instance)
-        {
-            if (ChaosStages.Active == null || !ChaosStages.Planned || CouncilCorruption.CurrentBoss != null) return;
-            try
-            {
-                AttackInfo info = __instance.atkInfo;
-                if (info == null || info.skillCategory == "Player" || __instance.GetComponentInParent<Player>() != null) return;
-                if (info.elementType == ElementType.Chaos || info.elementType == ElementType.Neutral) return;
-                CouncilCorruption.Chaosify(info);
-                CouncilCorruption.TintAttack(__instance, true);
-            }
-            catch (Exception) { }
-        }
-    }
 
     // Giants become Chaos giants through the giant Start hook (GiantStartPatch -> ElementalGiants.TryMakeElemental),
     // after MiniBoss.Start has set its gray palette. Regular Chaos-type enemies are armed one frame after their
@@ -499,7 +547,9 @@ namespace WolHybridBosses
     {
         static void Postfix(ref string __result)
         {
-            if (ChaosStages.Planned && !string.IsNullOrEmpty(__result) && !__result.StartsWith("Chaos ")) __result = "Chaos " + __result;
+            if (!ChaosStages.Planned || string.IsNullOrEmpty(__result)) return;
+            string title = ChaosStages.PlannedInfo.StageTitle + " ";
+            if (!__result.StartsWith(title)) __result = title + __result;
         }
     }
 
@@ -555,12 +605,16 @@ namespace WolHybridBosses
                     int tier = k / regular, stage = k % regular;
                     k++;
                     if (!loggedSquare) { loggedSquare = true; LogLayout(s, skip); }
-                    if (!ChaosRun.IsChaos(tier, stage)) continue;
+                    StageVariant sv = ChaosRun.VariantOf(tier, stage);
+                    if (sv == StageVariant.None) continue;
+                    // v0.6.0: the variant's square colour and icon (Chaos symbol; Arcanos' Radiant / Prism icons).
+                    VariantInfo vi = Variants.Info(sv);
+                    Sprite icon = sv == StageVariant.Chaos ? chaosIcon : (ArcanosBridge.Icon(sv) ?? chaosIcon);
                     foreach (Image img in s.GetComponentsInChildren<Image>(true))
                     {
                         if (skip.Contains(img)) continue;
-                        if (img.transform == s) marks.Add(img, SquareColor, null);                     // the square
-                        else marks.Add(img, IconColor, chaosIcon);                                      // its element icon
+                        if (img.transform == s) marks.Add(img, sv == StageVariant.Chaos ? SquareColor : vi.BoardSquare, null); // the square
+                        else marks.Add(img, sv == StageVariant.Chaos ? IconColor : vi.BoardIcon, icon);                       // its element icon
                     }
                     chaosMarked++;
                 }
@@ -577,8 +631,9 @@ namespace WolHybridBosses
                     foreach (RectTransform circle in bosses)
                     {
                         if (circle == null || circle == finalCircle || circle == startCircle) continue;
-                        bool corrupted = CouncilCorruption.IsCorrupted(t);
-                        plan.Add(circle.name + "=" + (corrupted ? "corrupted" : "-"));
+                        StageVariant cv = CouncilCorruption.CouncilVariant(t);
+                        bool corrupted = cv != StageVariant.None;
+                        plan.Add(circle.name + "=" + (corrupted ? cv.ToString() : "-"));
                         t++;
                         if (!corrupted) continue;
                         List<Image> portraits = new List<Image>();
@@ -588,12 +643,16 @@ namespace WolHybridBosses
                             foreach (Image img in circle.GetComponentsInChildren<Image>(true))
                                 if (!skip.Contains(img) && !squareImages.Contains(img) && img.transform != circle && !img.name.Contains("Dimmer") && !img.name.Contains("Circle"))
                                     portraits.Add(img);
-                        foreach (Image img in portraits) marks.Add(img, Color.Lerp(img.color, ChaosRun.Color, 0.6f), null);
+                        foreach (Image img in portraits) marks.Add(img, Color.Lerp(img.color, Variants.Info(cv).Color, 0.6f), null);
                         plan[plan.Count - 1] += "(" + string.Join("/", portraits.ConvertAll(i => i.name).ToArray()) + ")";
                         councilMarked++;
                     }
                     List<string> squaresPlan = new List<string>();
-                    for (int q = 0; q < k; q++) squaresPlan.Add(ChaosRun.IsChaos(q / regular, q % regular) ? "C" : ".");
+                    for (int q = 0; q < k; q++)
+                    {
+                        StageVariant qv = ChaosRun.VariantOf(q / regular, q % regular);
+                        squaresPlan.Add(qv == StageVariant.None ? "." : qv == StageVariant.Chaos ? "C" : qv == StageVariant.Radiant ? "R" : "P");
+                    }
                     Plugin.Log.LogInfo("CHAOS board plan: squares " + string.Join("", squaresPlan.ToArray()) + " | council " + string.Join(", ", plan.ToArray()));
                 }
                 if (chaosMarked + councilMarked > 0)

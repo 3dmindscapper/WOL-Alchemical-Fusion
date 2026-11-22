@@ -11,9 +11,10 @@ using UnityEngine;
 namespace WolHybridBosses
 {
     [BepInPlugin("osi.wol.hybridbosses", "Hybrid Bosses", Version)]
+    [BepInDependency("wolarcanos.arcanos", BepInDependency.DependencyFlags.SoftDependency)] // optional: Radiant / Prism variants
     public class Plugin : BaseUnityPlugin
     {
-        public const string Version = "0.5.15";
+        public const string Version = "0.6.1";
         internal static ManualLogSource Log;
 
         internal static ConfigEntry<bool> ElementalGiants;
@@ -39,6 +40,7 @@ namespace WolHybridBosses
         internal static ConfigEntry<bool> FinalRoomBadge;
         internal static ConfigEntry<float> ChaosStageChance;
         internal static ConfigEntry<float> ChaosStageRewards;
+        internal static ConfigEntry<float> VariantChaosShare, VariantRadiantShare, VariantPrismShare, VariantArchonChance, RadiantHealthDropChance;
         internal static ConfigEntry<int> ChaosGiantPalette;
         internal static ConfigEntry<float> ChaosEnemyChance;
         internal static ConfigEntry<int> GiantMinElementMoves;
@@ -106,7 +108,12 @@ namespace WolHybridBosses
             ChaosStageChance = Config.Bind("ChaosStages", "StageChance", 0.15f,
                 "Chance (0 to 1) that a regular stage is its Chaos version: purple tiles and lights, enemies with Chaos arcana, a Chaos rival in its arena, better rewards, 'Chaos' in the title and a purple marker on the loading-screen board. Boss floors stay normal. Shift+F11 toggles it on the current stage.");
             ChaosStageRewards = Config.Bind("ChaosStages", "RewardMultiplier", 1.5f,
-                "Gold and item-drop multiplier while on a Chaos stage.");
+                "Reward multiplier on variant stages: Chaos gold and item drops; Radiant half as much extra gold (its enemies may drop health instead); Prism item drops and Chaos gems.");
+            VariantChaosShare = Config.Bind("StageVariants", "ChaosShare", 0.5f, "With WoL Arcanos installed, the share of variant stages that are Chaos. (Without Arcanos every variant stage is Chaos.)");
+            VariantRadiantShare = Config.Bind("StageVariants", "RadiantShare", 0.35f, "With WoL Arcanos installed, the share of variant stages that are Radiant (Arcanos' Fulgor element).");
+            VariantPrismShare = Config.Bind("StageVariants", "PrismShare", 0.15f, "With WoL Arcanos installed, the share of variant stages that are Prism (Arcanos' Prisma element).");
+            VariantArchonChance = Config.Bind("StageVariants", "ArchonChance", 0.25f, "With WoL Arcanos installed, chance that an elemental Archon (final champion or arena Archon) is a Radiant or Prism Archon instead.");
+            RadiantHealthDropChance = Config.Bind("StageVariants", "RadiantHealthDrop", 0.15f, "Chance that an enemy on a Radiant stage leaves a health pickup when it dies.");
             ChaosEnemyChance = Config.Bind("ChaosStages", "EnemyChance", 0.5f,
                 "On a Chaos stage, chance (0 to 1) that each Knight, Rogue, Archer, Mage, Summoner or Lancer is a Chaos version (1 Chaos arcana + purple colours). Like elemental stages, not every one is. Giants are always Chaos there.");
             ChaosGiantPalette = Config.Bind("ChaosStages", "GiantPalette", -1,
@@ -262,6 +269,8 @@ namespace WolHybridBosses
                 case "Wind": return "Wind";
                 case "Earth": return "Earth";
                 case "Chaos": return "Chaos";
+                case "Radiant": return "Radiant";
+                case "Prism": return "Prismatic";
                 default: return "Thunder";
             }
         }
@@ -275,6 +284,8 @@ namespace WolHybridBosses
                 case "Earth": return new Color(0.55f, 0.85f, 0.25f);
                 case "Wind": return new Color(0.6f, 1f, 0.85f);
                 case "Chaos": return new Color(0.75f, 0.35f, 1f);
+                case "Radiant": return new Color(1f, 0.9f, 0.55f);
+                case "Prism": return new Color(1f, 0.55f, 0.9f);
                 case "Neutral": return new Color(0.85f, 0.85f, 0.85f);
                 default: return new Color(1f, 0.9f, 0.2f);
             }
@@ -794,7 +805,7 @@ namespace WolHybridBosses
             Player p = GetPlayer();
             if (p == null) { Log.LogWarning("No player found"); return; }
             // Cycles Fire, Water, Earth, Wind, Thunder, Chaos so every pool can be tested on one stage.
-            string[] order = { "Flame", "Frost", "Earth", "Wind", "Thunder", "Chaos" };
+            string[] order = ArcanosBridge.Present ? new[] { "Flame", "Frost", "Earth", "Wind", "Thunder", "Chaos", "Radiant", "Prism" } : new[] { "Flame", "Frost", "Earth", "Wind", "Thunder", "Chaos" };
             string prefix = order[rivalTestIndex++ % order.Length];
             RivalEvent.OpenHere(prefix); // the full event: portal beside you -> selector room -> arena -> way back
             Log.LogInfo("RIVAL test event opened (" + prefix + ") at " + p.transform.position);

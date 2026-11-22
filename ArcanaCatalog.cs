@@ -208,6 +208,9 @@ namespace WolHybridBosses
                 if (sd == null) return null;
                 AttackInfo ai = AttackInfo.GetInfoFromData(player, sd, 1, false);
                 if (ai == null) return null;
+                // v0.6.0: WoL Arcanos' Radiant ("Fulgor") and Prism ("Prisma") arcana, by its element or its own filing.
+                string variant = ArcanosBridge.PrefixOf(skillID, ai.elementType);
+                if (variant != null) return variant;
                 switch (ai.elementType)
                 {
                     case ElementType.Fire: return "Flame";

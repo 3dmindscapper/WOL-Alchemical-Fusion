@@ -13,6 +13,7 @@ namespace WolHybridBosses
         const string GoldTable = "TreasureChestMiniBoss";
         Enemy owner;
         int standard, gold;
+        StageVariant variant; // Radiant / Prism rivals: their chests drop only unlocked arcana of that element
         bool given;
         float deadSince = -1f;
 
@@ -21,6 +22,7 @@ namespace WolHybridBosses
             if (e == null || mk == null) return;
             RivalRewards r = e.GetComponent<RivalRewards>() ?? e.gameObject.AddComponent<RivalRewards>();
             r.owner = e;
+            r.variant = Variants.FromPrefix(mk.Prefix);
             switch (mk.Tier)
             {
                 case RivalTier.Easy: r.standard = 1; r.gold = 0; break;
@@ -49,12 +51,12 @@ namespace WolHybridBosses
                 float x = total == 1 ? 0f : (i - (total - 1) * 0.5f) * 2.2f; // side by side
                 Vector2 pos = at + new Vector2(x, 0f);
                 try { pos = Entity.GetAvailableNearbyLocation(pos, false, false); } catch (Exception) { }
-                Spawn(pos, i >= standard);
+                Spawn(pos, i >= standard, variant);
             }
             Plugin.Log.LogInfo("RIVAL reward: " + standard + " standard chest(s), " + gold + " gold chest(s)");
         }
 
-        static void Spawn(Vector2 pos, bool goldChest)
+        static void Spawn(Vector2 pos, bool goldChest, StageVariant variant)
         {
             try
             {
@@ -62,6 +64,7 @@ namespace WolHybridBosses
                 if (c == null) return;
                 if (goldChest) c.lootTableName = GoldTable;
                 c.preventMimic = true; // a reward, not a trap
+                if (variant == StageVariant.Radiant || variant == StageVariant.Prism) c.gameObject.AddComponent<VariantChest>().Variant = variant;
             }
             catch (Exception ex) { Plugin.Log.LogWarning("RIVAL reward chest failed: " + ex.Message); }
         }

@@ -8,33 +8,28 @@ using UnityEngine.UI;
 
 namespace WolHybridBosses
 {
-    // Corrupted Council: a Council member whose tier had a Chaos stage is "touched by Chaos". Their sprites take a dark
-    // purple tint and outline, every attack in their fight is tinted like Chaos arcana, the boss bar reads
-    // "Corrupted <name>", their intro/victory lines come out glitched with Chaos whispers (portrait and text tinted),
-    // and their boss circle on the loading-screen board is purple. Same seed as the Chaos stages, so the board and
-    // the fight always agree. Visual/dialogue only: their moves and stats are unchanged.
+    // Variant Council (v0.6.0; the Corrupted Council since v0.5.0): a Council member whose tier had a variant stage
+    // takes that variant: Corrupted (Chaos), Radiant or Prismatic. Their sprites take the variant's tint and outline,
+    // their attacks its damage type and colour, the boss bar reads "<Title> <name>", they get 2 echoes of that
+    // element between their own attacks, custom lines, their room takes the variant's look, and their chest drops an
+    // arcana of that element (Radiant / Prism: only one the player has already unlocked). Same seed as the stages, so
+    // the board and the fight always agree.
     internal static class CouncilCorruption
     {
         internal static readonly Color Purple = new Color(0.62f, 0.32f, 1f);
-        // Chaos is a dark, almost black purple: attacks are pushed hard toward it, the boss a bit less (stays readable).
-        static readonly Color SpriteTint = new Color(0.62f, 0.42f, 0.85f);
-        static readonly Color AttackTint = new Color(0.46f, 0.2f, 0.72f);
-        static readonly Color ChaosDark = new Color(0.16f, 0.03f, 0.28f), ChaosBright = new Color(0.72f, 0.32f, 1f);
 
-        // A colour remapped onto the Chaos ramp by its brightness (dark -> near-black purple, bright -> violet).
-        internal static Color ChaosRamp(Color c)
-        {
-            float lum = 0.3f * c.r + 0.59f * c.g + 0.11f * c.b;
-            Color r = Color.Lerp(ChaosDark, ChaosBright, Mathf.Clamp01(lum * 1.1f));
-            r.a = c.a;
-            return r;
-        }
+        // The variant of the current fight (Chaos when none is running, for the old callers).
+        internal static StageVariant Variant = StageVariant.Chaos;
+        static VariantInfo Info { get { return Variants.Info(Variant); } }
+
+        // Kept for older callers: the Chaos ramp.
+        internal static Color ChaosRamp(Color c) { return Variants.Ramp(c, StageVariant.Chaos); }
 
         // ---------- custom voicelines ----------
         // Council dialogs have the member speak every line (2 per dialog; the player's portrait is shown but silent).
-        // Corrupted, each line is replaced by its Chaos counterpart, in the game's upbeat mentor tone: the member has
-        // been dabbling in Chaos and wants to trade their element in for it, and loses the taste for it when beaten.
-        static readonly Dictionary<string, string[][]> Lines = new Dictionary<string, string[][]>
+        // Each line is replaced by the variant's, in the game's upbeat mentor tone: the member has been dabbling in the
+        // new element and wants to trade their own in for it, and comes back to it once beaten.
+        static readonly Dictionary<string, string[][]> ChaosLines = new Dictionary<string, string[][]>
         {
             { "FireBoss", new[] {
                 new[] { "Fire? Oh, that's old news! I've been dabbling in Chaos lately, and let me tell you, it's SO much hotter!",
@@ -63,14 +58,82 @@ namespace WolHybridBosses
                         "You've got real spark, wizard! Back to the storm for us... for now." } } },
         };
 
-        // "FireBoss-Intro", line 0 -> the corrupted line (null = keep the original, just glitched).
+        static readonly Dictionary<string, string[][]> RadiantLines = new Dictionary<string, string[][]>
+        {
+            { "FireBoss", new[] {
+                new[] { "Why burn when you can SHINE? I've traded my flames for pure Radiance, and I look fabulous!",
+                        "Shield your eyes, wizard! This light is hotter than any fire I ever threw!" },
+                new[] { "Ow, ow... turns out glowing all day is exhausting.",
+                        "Alright, back to good old fire. A little smoke never hurt anyone!" } } },
+            { "IceBoss", new[] {
+                new[] { "Ice merely reflects the light. I decided to become the light itself. Radiance suits me, don't you think?",
+                        "Let us see whether you can bear to look straight at it." },
+                new[] { "So bright, and yet so tiring to hold. Frost was always kinder to me.",
+                        "I shall return to the cold. Do keep your own light burning, wizard." } } },
+            { "EarthBoss", new[] {
+                new[] { "Spent my whole life underground. Came up for air and found Radiance! Gold all the way down!",
+                        "Hope you brought something to cover your eyes, kid!" },
+                new[] { "Bah! Too much sun for these old bones. Give me a nice dark cave.",
+                        "You shone brighter than I did, wizard. Hold on to that!" } } },
+            { "AirBoss", new[] {
+                new[] { "Wind? Invisible! Radiance? Everyone can see me now! Isn't it wonderful?",
+                        "Catch me if you can! Just don't stare too long!" },
+                new[] { "Hm, being seen all the time is kind of a lot. I miss sneaking around on the breeze.",
+                        "Back to the wind it is! You've got a bright future, wizard!" } } },
+            { "LightningBoss", new[] {
+                new[] { "Lightning is just light that's in a hurry. So we skipped the hurry and kept the light!",
+                        "Pure Radiance, double the shine! Try not to blink!" },
+                new[] { "Okay, that glow didn't strike half as hard as our bolts.",
+                        "Back to the storm! You really light up a fight, wizard!" } } },
+        };
+
+        static readonly Dictionary<string, string[][]> PrismLines = new Dictionary<string, string[][]>
+        {
+            { "FireBoss", new[] {
+                new[] { "One element? How dull! With the Prism I get EVERY color, and they're all mine!",
+                        "Red, blue, green, gold... let's see which one you can't handle!" },
+                new[] { "Whoa, too many colors at once. I think I saw the inside of a rainbow.",
+                        "Red is still my favorite. Keep that fire bright, alright?" } } },
+            { "IceBoss", new[] {
+                new[] { "A single crystal splits the light into every color. I've simply become that crystal.",
+                        "Shall we see how you fare against all the elements at once?" },
+                new[] { "Splitting myself so many ways left very little of me. How unwise.",
+                        "Clear ice will do just fine. Stay sharp, wizard." } } },
+            { "EarthBoss", new[] {
+                new[] { "Found a shiny gem down in the deep, and now I've got every element rattling around in here!",
+                        "Don't ask me which one's coming next. I'm as surprised as you are!" },
+                new[] { "My head's spinning like a kaleidoscope. One element is plenty, thanks.",
+                        "Steady as stone from now on. Nice work, kid!" } } },
+            { "AirBoss", new[] {
+                new[] { "Why pick one breeze when you can ride a rainbow? The Prism lets me be everything at once!",
+                        "Every color, every element! Try to keep up!" },
+                new[] { "Okay, rainbows are a lot heavier than they look.",
+                        "I'll stick to the wind. You've got all the colors covered anyway!" } } },
+            { "LightningBoss", new[] {
+                new[] { "Why stop at lightning? We split it into every color there is! Double the wizards, every element!",
+                        "Ready for a full spectrum shock? Here it comes!" },
+                new[] { "Every color at once got a little messy, even for us.",
+                        "Back to the bolts! You really outshone us there, wizard!" } } },
+        };
+
+        static Dictionary<string, string[][]> LinesFor(StageVariant v)
+        {
+            switch (v)
+            {
+                case StageVariant.Radiant: return RadiantLines;
+                case StageVariant.Prism: return PrismLines;
+                default: return ChaosLines;
+            }
+        }
+
+        // "FireBoss-Intro", line 0 -> the variant's line (null = keep the original).
         internal static string CustomLine(string dialogId, int index)
         {
             if (string.IsNullOrEmpty(dialogId) || index < 0) return null;
             int dash = dialogId.IndexOf('-');
             string who = dash > 0 ? dialogId.Substring(0, dash) : dialogId;
             string[][] set;
-            if (!Lines.TryGetValue(who, out set)) return null;
+            if (!LinesFor(Variant).TryGetValue(who, out set)) return null;
             string[] lines = dialogId == victoryId ? set[1] : set[0];
             return lines.Length == 0 ? null : lines[Mathf.Min(index, lines.Length - 1)];
         }
@@ -97,18 +160,17 @@ namespace WolHybridBosses
             rewritten.Clear();
         }
 
-        // The current corrupted fight (null when none).
+        // The current variant fight (null when none).
         internal static BossRoomEventHandler Room;
         internal static Boss CurrentBoss;
         static string introId, victoryId;
 
-        // Test key (Shift+F12): every Council member counts as corrupted until toggled off; applies right away if
-        // you're already in a Council room whose boss has spawned or not.
-        internal static bool Forced;
-        internal static bool ForceOnce; // Ctrl+F12: the next Council fight only
+        // Test keys. Shift+F12 cycles a forced variant for every Council fight: off -> Chaos -> Radiant -> Prism -> off
+        // (Radiant / Prism with Arcanos). Ctrl+F12 jumps to this tier's Council for one fight, as the forced variant,
+        // else the tier's own, else Chaos.
+        internal static StageVariant Forced = StageVariant.None;
+        internal static bool ForceOnce;
 
-        // Test key (Ctrl+F12): straight to this tier's Council floor, corrupted. The same scene the game loads after a
-        // tier's last stage (NextLevelLoader: bossLevelNameDict[current tier scene]), via GameController.LoadLevel.
         internal static void JumpToCouncil()
         {
             string scene = Application.loadedLevelName;
@@ -117,61 +179,75 @@ namespace WolHybridBosses
                 Plugin.Log.LogWarning("COUNCIL jump: not on a regular stage of a run (scene " + scene + "); start a run first");
                 return;
             }
-            ForceOnce = true; // just this fight (Shift+F12 is the lasting toggle)
+            ForceOnce = true;
             GameController.stageCount = ChaosRun.RegularStages; // as if the tier's stages were done
             string boss = GameController.bossLevelNameDict[scene];
-            Plugin.Log.LogInfo("COUNCIL jump: " + scene + " -> " + boss + " (tier " + GameController.tierCount + ", corrupted for this fight)");
+            Plugin.Log.LogInfo("COUNCIL jump: " + scene + " -> " + boss + " (tier " + GameController.tierCount + ", " + OnceVariant() + " for this fight)");
             GameController.LoadLevel(boss);
+        }
+
+        static StageVariant OnceVariant()
+        {
+            if (Forced != StageVariant.None) return Forced;
+            StageVariant v = ChaosRun.TierVariant(GameController.tierCount);
+            return v != StageVariant.None ? v : StageVariant.Chaos;
         }
 
         internal static void ToggleForce()
         {
-            Forced = !Forced;
-            Plugin.Log.LogInfo("COUNCIL corruption forced " + (Forced ? "ON (every Council fight)" : "OFF"));
-            if (!Forced) return;
+            if (Forced == StageVariant.None) Forced = StageVariant.Chaos;
+            else if (Forced == StageVariant.Chaos && ArcanosBridge.Present) Forced = StageVariant.Radiant;
+            else if (Forced == StageVariant.Radiant) Forced = StageVariant.Prism;
+            else Forced = StageVariant.None;
+            Plugin.Log.LogInfo("COUNCIL variant forced: " + (Forced == StageVariant.None ? "OFF" : Forced + " (every Council fight)"));
+            if (Forced == StageVariant.None) return;
             foreach (BossRoomEventHandler room in UnityEngine.Object.FindObjectsOfType<BossRoomEventHandler>())
             {
-                if (room is FinalBossRoomEventHandler || Room == room) continue;
-                Begin(room);
+                if (room is FinalBossRoomEventHandler) continue;
+                if (Room == room) End();
+                Begin(room, Forced);
                 if (room.GetComponent<CouncilCorruptionRunner>() == null) room.gameObject.AddComponent<CouncilCorruptionRunner>().Room = room;
             }
         }
 
-        // A tier's Council member is corrupted when any regular stage of that tier is a Chaos stage.
-        internal static bool IsCorrupted(int tier)
+        // A tier's Council member takes the variant of the tier's first variant stage.
+        internal static StageVariant CouncilVariant(int tier)
         {
-            if (Forced) return true;
-            if (!Plugin.CorruptedCouncil.Value) return false;
-            for (int s = 0; s < ChaosRun.RegularStages; s++) if (ChaosRun.IsChaos(tier, s)) return true; // its regular stages
-            return false;
+            if (Forced != StageVariant.None) return Forced;
+            if (!Plugin.CorruptedCouncil.Value) return StageVariant.None;
+            return ChaosRun.TierVariant(tier);
         }
 
-        internal static void Begin(BossRoomEventHandler room)
+        internal static bool IsCorrupted(int tier) { return CouncilVariant(tier) != StageVariant.None; }
+
+        internal static void Begin(BossRoomEventHandler room, StageVariant v)
         {
             Room = room;
             CurrentBoss = null;
+            Variant = v == StageVariant.None ? StageVariant.Chaos : v;
             Traverse tr = Traverse.Create(room);
             introId = tr.Field("bossIntroDialogID").GetValue<string>();
             victoryId = tr.Field("bossVictoryDialogID").GetValue<string>();
-            Plugin.Log.LogInfo("COUNCIL corrupted this fight (tier " + GameController.tierCount + " had a Chaos stage), dialogs " + introId + " / " + victoryId);
+            Plugin.Log.LogInfo("COUNCIL " + Variant + " this fight (tier " + GameController.tierCount + "), dialogs " + introId + " / " + victoryId);
         }
 
         internal static void End()
         {
             RestoreDialog();
             RestoreTints();
+            if (CurrentBoss != null) { PrismCycle pc = CurrentBoss.GetComponent<PrismCycle>(); if (pc != null) UnityEngine.Object.Destroy(pc); }
             if (roomTinted) { roomTinted = false; try { ChaosStages.Revert(); } catch (Exception) { } }
             Room = null; CurrentBoss = null; introId = victoryId = null;
         }
 
-        // The Council room's tiles, decorations and lights, like a Chaos stage (visuals only: no rewards, no enemies).
+        // The Council room's tiles, decorations and lights, like a variant stage (visuals only: no rewards, no enemies).
         static bool roomTinted;
 
         internal static void TintRoom()
         {
             if (roomTinted) return;
             roomTinted = true;
-            try { ChaosStages.Apply(true); } catch (Exception ex) { Plugin.Log.LogWarning("COUNCIL room tint failed: " + ex.Message); }
+            try { ChaosStages.Apply(true, Variant); } catch (Exception ex) { Plugin.Log.LogWarning("COUNCIL room tint failed: " + ex.Message); }
         }
 
         internal static bool DialogCorrupted(string dialogId)
@@ -184,22 +260,25 @@ namespace WolHybridBosses
         internal static void CorruptBoss(Boss b)
         {
             CurrentBoss = b;
-            foreach (SpriteRenderer sr in b.GetComponentsInChildren<SpriteRenderer>(true))
-            {
-                if (sr == null) continue;
-                sr.color = Multiply(sr.color, SpriteTint);
-                Material m = sr.material;
-                if (m != null && m.HasProperty("_OutlineColor")) m.SetColor("_OutlineColor", Purple);
-                if (m != null && m.HasProperty("_OutlineColor2")) m.SetColor("_OutlineColor2", new Color(0.3f, 0.1f, 0.5f));
-            }
+            VariantInfo vi = Info;
+            if (vi.Rainbow) { if (b.GetComponent<PrismCycle>() == null) b.gameObject.AddComponent<PrismCycle>(); }
+            else
+                foreach (SpriteRenderer sr in b.GetComponentsInChildren<SpriteRenderer>(true))
+                {
+                    if (sr == null) continue;
+                    sr.color = Multiply(sr.color, vi.BodyTint);
+                    Material m = sr.material;
+                    if (m != null && m.HasProperty("_OutlineColor")) m.SetColor("_OutlineColor", vi.Color);
+                    if (m != null && m.HasProperty("_OutlineColor2")) m.SetColor("_OutlineColor2", vi.RampDark);
+                }
             try
             {
                 EnemyHealthBar bar = Traverse.Create(b).Field("healthBar").GetValue() as EnemyHealthBar;
                 string name = b.BossDisplayName;
-                if (bar != null) bar.SetName("Corrupted " + (string.IsNullOrEmpty(name) ? b.GetType().Name : name));
+                if (bar != null) bar.SetName(vi.CouncilTitle + " " + (string.IsNullOrEmpty(name) ? b.GetType().Name : name));
             }
             catch (Exception) { }
-            Plugin.Log.LogInfo("COUNCIL " + b.GetType().Name + " corrupted (sprites, attacks, boss bar, dialog)");
+            Plugin.Log.LogInfo("COUNCIL " + b.GetType().Name + " is " + vi.CouncilTitle + " (sprites, attacks, boss bar, dialog)");
         }
 
         // ---------- attacks ----------
@@ -213,28 +292,30 @@ namespace WolHybridBosses
         static readonly Dictionary<TrailRenderer, Color[]> origTrails = new Dictionary<TrailRenderer, Color[]>();
         static readonly Dictionary<LineRenderer, Color[]> origLines = new Dictionary<LineRenderer, Color[]>();
 
-        // A non-player attack in the corrupted fight: tint its visual object (the projectile/effect it belongs to).
-        internal static void TintAttack(Attack atk) { TintAttack(atk, false); }
+        internal static void TintAttack(Attack atk) { TintAttack(atk, false, Variant); }
+        internal static void TintAttack(Attack atk, bool stage) { TintAttack(atk, stage, stage ? ChaosStages.PlannedVariant : Variant); }
 
-        // stage: an enemy attack on a Chaos stage (no corrupted boss involved).
-        internal static void TintAttack(Attack atk, bool stage)
+        // stage: an attack outside a Council fight (variant stage, marked caster); v: whose colours.
+        internal static void TintAttack(Attack atk, bool stage, StageVariant v)
         {
-            if (atk == null || (CurrentBoss == null && !stage)) return;
-            if (atk.atkInfo != null && atk.atkInfo.skillCategory == "Player") return;
-            if (atk.GetComponentInParent<Player>() != null) return;
+            if (atk == null || v == StageVariant.None || (CurrentBoss == null && !stage)) return;
+            if (atk.GetComponentInParent<Player>() != null || (atk.atkInfo != null && atk.atkInfo.entity is Player)) return;
             GameObject root = VisualRoot(atk);
             if (root == null || !tinted.Add(root.GetInstanceID())) return;
-            TintTree(root);
+            TintTree(root, v);
         }
 
-        // Everything visual under root, toward Chaos's dark purple (not the boss's own body, not the player).
-        internal static void TintTree(GameObject root)
+        internal static void TintTree(GameObject root) { TintTree(root, Variant); }
+
+        // Everything visual under root, toward the variant's colours (not a boss's own body, not the player).
+        internal static void TintTree(GameObject root, StageVariant v)
         {
+            VariantInfo vi = Variants.Info(v);
             foreach (SpriteRenderer sr in root.GetComponentsInChildren<SpriteRenderer>(true))
             {
                 if (sr == null || sr.GetComponentInParent<Boss>() != null || origSprites.ContainsKey(sr)) continue;
                 origSprites[sr] = sr.color;
-                sr.color = Multiply(sr.color, AttackTint);
+                sr.color = vi.Rainbow ? Variants.Ramp(sr.color, v) : Multiply(sr.color, vi.AttackTint);
             }
             foreach (ParticleSystem ps in root.GetComponentsInChildren<ParticleSystem>(true))
             {
@@ -243,7 +324,9 @@ namespace WolHybridBosses
                 {
                     ParticleSystem.MainModule main = ps.main;
                     origParticles[ps] = main.startColor;
-                    main.startColor = new ParticleSystem.MinMaxGradient(ChaosRamp(main.startColor.color));
+                    main.startColor = vi.Rainbow
+                        ? new ParticleSystem.MinMaxGradient(Color.HSVToRGB(UnityEngine.Random.value, 0.7f, 1f), Color.HSVToRGB(UnityEngine.Random.value, 0.7f, 1f))
+                        : new ParticleSystem.MinMaxGradient(Variants.Ramp(main.startColor.color, v));
                 }
                 catch (Exception) { }
             }
@@ -251,19 +334,19 @@ namespace WolHybridBosses
             {
                 if (l == null || origLights.ContainsKey(l)) continue;
                 origLights[l] = l.color;
-                l.color = new Color(0.45f, 0.15f, 0.8f);
+                l.color = vi.LightTint;
             }
             foreach (TrailRenderer t in root.GetComponentsInChildren<TrailRenderer>(true))
             {
                 if (t == null || origTrails.ContainsKey(t)) continue;
                 origTrails[t] = new[] { t.startColor, t.endColor };
-                t.startColor = ChaosRamp(t.startColor); t.endColor = ChaosRamp(t.endColor);
+                t.startColor = Variants.Ramp(t.startColor, v); t.endColor = Variants.Ramp(t.endColor, v);
             }
             foreach (LineRenderer lr in root.GetComponentsInChildren<LineRenderer>(true))
             {
                 if (lr == null || origLines.ContainsKey(lr)) continue;
                 origLines[lr] = new[] { lr.startColor, lr.endColor };
-                lr.startColor = ChaosRamp(lr.startColor); lr.endColor = ChaosRamp(lr.endColor);
+                lr.startColor = Variants.Ramp(lr.startColor, v); lr.endColor = Variants.Ramp(lr.endColor, v);
             }
         }
 
@@ -294,7 +377,7 @@ namespace WolHybridBosses
             if (go.GetComponentInParent<Entity>() != null) return; // bodies (boss, player, summons) keep their own look
             foreach (Attack a in go.transform.root.GetComponentsInChildren<Attack>(true))
                 if (a.atkInfo != null && (a.atkInfo.skillCategory == "Player" || a.atkInfo.entity is Player)) return; // the player's arcana
-            TintTree(go);
+            TintTree(go, Variant);
         }
 
         internal static void RestoreTints()
@@ -337,28 +420,23 @@ namespace WolHybridBosses
             return best;
         }
 
-        // Damage type Chaos: element Chaos, and its elemental status (burn, freeze, shock...) becomes the Chaos status at
-        // the same chance. Idempotent (attacks may regenerate their info every use).
+        // Damage type Chaos (kept for older callers): see Variants.ChaosifyInfo.
         internal static void Chaosify(AttackInfo info)
         {
-            if (info == null || info.skillCategory == "Player" || info.elementType == ElementType.Chaos) return;
-            info.elementType = ElementType.Chaos;
-            float chance = Mathf.Max(Mathf.Max(info.burnChance, info.slowChance), Mathf.Max(Mathf.Max(info.poisonChance, info.shockChance), info.freezeChance));
-            int level = Mathf.Max(1, Mathf.Max(Mathf.Max(info.burnLevel, info.slowLevel), Mathf.Max(info.poisonLevel, info.shockLevel)));
-            if (chance > info.chaosChance) { info.chaosChance = chance; info.chaosLevel = Mathf.Max(info.chaosLevel, level); }
-            info.burnChance = info.slowChance = info.poisonChance = info.shockChance = info.freezeChance = 0f;
+            if (info == null || info.skillCategory == "Player") return;
+            Variants.ChaosifyInfo(info);
         }
 
-        // ---------- Chaos echoes ----------
-        // The boss keeps its whole moveset; between its own attacks Chaos bleeds out: a purple flash, then one of its
-        // two Chaos arcana is cast at the player.
+        // ---------- echoes ----------
+        // The boss keeps its whole moveset; between its own attacks the variant bleeds out: a flash, then one of its
+        // two arcana of that element is cast at the player.
         internal static List<ArcanaDef> Echoes = new List<ArcanaDef>();
         static float nextEcho;
         const float EchoCooldown = 5f, EchoChance = 0.45f, EchoTell = 0.6f;
 
         internal static void PickEchoes()
         {
-            List<ArcanaDef> pool = ArcanaCatalog.PoolExact("Chaos");
+            List<ArcanaDef> pool = Variants.CastPool(Variant);
             pool.RemoveAll(d => d.Family == ArcanaFamily.Melee || d.Family == ArcanaFamily.Dash || d.Family == ArcanaFamily.Minion
                 || d.Family == ArcanaFamily.Seeker || d.Family == ArcanaFamily.Ward || EnemyArcana.Broken.Contains(d.SkillID));
             Echoes = Rivals.PickVaried(pool, 2, false);
@@ -379,7 +457,7 @@ namespace WolHybridBosses
         {
             SetOutline(b, Color.white);
             yield return new WaitForSeconds(EchoTell * 0.5f);
-            SetOutline(b, Purple);
+            SetOutline(b, Info.Color);
             yield return new WaitForSeconds(EchoTell * 0.5f);
             if (b == null || b.health == null || b.health.CurrentHealthValue <= 0 || b != CurrentBoss) yield break;
             Vector2 aim = Vector2.right;
@@ -395,7 +473,7 @@ namespace WolHybridBosses
 
         static void SetOutline(Boss b, Color c)
         {
-            if (b == null) return;
+            if (b == null || Info.Rainbow) return; // Prism bosses cycle their own outline
             foreach (SpriteRenderer sr in b.GetComponentsInChildren<SpriteRenderer>())
             {
                 Material m = sr != null ? sr.material : null;
@@ -404,17 +482,25 @@ namespace WolHybridBosses
         }
 
         // ---------- reward ----------
-        // The corrupted member's chest drops a Chaos arcana instead of its element's arcana.
+        // The member's chest drops an arcana of the variant's element instead of its own element's. Radiant and Prism
+        // arcana have their own unlock requirements: only arcana the player has already unlocked can drop (never a new
+        // unlock); with none unlocked the chest keeps its normal drop.
         internal static bool CouncilChestOpening;
 
-        internal static string PickChaosArcana()
+        internal static string PickVariantArcana()
         {
-            List<string> list = LootManager.chaosSkillList != null ? new List<string>(LootManager.chaosSkillList) : new List<string>();
+            List<string> list = new List<string>();
+            if (Variant == StageVariant.Chaos) { if (LootManager.chaosSkillList != null) list.AddRange(LootManager.chaosSkillList); }
+            else list.AddRange(ArcanosBridge.IdsOf(Variant));
+            list.RemoveAll(id => !ArcanosBridge.Unlocked(id));
             List<string> owned = Traverse.Create(typeof(LootManager)).Field("currentPlayerSkills").GetValue() as List<string>;
-            if (owned != null) list.RemoveAll(id => owned.Contains(id));
-            if (list.Count == 0 && LootManager.chaosSkillList != null) list.AddRange(LootManager.chaosSkillList);
+            List<string> fresh = new List<string>(list);
+            if (owned != null) fresh.RemoveAll(id => owned.Contains(id));
+            if (fresh.Count > 0) list = fresh;
             return list.Count > 0 ? list[UnityEngine.Random.Range(0, list.Count)] : null;
         }
+
+        internal static string PickChaosArcana() { return PickVariantArcana(); }
 
         internal static bool IsCouncilChest(TreasureChest c)
         {
@@ -424,41 +510,6 @@ namespace WolHybridBosses
         }
 
         static Color Multiply(Color a, Color b) { return new Color(a.r * b.r, a.g * b.g, a.b * b.b, a.a); }
-
-        // ---------- dialog ----------
-
-        static readonly string[] Whispers =
-        {
-            "...the Chaos sees you...", "...it whispers...", "...so loud... the void...", "...not my words...",
-            "...it hungers...", "...we are many...",
-        };
-        const string Glitch = "#%&*";
-
-        // Glitched letters and stutters in plain text (tags left alone), sometimes a Chaos whisper at the end.
-        // Seeded by the line, so a line reads the same if it's redrawn.
-        internal static string Corrupt(string text)
-        {
-            if (string.IsNullOrEmpty(text)) return text;
-            System.Random rng = new System.Random(text.GetHashCode());
-            StringBuilder sb = new StringBuilder(text.Length + 32);
-            bool inTag = false, wordStart = true;
-            for (int i = 0; i < text.Length; i++)
-            {
-                char c = text[i];
-                if (c == '<') inTag = true;
-                if (inTag) { sb.Append(c); if (c == '>') inTag = false; continue; }
-                if (char.IsLetter(c))
-                {
-                    if (wordStart && rng.NextDouble() < 0.06) { sb.Append(c).Append('-'); } // st-stutter
-                    if (!wordStart && rng.NextDouble() < 0.05) { sb.Append(Glitch[rng.Next(Glitch.Length)]); wordStart = false; continue; }
-                    wordStart = false;
-                }
-                else wordStart = true;
-                sb.Append(c);
-            }
-            if (rng.NextDouble() < 0.5) sb.Append("  ").Append(Whispers[rng.Next(Whispers.Length)]);
-            return sb.ToString();
-        }
 
         internal static bool IsPlayerSpeaker(string speakerId)
         {
@@ -478,11 +529,13 @@ namespace WolHybridBosses
                 if (__instance is FinalBossRoomEventHandler) return;
                 bool once = CouncilCorruption.ForceOnce;
                 CouncilCorruption.ForceOnce = false;
-                if (Level.isBossRushMode || !(once || CouncilCorruption.IsCorrupted(GameController.tierCount))) { CouncilCorruption.End(); return; }
-                CouncilCorruption.Begin(__instance);
+                StageVariant v = CouncilCorruption.CouncilVariant(GameController.tierCount);
+                if (once && v == StageVariant.None) v = StageVariant.Chaos;
+                if (Level.isBossRushMode || v == StageVariant.None) { CouncilCorruption.End(); return; }
+                CouncilCorruption.Begin(__instance, v);
                 __instance.gameObject.AddComponent<CouncilCorruptionRunner>().Room = __instance;
             }
-            catch (Exception ex) { Plugin.Log.LogWarning("COUNCIL corruption setup failed: " + ex.Message); }
+            catch (Exception ex) { Plugin.Log.LogWarning("COUNCIL variant setup failed: " + ex.Message); }
         }
     }
 
@@ -497,7 +550,7 @@ namespace WolHybridBosses
         {
             if (Room == null || CouncilCorruption.Room != Room) return;
             if (startedAt < 0f) startedAt = Time.time;
-            // The room's tiles/lights, once the Chaos stage runner has settled on this scene (it reverts on scene change).
+            // The room's tiles/lights, once the stage runner has settled on this scene (it reverts on scene change).
             if (Time.time - startedAt > 1.6f) CouncilCorruption.TintRoom();
             if (boss == null)
             {
@@ -508,7 +561,7 @@ namespace WolHybridBosses
                 CouncilCorruption.PickEchoes();
                 CouncilCorruption.SnapshotBaseline(); // what exists now is the room and the bodies; later effects get tinted
             }
-            // Once the intro dialog is over and the fight is on: show its Chaos echoes, like a giant's intro card.
+            // Once the intro dialog is over and the fight is on: show its echoes, like a giant's intro card.
             if (!announced && Traverse.Create(Room).Field("bossSpawned").GetValue<bool>() && !DialogOpen())
             {
                 announced = true;
@@ -521,7 +574,7 @@ namespace WolHybridBosses
             {
                 if (a == null || a.GetComponentInParent<Player>() != null) continue;
                 CouncilCorruption.TintAttack(a);
-                CouncilCorruption.Chaosify(a.atkInfo);
+                Variants.Convert(a, CouncilCorruption.Variant);
             }
             CouncilCorruption.TintNewEffects();
         }
@@ -533,39 +586,24 @@ namespace WolHybridBosses
 
         void Announce()
         {
+            VariantInfo vi = Variants.Info(CouncilCorruption.Variant);
+            string element = ElementalGiants.ElementColorName(vi.Prefix);
             List<IntroEntry> entries = new List<IntroEntry>();
             foreach (ArcanaDef d in CouncilCorruption.Echoes)
             {
                 IntroEntry ie = new IntroEntry(IntroUI.SkillIcon(d.SkillID), IntroUI.SkillName(d.SkillID));
-                if (ie.Icon == null) ie.Tint = CouncilCorruption.Purple;
+                if (ie.Icon == null) ie.Tint = vi.Color;
                 entries.Add(ie);
             }
             string name = boss != null && !string.IsNullOrEmpty(boss.BossDisplayName) ? boss.BossDisplayName : "Council";
-            IntroUI.Show("Corrupted " + name, "Chaos echoes  Â·  Chaos damage  Â·  drops a Chaos arcana", CouncilCorruption.Purple, entries, 3f);
+            IntroUI.Show(vi.CouncilTitle + " " + name, element + " echoes  ·  " + element + " damage  ·  drops a " + element + " arcana", vi.Color, entries, 3f);
             Plugin.Log.LogInfo("COUNCIL echoes: " + Rivals.ArcanaList(CouncilCorruption.Echoes));
         }
 
         void OnDestroy() { if (CouncilCorruption.Room == Room) CouncilCorruption.End(); }
     }
 
-    // New attacks in the corrupted fight are tinted as soon as their info is set.
-    [HarmonyPatch(typeof(Attack), "SetAttackInfo", new Type[] { typeof(string), typeof(string), typeof(int), typeof(bool) })]
-    static class CouncilAttackTintPatch
-    {
-        static void Postfix(Attack __instance)
-        {
-            if (CouncilCorruption.CurrentBoss == null) return;
-            try
-            {
-                if (__instance.GetComponentInParent<Player>() != null) return;
-                CouncilCorruption.TintAttack(__instance);
-                CouncilCorruption.Chaosify(__instance.atkInfo);
-            }
-            catch (Exception) { }
-        }
-    }
-
-    // Chaos echoes between the boss's own attacks.
+    // Echoes between the boss's own attacks.
     [HarmonyPatch(typeof(Boss), "TransitionToNextState")]
     static class CouncilEchoPatch
     {
@@ -576,7 +614,7 @@ namespace WolHybridBosses
         }
     }
 
-    // Reward: while the corrupted member's chest opens, the arcana it drops becomes a Chaos arcana.
+    // Reward: while the member's chest opens, the arcana it drops becomes one of the variant's (unlocked) arcana.
     [HarmonyPatch(typeof(TreasureChest), "Break")]
     static class CouncilChestPatch
     {
@@ -587,22 +625,27 @@ namespace WolHybridBosses
     [HarmonyPatch(typeof(LootManager), "DropSkill")]
     static class CouncilChaosArcanaDropPatch
     {
-        static void Prefix(ref int __1, ref string __2)
+        static void Prefix(ref int __1, ref string __2, ref float __3)
         {
             if (!CouncilCorruption.CouncilChestOpening) return;
-            string id = CouncilCorruption.PickChaosArcana();
-            if (id == null) return;
+            CouncilCorruption.CouncilChestOpening = false; // one per chest
+            string id = CouncilCorruption.PickVariantArcana();
+            if (id == null)
+            {
+                Plugin.Log.LogInfo("COUNCIL reward: no unlocked " + CouncilCorruption.Variant + " arcana, the chest keeps its normal drop");
+                return;
+            }
             if (__1 <= 0) __1 = 1;
             __2 = id;
-            CouncilCorruption.CouncilChestOpening = false; // one Chaos arcana per chest
-            Plugin.Log.LogInfo("COUNCIL reward: Chaos arcana " + id);
+            __3 = 0f; // never a locked arcana
+            Plugin.Log.LogInfo("COUNCIL reward: " + CouncilCorruption.Variant + " arcana " + id);
         }
     }
 
-    // The corrupted member's lines. The text that gets typed out comes straight from DialogMessage.message
+    // The member's lines. The text that gets typed out comes straight from DialogMessage.message
     // (DialogManager.GhostWrite), so the message itself is swapped before it shows (and restored when the fight ends).
     // In Council dialogs the member (left portrait) speaks every line; the player's portrait is shown but silent.
-    // Then the portrait and the text are tinted purple.
+    // Then the portrait and the text take the variant's colour.
     [HarmonyPatch(typeof(DialogManager), "Activate")]
     static class CouncilDialogPatch
     {
@@ -619,7 +662,7 @@ namespace WolHybridBosses
                 DialogEntry entry = dict != null && dict.Contains(id) ? dict[id] as DialogEntry : null;
                 if (entry != null && entry.messages != null) index = Array.IndexOf(entry.messages, __0);
                 string line = CouncilCorruption.CustomLine(id, index);
-                if (line != null) CouncilCorruption.Rewrite(__0, line); // plain text: the game's tone, no glitching
+                if (line != null) CouncilCorruption.Rewrite(__0, line);
             }
             catch (Exception ex) { Plugin.Log.LogWarning("COUNCIL dialog rewrite failed: " + ex.Message); }
         }
@@ -634,16 +677,12 @@ namespace WolHybridBosses
                 bool corrupted = __0 != null && CouncilCorruption.DialogCorrupted(id);
                 if (msg != null && originalText == null) originalText = msg.color;
                 if (!corrupted) { if (msg != null && originalText != null) msg.color = originalText.Value; return; }
-                Tint(tr, "leftPortraitImage");
-                if (msg != null && originalText != null) msg.color = Color.Lerp(originalText.Value, CouncilCorruption.Purple, 0.55f);
+                Color vc = Variants.Info(CouncilCorruption.Variant).Color;
+                Image img = tr.Field("leftPortraitImage").GetValue() as Image;
+                if (img != null) img.color = Color.Lerp(img.color, vc, 0.35f);
+                if (msg != null && originalText != null) msg.color = Color.Lerp(originalText.Value, vc, 0.55f);
             }
             catch (Exception) { }
-        }
-
-        static void Tint(Traverse tr, string field)
-        {
-            Image img = tr.Field(field).GetValue() as Image;
-            if (img != null) img.color = new Color(img.color.r * 0.8f, img.color.g * 0.55f, img.color.b, img.color.a);
         }
     }
 }

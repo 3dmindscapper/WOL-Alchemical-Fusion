@@ -494,13 +494,14 @@ namespace WolHybridBosses
             bool archon = tier == RivalTier.Hard && UnityEngine.Random.value < Plugin.ArchonRivalChance.Value;
             Vector2 rivalAt = OpenSpot(arenaRoom, arenaArrival, new Vector2(0f, 6f), new List<Vector2> { arenaArrival });
             if ((rivalAt - arenaArrival).sqrMagnitude < 4f) rivalAt = FarthestWithin(arenaArrival, 9f);
-            rival = Rivals.Spawn(rivalAt, prefix, archon ? RivalTier.Final : tier, archon);
+            string rivalPrefix = archon ? Archons.MaybeVariant(prefix) : prefix; // sometimes a Radiant / Prism Archon (Arcanos)
+            rival = Rivals.Spawn(rivalAt, rivalPrefix, archon ? RivalTier.Final : tier, archon);
             if (rival == null) { OpenWayBack(); yield break; }
             yield return null; // Start (and our hostile postfix) runs
             yield return null;
 
             string title = archon
-                ? (prefix == "Chaos" ? "Chaos Sovereign" : ElementalGiants.ElementColorName(prefix) + " Archon")
+                ? (rivalPrefix == "Chaos" ? "Chaos Sovereign" : ElementalGiants.ElementColorName(rivalPrefix) + " Archon")
                 : ElementalGiants.ElementColorName(prefix) + " Rival Wizard";
             if (archon) Plugin.Log.LogInfo("RIVAL Hard portal holds an Archon: " + title);
             yield return StartCoroutine(Rivals.Intro(rival, title, archon ? "Hard  Â·  Archon" : tier.ToString()));

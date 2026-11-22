@@ -5,7 +5,7 @@ It mostly reuses the game's own assets. Custom art is possible, but so far every
 
 Status key: ✅ done · 🧪 built, needs in-game testing · 🔜 next · 📋 planned · ❓ needs research first · 💬 dev note (idea to consider)
 
-Current version: **0.5.15**. Technical details (game internals, file layout, pitfalls) live in `CLAUDE.md`.
+Current version: **0.6.0**. Technical details (game internals, file layout, pitfalls) live in `CLAUDE.md`.
 
 ---
 
@@ -107,9 +107,9 @@ Next:
 - 📋 Maybe: a corrupted phase at low health; voicelines in the game's other languages (custom lines are English only).
 - 📋 Chaos boss floors.
 
-### 3b. Radiant and Prism stages (with WoL Arcanos) 📋
+### 3b. Radiant and Prism stages (with WoL Arcanos) 🧪 (v0.6.0)
 
-**Plan (agreed direction, not started):** keep the one roll per regular stage (`StageChance`, 15%), then pick which variant it is:
+Each regular stage still rolls once for a variant (`ChaosStages.StageChance`, 15%), then picks which one:
 
 | Variant | Share of variant stages | Needs |
 |---|---|---|
@@ -117,24 +117,23 @@ Next:
 | Radiant (Arcanos "Fulgor") | 35% | WoL Arcanos |
 | Prism (Arcanos "Prisma") | 15% | WoL Arcanos |
 
-Without Arcanos every variant stage is Chaos, exactly as now. The shares would be config values.
+Without Arcanos every variant stage is Chaos, exactly as before. Shares are in the `StageVariants` config section. Arcanos stays optional: it's read by reflection, and the mod loads after it when it's there.
 
-Why it's realistic: Arcanos already registers both elements as real game element types and exposes their names, colours, icons and a way to set an attack's element (`WolArcanos.ElementosNuevos`, `WolArcanos.Prismatico`). Hybrid Bosses has no hard dependency on Arcanos today: it only discovers other mods' arcana by scanning at startup. So it stays optional with a soft dependency plus reflection, without building against Arcanos.
+Built (🧪, not yet tested in game):
+- 🧪 **Look:** Radiant stages turn pearl and gold; Prism stages spread every shade across the rainbow. Chaos tiles are now a real dark purple (the old hue shift turned grass red).
+- 🧪 **Enemies and giants:** the same humanoids as on Chaos stages, plus giants, take the variant. Radiant enemies get a pale gold tint; Prism enemies slowly cycle through hues. They cast arcana of that element and their own attacks become that element (Arcanos' own element handling; Prism attacks cycle elements its way). Where Arcanos has few castable arcana of an element, base arcana fill in and turn into it when cast.
+- 🧪 **Rewards per variant:** Chaos more gold and item drops; Radiant a bit more gold, and its enemies may leave a health pickup (15%); Prism more item drops and Chaos gems.
+- 🧪 **Shown:** "Radiant <stage>" / "Prismatic <stage>" titles; on the board, a gold square or a violet square with Arcanos' Radiant / Prism icon. The log plan line reads C / R / P.
+- 🧪 **Radiant / Prismatic Council:** a tier's Council member takes the variant of the tier's first variant stage: "Radiant"/"Prismatic" boss bar, tint (Prism cycles hues), attacks of that element, 2 echoes from that pool, their room recoloured, and **new upbeat voicelines** for each member (dazzled by Radiance / fascinated by every colour at once, and back to their element once beaten).
+- 🧪 **Rivals:** a variant stage's rival portal leads to a rival of that variant. The occasional off-element rival on other stages rolls Chaos / Radiant / Prism by the same split.
+- 🧪 **Archons:** with Arcanos, 25% of elemental Archons (final champion and arena Archon) are Radiant or Prismatic. Their phase 2 is "Ascendant" / "Refracted" (2 more arcana, faster casts) instead of an elemental hybrid. The Chaos Sovereign and Chaos rivals can now roll Radiant and Prism arcana too.
+- 🧪 **Unlocks respected:** Radiant and Prism arcana have their own unlock requirements in Arcanos, so nothing here unlocks them. A Radiant/Prismatic Council chest, or a Radiant/Prism rival's or Archon's chest, drops only an arcana of that element the player has **already unlocked**, never a locked one. With none unlocked, the chest keeps its normal drop. (The Corrupted Council's Chaos arcana now follows the same rule.)
+- Test keys: Shift+F11 cycles this stage off → Chaos → Radiant → Prism; Shift+F12 cycles the forced Council variant; F11's rival test cycle includes Radiant and Prism.
 
-What it takes:
-1. **Generalise "Chaos stage" into "variant stage"** (the larger part): the plan stores which variant (not just yes/no), and the tint colours, title ("Radiant <stage>"), board square colour/icon, enemy conversion, attack element/tint and Council corruption all read from the variant. Most of this code already exists for Chaos and only needs the colours, names and element pulled from the variant.
-2. **Arcanos bridge** (small): detect the mod, read the two element values, icon and colour by reflection; switch the variant split off when it's missing.
-3. **Arcana pools** (needs a check first ❓): the catalog currently sorts the 192 Arcanos arcana into the base elements only (startup log: Wind 34, Frost 35, Flame 36, Earth 37, Thunder 37, Chaos 21). It must learn to tag Radiant and Prism arcana so variant enemies, giants, rivals and the Council can cast them.
-4. **Look per variant:** Radiant toward pearl white / gold; Prism as a cycling or multi-hue tint. Enemies have no Radiant/Prism palette rows, so they'd use a tint plus outline (as the Coffin does for Chaos).
-
-Rough size: a few focused sessions. Step 1 is most of the work, and it also tidies up the Chaos code.
-
-Ideas within this theme (💬, to decide later):
-- 💬 **Radiant / Prism Council** (counterpart of the Corrupted Council): "Radiant" or "Prismatic" boss bar, echoes from that pool, matching voicelines, and the chest drops an arcana of that element.
-- 💬 **Radiant / Prism rivals and giants** on those stages, plus Radiant and Prism Archons in the final pool. The Sovereign could pull from all three pools.
-- 💬 **Prism enemies cycle elements** (Arcanos' Prism attacks rotate through elements; enemy attacks could do the same).
-- 💬 **Per-variant reward twist**: Chaos gives more gold and drops; Radiant could give healing or shield pickups, Prism more arcana or relic choices.
-- 💬 A variant mark for the run on the board's final circle when the champion matches a variant.
+Next:
+- 🔜 Test in game: `VARIANTS: WoL Arcanos found` at startup, the `ARCANA catalog` line listing Radiant and Prism counts, tiles, enemies, board icons, Council lines and chests.
+- 📋 If Arcanos has very few castable Radiant/Prism arcana, tune the fill-in pools.
+- 💬 A variant mark for the run on the board's final circle when the champion is a Radiant/Prismatic Archon (its portrait is already tinted in its colour).
 ## 4. Final-stage boss pool 🧪
 
 Built:
@@ -146,15 +145,15 @@ Next:
 - 🧪 Boss health bar (v0.4.9, shared with rivals).
 - ✅ **Second phase (v0.4.12):** at half health the champion freezes in a burst, then an "awakens" card shows its new arcana. An **Archon becomes a hybrid**: it keeps its 2 strongest arcana, gains 3 from a second element (and that element's own spells), and casts faster. The boss bar becomes e.g. "Fire–Water Archon". The **Chaos Sovereign** becomes "Unbound": 2 more arcana and faster casts. (`FinalBoss.Phases`)
 - 🧪 The run's champion is rolled in the Hub with the Chaos plan (v0.5.15), so the board's final circle is right from the first board.
-- 📋 Radiant and Prism arcana in the Sovereign's pool, and Radiant/Prism Archons, when WoL Arcanos is installed (see 3b).
+- 🧪 Radiant and Prismatic Archons and Radiant/Prism arcana in the Sovereign's pool, when WoL Arcanos is installed (v0.6.0, see 3b).
 
 ## 5. WoL Arcanos compatibility ✅ / 📋
 
 WoL Arcanos (v0.57.0) is installed: 192 arcana, mod robes, and the Prism ("Prisma") and Radiant ("Fulgor") elements.
 - ✅ **Already optional:** no hard dependency. Its arcana are found at startup by scanning loaded mods (log: `ARCANA catalog: 201 castable arcana … 192 from other mods`), and enemies, rivals and giants cast them. Without Arcanos, everything runs on the base game's arcana.
 - ✅ Its robes work as rival robes (the palette it logs is the game's own).
-- 📋 Tag Arcanos' Radiant and Prism arcana in the catalog (currently they're filed under the base elements or skipped), for 3b and the Sovereign.
-- 📋 Declare it as a soft dependency (load after Arcanos when present) and read its element API by reflection: the bridge for 3b.
+- 🧪 Arcanos' Radiant and Prism arcana are tagged in the catalog (v0.6.0).
+- 🧪 Soft dependency declared; its element and unlock API is read by reflection (`ArcanosBridge`, v0.6.0).
 - 💬 **Safekeeping copy of Arcanos** (use the installed mod if present, otherwise a dormant bundled copy): redistributing another author's mod needs their permission, so **ask the author first**. An alternative is to store only the data we need, such as arcana lists and colours, without the mod itself.
 
 ## Shared system: Enemy Arcana 🧪
@@ -178,11 +177,11 @@ Lets any enemy cast real player arcana. Used by rivals, champions, arcana giants
 | F8 | Spawn the next giant beside you |
 | F9 | Dump the element → palette table and the current stage element |
 | F10 | Cycle the nearest giant through all five elements |
-| F11 | Open a rival portal beside you: selector room → arena → way back (cycles Fire → Water → Earth → Wind → Thunder → Chaos) |
-| Shift+F11 | Toggle the Chaos version of the current stage |
+| F11 | Open a rival portal beside you: selector room → arena → way back (cycles Fire → Water → Earth → Wind → Thunder → Chaos, then Radiant → Prism with Arcanos) |
+| Shift+F11 | Cycle the current stage: normal → Chaos → Radiant → Prism (the last two with Arcanos) |
 | Ctrl+F11 | Skip to the next stage, as if through the exit portal (needs the floor's exit; a Council floor only has one after the fight) |
 | F12 | Final champion test (this final room, or spawn one here and make this run's final boss a champion) |
-| Shift+F12 | Force Corrupted Council on/off (every Council fight, including the current room) |
+| Shift+F12 | Cycle the forced Council variant: off → Chaos → Radiant → Prism (every Council fight, including the current room) |
 | Ctrl+F12 | Jump straight to this tier's Council floor, corrupted for that fight (from any regular stage of a run) |
 
 Config: `BepInEx\config\osi.wol.hybridbosses.cfg` (created on first launch).
