@@ -161,7 +161,13 @@ namespace WolHybridBosses
         }
     }
 
-    internal class EliteSplitChild : MonoBehaviour { }
+    // A Splitting elite's copy. v0.9.15: it keeps its parent's element / variant (ElementalNeutrals.TryApply reads
+    // these instead of rolling again).
+    internal class EliteSplitChild : MonoBehaviour
+    {
+        public string InheritPrefix;
+        public bool InheritVariant;
+    }
 
     internal class EliteMark : MonoBehaviour
     {
@@ -224,14 +230,12 @@ namespace WolHybridBosses
             }
         }
 
+        OutlineCache outline; // v0.9.15: cached materials (this runs every frame)
+
         void SetOutline(Color c)
         {
-            foreach (SpriteRenderer sr in GetComponentsInChildren<SpriteRenderer>(true))
-            {
-                if (sr == null) continue;
-                Material m = sr.material;
-                if (m != null && m.HasProperty("_OutlineColor")) m.SetColor("_OutlineColor", c);
-            }
+            if (outline == null) outline = new OutlineCache(this);
+            outline.Set(c);
         }
 
         void Update()
@@ -382,7 +386,10 @@ namespace WolHybridBosses
                     if (copy != null) break;
                 }
                 if (copy == null) { Plugin.Log.LogWarning("ELITE split: could not spawn a copy of " + key); return; }
-                copy.gameObject.AddComponent<EliteSplitChild>();
+                EliteSplitChild sc = copy.gameObject.AddComponent<EliteSplitChild>();
+                ElementalNeutral en = GetComponent<ElementalNeutral>();
+                sc.InheritPrefix = en != null ? en.Prefix : null;
+                sc.InheritVariant = GetComponent<VariantMark>() != null;
                 copy.transform.localScale = transform.localScale * 0.75f;
                 copy.StartCoroutine(SetHealthLater(copy, Mathf.Max(1, Mathf.RoundToInt(maxHp * 0.4f))));
             }
@@ -399,6 +406,9 @@ namespace WolHybridBosses
                 if (go == null || go == gameObject) continue;
                 Enemy e = go.GetComponent<Enemy>();
                 if (e == null || e.health == null || e.health.CurrentHealthValue <= 0 || e is Boss || Rivals.IsRival(e)) continue;
+                // v0.9.15: never a mini-boss (giant, special mini-boss or one of its fight's enemies): stacked heals and
+                // growth made those fights a slog.
+                if (e is MiniBoss || GiantCyclops.IsGiant(e) || e.GetComponent<BossEventEnemy>() != null || e.GetComponent<BossArmour>() != null) continue;
                 float d = ((Vector2)e.transform.position - at).sqrMagnitude;
                 if (d < bd) { bd = d; best = e; }
             }
@@ -595,16 +605,14 @@ namespace WolHybridBosses
             Plugin.Log.LogInfo("ELITE Vengeful soul empowered " + e.GetType().Name + " (x" + v.Stacks + ")");
         }
 
+        OutlineCache outline; // v0.9.15: cached materials (this runs every frame)
+
         void Update()
         {
-            if (enemy == null) return;
+            if (enemy == null || GetComponent<EliteMark>() != null) return; // an elite keeps its own outline
             float pulse = Time.time < glowUntil ? 1f : 0.5f + 0.3f * Mathf.Sin(Time.time * 3f);
-            foreach (SpriteRenderer sr in GetComponentsInChildren<SpriteRenderer>(true))
-            {
-                if (sr == null || GetComponent<EliteMark>() != null) continue;
-                Material m = sr.material;
-                if (m != null && m.HasProperty("_OutlineColor")) m.SetColor("_OutlineColor", new Color(0.75f * pulse, 0.1f * pulse, 0.2f * pulse, 1f));
-            }
+            if (outline == null) outline = new OutlineCache(this);
+            outline.Set(new Color(0.75f * pulse, 0.1f * pulse, 0.2f * pulse, 1f));
         }
     }
 

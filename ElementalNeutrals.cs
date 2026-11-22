@@ -48,6 +48,14 @@ namespace WolHybridBosses
             if (e.GetComponent<ChaosArmed>() != null || e.GetComponent<VariantMark>() != null || Level.isBossRushMode) return;
             if (Rivals.IsRival(e) || OwnerContext.OwnerOf(e) != null) return;
             bool beast = IsBeast(e);
+            // v0.9.15: a Splitting elite's copies keep their parent's element / variant instead of rolling again.
+            EliteSplitChild split = e.GetComponent<EliteSplitChild>();
+            if (split != null)
+            {
+                if (split.InheritPrefix != null) Apply(e, split.InheritPrefix, beast ? 0 : 1, 1.6f);
+                else if (split.InheritVariant && ChaosStages.Planned) MinibossFights.MatchStage(e, false, 0);
+                return;
+            }
             if (ChaosStages.Planned)
             {
                 // Coffins / Cyclops are converted with the stage's humanoids (ChaosEnemies); blobs and ghouls take the
@@ -212,8 +220,14 @@ namespace WolHybridBosses
             try { enemy.health.ignoreHurtVarStat.Modify(ArmourMod, on); } catch (Exception) { }
             try { enemy.health.ignoreKnockbackVarStat.Modify(ArmourMod, on); } catch (Exception) { }
             if (on) hpAtArmour = enemy.health.CurrentHealthValue;
-            Outline(on ? ArmourColour : ElementalGiants.ElementColor(Prefix()));
+            // v0.9.15: while stunned, the outline it had before its armour first went up (its element / variant
+            // outline; the old "element of its prefix" showed grey on Chaos stages).
+            if (outlineCache == null) { outlineCache = new OutlineCache(this); originalOutline = outlineCache.Current ?? ElementalGiants.ElementColor(Prefix()); }
+            outlineCache.Set(on ? ArmourColour : originalOutline);
         }
+
+        OutlineCache outlineCache;
+        Color originalOutline;
 
         string Prefix() { ElementalNeutral m = GetComponent<ElementalNeutral>(); return m != null ? m.Prefix : "Neutral"; }
 

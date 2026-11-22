@@ -354,6 +354,7 @@ namespace WolHybridBosses
         internal static bool IsChaosType(Enemy e)
         {
             if (e == null || e is MiniBoss || Rivals.IsRival(e)) return false;
+            if (GiantCyclops.IsGiant(e)) return false; // v0.9.15: a Chaos giant through its own setup, not a Chaos regular
             for (Type t = e.GetType(); t != null && t != typeof(Enemy); t = t.BaseType)
                 if (ChaosTypes.Contains(t.Name)) return true;
             return false;

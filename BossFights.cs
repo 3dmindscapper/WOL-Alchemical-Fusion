@@ -476,9 +476,15 @@ namespace WolHybridBosses
             yield return null;
             if (enemy == null || enemy.health == null) yield break;
             maxHp = Mathf.Max(1, enemy.health.CurrentHealthValue);
+            outline = new OutlineCache(this);
+            original = outline.Current ?? Color.black; // v0.9.15: its element outline, shown again while stunned
             SetArmour(true);
             started = true;
         }
+
+        OutlineCache outline;
+        Color original;
+        internal bool Armoured { get { return armoured; } }
 
         void SetArmour(bool on)
         {
@@ -487,12 +493,7 @@ namespace WolHybridBosses
             try { enemy.health.ignoreKnockbackVarStat.Modify(mod, on); } catch (Exception) { }
             try { if (!enemy.fsm.HasState("Hurt")) enemy.movement.moveSpeedStat.Modify(slow, !on); } catch (Exception) { } // no hurt state: slowed while stunned
             if (on) hpAtArmour = enemy.health.CurrentHealthValue;
-            foreach (SpriteRenderer sr in GetComponentsInChildren<SpriteRenderer>(true))
-            {
-                Material sm = sr != null ? sr.sharedMaterial : null;
-                if (sm == null || !sm.HasProperty("_OutlineColor")) continue;
-                sr.material.SetColor("_OutlineColor", on ? ArmourColour : Color.black);
-            }
+            if (outline != null) outline.Set(on ? ArmourColour : original);
         }
 
         void Update()
@@ -603,19 +604,20 @@ namespace WolHybridBosses
             return true;
         }
 
+        OutlineCache outline; // v0.9.15: cached materials (this runs every frame)
+        BossArmour armour;
+
         void Update()
         {
             if (Elements.Count == 0) return;
-            if (GetComponent<BossArmour>() != null && Time.frameCount % 2 == 0) return; // let the armour outline show too
+            // v0.9.15: while its armour is up the pale armour outline shows (the shimmer used to hide it); the
+            // shimmer runs while it's stunned.
+            if (armour == null) armour = GetComponent<BossArmour>();
+            if (armour != null && armour.Armoured) return;
             float t = Time.time * 0.8f;
             Color a = Infusion.ColorOf(Elements[Mathf.FloorToInt(t) % Elements.Count]), b = Infusion.ColorOf(Elements[(Mathf.FloorToInt(t) + 1) % Elements.Count]);
-            Color c = Color.Lerp(a, b, t - Mathf.Floor(t));
-            foreach (SpriteRenderer sr in GetComponentsInChildren<SpriteRenderer>(true))
-            {
-                Material sm = sr != null ? sr.sharedMaterial : null;
-                if (sm == null || !sm.HasProperty("_OutlineColor")) continue;
-                sr.material.SetColor("_OutlineColor", c);
-            }
+            if (outline == null) outline = new OutlineCache(this);
+            outline.Set(Color.Lerp(a, b, t - Mathf.Floor(t)));
         }
     }
 }

@@ -97,6 +97,7 @@ namespace WolHybridBosses
         internal static Color ColorOf(ElementType el)
         {
             string key = RampKey(el);
+            if (key == "Chaos") return ElementalGiants.ElementColor("Chaos"); // v0.9.15: the same dark purple everywhere
             if (key != null) return ElementRamps.Mid(key);
             return Name(el) == "Prism" ? new Color(1f, 0.55f, 0.9f) : Color.white;
         }
@@ -549,7 +550,7 @@ namespace WolHybridBosses
 
         static int Cost { get { return 80 + 40 * Mathf.Max(0, GameController.tierCount); } }
 
-        internal static HashSet<string> OwnedIds(Player p)
+        internal static HashSet<string> OwnedIds(Player p, bool includeShelf = true)
         {
             // v0.9.4: LootManager.currentPlayerSkills is never filled by the game (only reset), so it isn't the run's
             // list. What the player holds in a run is what the equip menu shows: the equipped slots (assignedSkills)
@@ -564,9 +565,13 @@ namespace WolHybridBosses
             }
             catch (Exception) { }
             // v0.9.6: the merchant's unsold arcana cards nearby also show, as sacrifices only.
-            foreach (string id in Shelf(p).Keys) ids.Add(id);
+            if (includeShelf) foreach (string id in Shelf(p).Keys) ids.Add(id);
             return ids;
         }
+
+        // v0.9.15: what the player holds this run (equipped + stock), for "give something new" reward checks
+        // (LootManager.currentPlayerSkills, which those used, is never filled by the game).
+        internal static HashSet<string> HeldIds() { return OwnedIds(Elites.Player0, false); }
 
         // ---------- v0.9.6: sacrificing from the merchant's shelf ----------
         // You can hold only one basic and one dash, so buying one just to sacrifice it was pointless. While Tomi is at

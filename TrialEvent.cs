@@ -21,7 +21,7 @@ namespace WolHybridBosses
         readonly List<Vector2> spots = new List<Vector2>();
         Vector2 entrancePos, arrival;
         GameObject entrance;
-        bool started, finished;
+        bool started, finished, inStartRoom;
         readonly List<string> enemyKeys = new List<string>();
         readonly List<Enemy> alive = new List<Enemy>();
 
@@ -32,30 +32,10 @@ namespace WolHybridBosses
             {
                 if (!Plugin.TrialsEnabled.Value || Level.isBossRushMode) return;
                 if (UnityEngine.Random.value >= Plugin.TrialChance.Value) return;
-                Vector2? spot = PickSpot();
-                if (!spot.HasValue) { Plugin.Log.LogWarning("TRIAL: no spot for the portal on this stage"); return; }
-                Open(spot.Value, Elements[UnityEngine.Random.Range(0, Elements.Length)], true);
+                // v0.9.15: in the start room (like the rival portal), so it never sits in another room's setup.
+                Open(Level.startPosition + new Vector2(-4f, 0f), Elements[UnityEngine.Random.Range(0, Elements.Length)], true, true);
             }
             catch (Exception ex) { Plugin.Log.LogWarning("TRIAL setup failed: " + ex); }
-        }
-
-        // A stage checkpoint away from the start and from the rival portal.
-        static Vector2? PickSpot()
-        {
-            Vector2 start = Level.startPosition;
-            Vector2? rival = RivalEvent.Current != null ? (Vector2?)RivalEvent.Current.EntrancePos : null;
-            List<Vector2> ok = new List<Vector2>();
-            foreach (Checkpoint cp in FindObjectsOfType<Checkpoint>())
-            {
-                if (cp == null || cp.transform.root.name.StartsWith("HybridBosses")) continue;
-                Vector2 p = cp.transform.position;
-                float d = Vector2.Distance(p, start);
-                if (d < 12f || d > 80f) continue;
-                if (rival.HasValue && Vector2.Distance(p, rival.Value) < 15f) continue;
-                ok.Add(p);
-            }
-            if (ok.Count == 0) return null;
-            return ok[UnityEngine.Random.Range(0, ok.Count)];
         }
 
         // Ctrl+F6 test key: a trial portal right beside you (elements in turn).
@@ -64,20 +44,21 @@ namespace WolHybridBosses
         {
             Player p = GameController.playerScripts != null && GameController.playerScripts.Length > 0 ? GameController.playerScripts[0] : null;
             if (p == null) return;
-            Open((Vector2)p.transform.position + new Vector2(-2.5f, 0f), Elements[testIndex++ % Elements.Length], false);
+            Open((Vector2)p.transform.position + new Vector2(-2.5f, 0f), Elements[testIndex++ % Elements.Length], false, false);
         }
 
-        static void Open(Vector2 at, ElementType el, bool announce)
+        static void Open(Vector2 at, ElementType el, bool announce, bool startRoom)
         {
             if (Current != null) Current.Close();
             GameObject go = new GameObject("HybridBosses_TrialEvent");
             TrialEvent t = go.AddComponent<TrialEvent>();
             t.element = el;
             t.entrancePos = at;
+            t.inStartRoom = startRoom;
             if (!t.Build()) { Destroy(go); return; }
             Current = t;
             string name = Infusion.Name(el);
-            if (announce) IntroUI.Show("A trial portal has opened", "Somewhere on this floor  ·  Trial of " + name, Infusion.ColorOf(el), null, 4f);
+            if (announce) IntroUI.Show("A trial portal has opened", "In the starting room  ·  Trial of " + name, Infusion.ColorOf(el), null, 7f);
         }
 
         bool Build()
@@ -96,10 +77,13 @@ namespace WolHybridBosses
         {
             yield return new WaitForFixedUpdate();
             yield return new WaitForFixedUpdate();
+            yield return new WaitForFixedUpdate(); // after the rival portal has found its spot
             arrival = RivalEvent.Roomy(arrival, RivalEvent.Mean(spots), room);
             if (entrance != null)
             {
-                entrancePos = RivalEvent.Roomy(entrancePos, entrancePos);
+                List<Vector2> avoid = new List<Vector2>();
+                if (RivalEvent.Current != null) avoid.Add(RivalEvent.Current.EntrancePos);
+                entrancePos = inStartRoom ? RivalEvent.StartRoomSpot(Level.startPosition, avoid) : RivalEvent.Roomy(entrancePos, entrancePos);
                 entrance.transform.position = entrancePos;
                 Portal ep = entrance.GetComponent<Portal>();
                 if (ep != null) ep.targetLocation = arrival;
@@ -233,7 +217,7 @@ namespace WolHybridBosses
                 foreach (ArcanaDef d in ArcanaCatalog.Pool(p)) if (d.Port == ArcanosPort.None && !d.Basic && !ids.Contains(d.SkillID)) ids.Add(d.SkillID);
             }
             ids.RemoveAll(i => !ArcanosBridge.Unlocked(i));
-            List<string> owned = HarmonyLib.Traverse.Create(typeof(LootManager)).Field("currentPlayerSkills").GetValue() as List<string>;
+            HashSet<string> owned = TomiInfusion.HeldIds(); // v0.9.15
             if (owned != null) { List<string> notOwned = ids.FindAll(i => !owned.Contains(i)); if (notOwned.Count > 0) ids = notOwned; }
             return ids.Count > 0 ? ids[UnityEngine.Random.Range(0, ids.Count)] : null;
         }

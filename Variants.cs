@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Reflection;
 using HarmonyLib;
@@ -383,7 +383,7 @@ namespace WolHybridBosses
         {
             List<string> ids = ArcanosBridge.IdsOf(v);
             ids.RemoveAll(id => !ArcanosBridge.Unlocked(id));
-            List<string> owned = Traverse.Create(typeof(LootManager)).Field("currentPlayerSkills").GetValue() as List<string>;
+            HashSet<string> owned = TomiInfusion.HeldIds(); // v0.9.15
             List<string> fresh = new List<string>(ids);
             if (owned != null) fresh.RemoveAll(id => owned.Contains(id));
             if (fresh.Count > 0) ids = fresh;

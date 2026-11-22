@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Text;
@@ -726,7 +726,7 @@ namespace WolHybridBosses
                 List<string> ids = new List<string>();
                 foreach (ArcanaDef d in ArcanaCatalog.Pool(prefix)) if (d.Port == ArcanosPort.None && !ids.Contains(d.SkillID)) ids.Add(d.SkillID);
                 ids.RemoveAll(id => !ArcanosBridge.Unlocked(id));
-                List<string> ownedNow = Traverse.Create(typeof(LootManager)).Field("currentPlayerSkills").GetValue() as List<string>;
+                HashSet<string> ownedNow = TomiInfusion.HeldIds(); // v0.9.15
                 if (ownedNow != null) { List<string> notOwned = ids.FindAll(id => !ownedNow.Contains(id)); if (notOwned.Count > 0) ids = notOwned; }
                 if (ids.Count == 0) return null;
                 string pick = ids[UnityEngine.Random.Range(0, ids.Count)];
@@ -737,7 +737,7 @@ namespace WolHybridBosses
             if (Variant == StageVariant.Chaos) { if (LootManager.chaosSkillList != null) list.AddRange(LootManager.chaosSkillList); }
             else list.AddRange(ArcanosBridge.IdsOf(Variant));
             list.RemoveAll(id => !ArcanosBridge.Unlocked(id));
-            List<string> owned = Traverse.Create(typeof(LootManager)).Field("currentPlayerSkills").GetValue() as List<string>;
+            HashSet<string> owned = TomiInfusion.HeldIds(); // v0.9.15
             List<string> fresh = new List<string>(list);
             if (owned != null) fresh.RemoveAll(id => owned.Contains(id));
             if (fresh.Count > 0) list = fresh;

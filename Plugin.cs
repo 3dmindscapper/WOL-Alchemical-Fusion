@@ -14,7 +14,7 @@ namespace WolHybridBosses
     [BepInDependency("wolarcanos.arcanos", BepInDependency.DependencyFlags.SoftDependency)] // optional: Radiant / Prism variants
     public class Plugin : BaseUnityPlugin
     {
-        public const string Version = "0.9.14";
+        public const string Version = "0.9.15";
         internal static ManualLogSource Log;
 
         internal static ConfigEntry<bool> ElementalGiants;
@@ -313,9 +313,12 @@ namespace WolHybridBosses
             {
                 case "Flame": return new Color(1f, 0.45f, 0.1f);
                 case "Frost": return new Color(0.25f, 0.6f, 1f);
-                case "Earth": return new Color(0.55f, 0.85f, 0.25f);
+                // v0.9.15: Earth is brown and Chaos a dark purple, like the recolour engine's ramps and the Chaos
+                // tiles (Earth was green and Chaos a light lavender in titles, outlines and portals). Chaos stays light
+                // enough to read as text on the dark intro band.
+                case "Earth": return ElementRamps.Mid("Earth");
                 case "Wind": return new Color(0.6f, 1f, 0.85f);
-                case "Chaos": return new Color(0.75f, 0.35f, 1f);
+                case "Chaos": return new Color(0.48f, 0.2f, 0.78f);
                 case "Radiant": return new Color(1f, 0.9f, 0.55f);
                 case "Prism": return new Color(1f, 0.55f, 0.9f);
                 case "Neutral": return new Color(0.85f, 0.85f, 0.85f);

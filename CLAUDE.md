@@ -71,6 +71,19 @@ Cloning the player GameObject and driving it from script failed:
 - v0.0.7 tested: summon swap works (logged EarthKnight, FlameLancer etc.). SuperCoffin goes **pink** on palettes 4–8, so its sheet has no elemental rows: keep palette 3 and tint or outline it (MiniBoss uses `_OutlineColor`/`_OutlineColor2`). The user wants the coffin (and rivals) to cast **player arcana** instead.
 - Arcana research: `Contestant : Enemy` (PvP wizard) reimplements Tornado/SwordThrow/Fireball as its own states (ctor typed to Contestant). Its FireballState instantiates the prefab and calls `Attack.SetAttackInfo("Player", "ShootFireball", level, isUltimate)`, the same call player arcana make (e.g. `UseFireBeam.CreateFireBeam`: `FireBeam.Prefab` + `ChaosInst` + `SetAttackInfo`). There are 100 `Player+Use*` arcana. Plan: our own data-driven `ArcanaState : Enemy.SkillState` (skillID, prefab, delivery type). See ROADMAP "Enemy Arcana".
 
+## v0.9.15: polish-pass fixes; trial portal in the start room
+- **Rewards no longer duplicate held arcana.** Trials, variant chests (`VariantRewards.PickUnlocked`) and the Council's variant / infused drops (`PickVariantArcana`) checked `LootManager.currentPlayerSkills`, which the game never fills. They use `TomiInfusion.HeldIds()` now: equipped plus stock, without the shop shelf (`OwnedIds(p, includeShelf: false)`).
+- **Giant Cyclops on Chaos stages:** `ChaosEnemies.IsChaosType` excludes giant cyclops. Since Cyclops joined `ChaosTypes`, `ChaosRegularEnemyPatch` armed the giant as a regular (1 arcana, purple row) one frame before its own setup, so `ChaosGiants.Apply` was skipped.
+- **Vengeful souls** skip `MiniBoss`, giant cyclops, `BossEventEnemy` and anything with `BossArmour`. Before, an escort elite could heal a mini-boss +50% three times and grow it.
+- **Split copies** keep their parent's element. `EliteSplitChild.InheritPrefix` / `InheritVariant` are set in `Split`, and `ElementalNeutrals.TryApply` applies them instead of rolling again.
+- **Outlines:**
+  - `BossArmour` remembers the outline it found at Start (the element outline) and shows it while stunned, instead of black.
+  - `ConclaveCore` no longer overwrites the outline while the armour is up (`BossArmour.Armoured`); it shimmers only while stunned.
+  - The Giant Cyclops restores the outline it had before its first armour (it showed grey on Chaos stages).
+- **`OutlineCache.cs` (Steam Deck):** per-frame outline writers (EliteMark pulse, Vengeance glow, ConclaveCore shimmer, plus BossArmour and the Giant Cyclops) keep the enemy's outline materials, the same instances `sr.material` returns, and refresh the list every 2s. Before, they called `GetComponentsInChildren` and `sr.material` every frame.
+- **Colours:** `ElementalGiants.ElementColor` Earth is now `ElementRamps.Mid("Earth")` (brown, was green) and Chaos is (0.48, 0.2, 0.78) (dark purple, was light lavender). `Infusion.ColorOf(Chaos)` uses the same purple.
+- **Trial portal:** opens in the start room. It uses `RivalEvent.StartRoomSpot` and avoids the rival portal; its settle waits 3 physics steps so the rival portal is placed first. The announcement says "In the starting room" and stays up 7s. `PickSpot` was removed.
+
 ## v0.9.14: elemental blobs and ghouls
 - **Which enemies:** `ElementalNeutrals.IsBeast` covers `Blob` (and its subclasses `BlobRoller`, `SuperBlob`; the mini blob is a Blob prefab), `BlobSpitter` (Blob Barrager), `Ghoul` and `GhoulLarge` (Macho Ghoul). They're added to `IsKind`.
 - **Elemental stages:** they roll `ElementalCoffinCyclopsChance` and get `Apply(e, prefix, 0)`: recoloured body and elemental attacks, no arcana.
