@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
 using HarmonyLib;
@@ -189,7 +189,7 @@ namespace WolHybridBosses
             return true;
         }
 
-        static void SetStatus(AttackInfo info, ElementType el, float chance, int level)
+        internal static void SetStatus(AttackInfo info, ElementType el, float chance, int level)
         {
             info.elementType = el;
             switch (Name(el))
@@ -423,7 +423,8 @@ namespace WolHybridBosses
         {
             try
             {
-                if (!Plugin.InfusionEnabled.Value || __instance == null || Level.isBossRushMode) return;
+                // v0.9.1: runs only: the Hub's shop already has its own Tomi (this added a second one beside him).
+                if (!Plugin.InfusionEnabled.Value || __instance == null || Level.isBossRushMode || !TomiInfusion.InRun) return;
                 int scene = UnityEngine.SceneManagement.SceneManager.GetActiveScene().GetHashCode() ^ (GameController.tierCount * 131 + GameController.stageCount * 17);
                 if (scene == lastScene) return;
                 lastScene = scene;
@@ -458,26 +459,70 @@ namespace WolHybridBosses
     }
 
     // In a run, Tomi's spellbook lists only the arcana you own this run.
+    // v0.9.4: LegendApi hooks LoadEleSkillDict too (a MonoMod hook around it) and refills the lists after our
+    // postfix ran, so every arcana showed. The lists are now filtered again right before each page is drawn
+    // (LoadSpellPage) and after the menu opens, which LegendApi doesn't touch.
     [HarmonyPatch(typeof(SpellBookUI), "LoadEleSkillDict")]
     static class TomiRunListPatch
     {
-        static void Postfix(SpellBookUI __instance, Player __0)
+        [HarmonyPriority(Priority.Last)]
+        static void Postfix(SpellBookUI __instance, Player __0) { Filter(__instance, __0); }
+
+        internal static void Filter(SpellBookUI ui, Player p)
         {
             try
             {
-                if (!TomiInfusion.InRun || __0 == null) return;
-                HashSet<string> owned = TomiInfusion.OwnedIds(__0);
-                IDictionary spells = Traverse.Create(__instance).Field("eleSpellDict").GetValue() as IDictionary;
-                if (spells == null) return;
-                foreach (object list in spells.Values)
+                if (!TomiInfusion.InRun || ui == null) return;
+                if (p == null) p = Traverse.Create(ui).Field("player").GetValue() as Player;
+                if (p == null) return;
+                HashSet<string> owned = TomiInfusion.OwnedIds(p);
+                int removed = 0;
+                foreach (string field in new[] { "eleSpellDict", "eleOverdriveDict" })
                 {
-                    List<Player.SkillState> l = list as List<Player.SkillState>;
-                    if (l != null) l.RemoveAll(s => s == null || !owned.Contains(s.skillID));
+                    IDictionary spells = Traverse.Create(ui).Field(field).GetValue() as IDictionary;
+                    if (spells == null) continue;
+                    foreach (object list in spells.Values)
+                    {
+                        List<Player.SkillState> l = list as List<Player.SkillState>;
+                        if (l != null) removed += l.RemoveAll(s => s == null || !owned.Contains(s.skillID));
+                    }
                 }
+                if (removed > 0 && Plugin.DebugKeys.Value) Plugin.Log.LogInfo("INFUSION Tomi list: " + owned.Count + " owned arcana shown, " + removed + " others hidden");
             }
             catch (Exception ex) { Plugin.Log.LogWarning("INFUSION Tomi list filter failed: " + ex.Message); }
         }
     }
+
+    // v0.9.5: the card view ("view all arcana", or opening one of your arcana) is a separate list: LoadInfoSkills
+    // walks player.skillsDict (every unlocked arcana) and adds each through AddSkillToInfoSkills, into
+    // infoSkillList and the per-element tabs. In a run, arcana you don't hold are skipped there.
+    [HarmonyPatch(typeof(SpellBookUI), "AddSkillToInfoSkills")]
+    static class TomiRunInfoListPatch
+    {
+        static HashSet<string> owned;
+        static int ownedFrame = -1;
+
+        static bool Prefix(SpellBookUI __instance, Player.SkillState __0)
+        {
+            try
+            {
+                if (!TomiInfusion.InRun || __0 == null) return true;
+                if (ownedFrame != Time.frameCount || owned == null)
+                {
+                    owned = TomiInfusion.OwnedIds(Traverse.Create(__instance).Field("player").GetValue() as Player);
+                    ownedFrame = Time.frameCount;
+                }
+                return owned.Count == 0 || owned.Contains(__0.skillID);
+            }
+            catch (Exception) { return true; }
+        }
+    }
+
+    [HarmonyPatch(typeof(SpellBookUI), "LoadSpellPage")]
+    static class TomiRunListPagePatch { static void Prefix(SpellBookUI __instance) { TomiRunListPatch.Filter(__instance, null); } }
+
+    [HarmonyPatch(typeof(SpellBookUI), "Activate")]
+    static class TomiRunListOpenPatch { [HarmonyPriority(Priority.Last)] static void Postfix(SpellBookUI __instance) { TomiRunListPatch.Filter(__instance, null); } }
 
     [HarmonyPatch(typeof(SpellBookUI), "Activate")]
     static class TomiOpenPatch { static void Postfix(SpellBookUI __instance) { TomiInfusion.Opened(__instance); } }
@@ -506,11 +551,78 @@ namespace WolHybridBosses
 
         internal static HashSet<string> OwnedIds(Player p)
         {
+            // v0.9.4: LootManager.currentPlayerSkills is never filled by the game (only reset), so it isn't the run's
+            // list. What the player holds in a run is what the equip menu shows: the equipped slots (assignedSkills)
+            // and the one held arcana (stockSkill, set by PickUpSkill / RemoveSkill / the equip menu's swaps).
             HashSet<string> ids = new HashSet<string>();
-            List<string> cur = Traverse.Create(typeof(LootManager)).Field("currentPlayerSkills").GetValue() as List<string>;
-            if (cur != null) ids.UnionWith(cur);
-            if (p != null && p.assignedSkills != null) foreach (Player.SkillState s in p.assignedSkills) if (s != null) ids.Add(s.skillID);
+            if (p == null) return ids;
+            if (p.assignedSkills != null) foreach (Player.SkillState s in p.assignedSkills) if (s != null && !string.IsNullOrEmpty(s.skillID)) ids.Add(s.skillID);
+            try
+            {
+                Player.SkillState stock = Traverse.Create(p).Field("stockSkill").GetValue() as Player.SkillState;
+                if (stock != null && !string.IsNullOrEmpty(stock.skillID)) ids.Add(stock.skillID);
+            }
+            catch (Exception) { }
+            // v0.9.6: the merchant's unsold arcana cards nearby also show, as sacrifices only.
+            foreach (string id in Shelf(p).Keys) ids.Add(id);
             return ids;
+        }
+
+        // ---------- v0.9.6: sacrificing from the merchant's shelf ----------
+        // You can hold only one basic and one dash, so buying one just to sacrifice it was pointless. While Tomi is at
+        // the merchant, the merchant's unsold cards (within 20 units, not signature upgrades) appear in his run menu,
+        // marked "on the shelf". Picking one as the sacrifice costs its shelf price plus the infusion cost, and the
+        // card leaves the shelf (price tag "x" and the card removed, as the shop's own Buy does). A pre-infused card
+        // gives its infused element. Shelf cards can't be kept (only your own arcana take an element). Locked arcana
+        // on the shelf don't appear (Tomi's book only lists unlocked ones).
+        static readonly HashSet<int> consumed = new HashSet<int>();
+        static Dictionary<string, SkillStoreItem> shelf = new Dictionary<string, SkillStoreItem>();
+        static int shelfFrame = -1;
+
+        internal static Dictionary<string, SkillStoreItem> Shelf(Player p)
+        {
+            if (shelfFrame == Time.frameCount) return shelf;
+            shelfFrame = Time.frameCount;
+            shelf = new Dictionary<string, SkillStoreItem>();
+            if (p == null || !InRun) return shelf;
+            foreach (SkillStoreItem s in UnityEngine.Object.FindObjectsOfType<SkillStoreItem>())
+            {
+                if (s == null || !s.gameObject.activeInHierarchy || consumed.Contains(s.GetInstanceID())) continue;
+                if (string.IsNullOrEmpty(s.skillID) || s.signatureOnly || s.usePlatinumCost) continue;
+                if (Vector2.Distance(s.transform.position, p.transform.position) > 20f) continue;
+                if (!shelf.ContainsKey(s.skillID)) shelf[s.skillID] = s;
+            }
+            return shelf;
+        }
+
+        // On the shelf and not one you hold (one you hold is your own copy).
+        SkillStoreItem ShelfOnly(Player p, Player.SkillState s)
+        {
+            if (s == null) return null;
+            SkillStoreItem item;
+            if (!Shelf(p).TryGetValue(s.skillID, out item)) return null;
+            if (p != null && p.assignedSkills != null) foreach (Player.SkillState a in p.assignedSkills) if (a != null && a.skillID == s.skillID) return null;
+            try { Player.SkillState stock = Traverse.Create(p).Field("stockSkill").GetValue() as Player.SkillState; if (stock != null && stock.skillID == s.skillID) return null; } catch (Exception) { }
+            return item;
+        }
+
+        // The element a sacrifice gives: a shelf card's own (or its pre-infused one), else the arcana's current one.
+        ElementType GiveOf(Player p, Player.SkillState s)
+        {
+            ElementType el;
+            if (ShelfOnly(p, s) != null) return Infusion.TryGetShown(s.skillID, out el) ? el : s.element;
+            return Infusion.CurrentElement(s);
+        }
+
+        static int ShelfPrice(SkillStoreItem item) { try { return item.Cost; } catch (Exception) { return 0; } }
+
+        static void Consume(SkillStoreItem item)
+        {
+            consumed.Add(item.GetInstanceID());
+            shelfFrame = -1;
+            Infusion.RemovePending(item.skillID);
+            try { PriceMarker pm = Traverse.Create(item).Field("priceMarker").GetValue() as PriceMarker; if (pm != null) pm.SetText("x"); } catch (Exception) { }
+            Destroy(item.gameObject);
         }
 
         static TomiInfusion Instance
@@ -599,17 +711,28 @@ namespace WolHybridBosses
             Player p = PlayerOf();
             if (cur == null) { Say("Point the cursor at one of your arcana first."); return; }
             if (cur.isSignature) { Say("Signatures can't be infused."); return; }
-            if (keep == null) { keep = cur; sacrifice = null; Say("Keeping " + IntroUI.SkillName(cur.skillID) + ". Now point at the arcana to sacrifice and press [I]."); return; }
+            if (keep == null)
+            {
+                if (ShelfOnly(p, cur) != null) { Say(IntroUI.SkillName(cur.skillID) + " is on the merchant's shelf: it can only be sacrificed. Pick one of your own to keep first."); return; }
+                keep = cur; sacrifice = null; Say("Keeping " + IntroUI.SkillName(cur.skillID) + ". Now point at the arcana to sacrifice and press [I]."); return;
+            }
             if (cur == keep) { keep = sacrifice = null; Say("Cleared."); return; }
             if (sacrifice != cur)
             {
-                if (Infusion.Name(Infusion.CurrentElement(cur)) == Infusion.Name(Infusion.CurrentElement(keep))) { Say("That one has the same element."); return; }
+                if (Infusion.Name(GiveOf(p, cur)) == Infusion.Name(Infusion.CurrentElement(keep))) { Say("That one has the same element."); return; }
                 if ((cur.isBasic || cur.isDash) && Equipped(p, cur)) { Say("You can't sacrifice your equipped basic or dash."); return; }
                 sacrifice = cur;
-                Say("Press [I] again to infuse for " + Cost + " gold.");
+                Say("Press [I] again to infuse for " + TotalCost(p, cur) + " gold.");
                 return;
             }
             Infuse(p);
+        }
+
+        // Infusion cost, plus the shelf price when the sacrifice comes off the merchant's shelf.
+        int TotalCost(Player p, Player.SkillState sac)
+        {
+            SkillStoreItem item = ShelfOnly(p, sac);
+            return Cost + (item != null ? ShelfPrice(item) : 0);
         }
 
         static bool Equipped(Player p, Player.SkillState s)
@@ -621,18 +744,23 @@ namespace WolHybridBosses
 
         void Infuse(Player p)
         {
+            SkillStoreItem fromShelf = ShelfOnly(p, sacrifice);
+            int total = TotalCost(p, sacrifice);
             int gold = Player.goldWallet != null ? Player.goldWallet.balance : 0;
-            if (gold < Cost || !Player.goldWallet.Withdraw(Cost)) { Say("Not enough gold (" + Cost + ")."); return; }
-            ElementType give = Infusion.CurrentElement(sacrifice);
+            if (gold < total || !Player.goldWallet.Withdraw(total)) { Say("Not enough gold (" + total + ")."); return; }
+            ElementType give = GiveOf(p, sacrifice);
             string keepId = keep.skillID, sacId = sacrifice.skillID;
-            try { p.RemoveSkill(sacId); } catch (Exception ex) { Plugin.Log.LogWarning("INFUSION could not remove " + sacId + ": " + ex.Message); }
-            List<string> cur = Traverse.Create(typeof(LootManager)).Field("currentPlayerSkills").GetValue() as List<string>;
-            if (cur != null) cur.Remove(sacId);
+            if (fromShelf != null) Consume(fromShelf);
+            else
+            {
+                try { p.RemoveSkill(sacId); } catch (Exception ex) { Plugin.Log.LogWarning("INFUSION could not remove " + sacId + ": " + ex.Message); }
+            }
             Infusion.Set(keepId, give);
             try { p.AnnounceSkillChanged(keep); } catch (Exception) { }
             keep = sacrifice = null;
             Refresh(p);
-            Say(Infusion.Name(give) + "-infused " + IntroUI.SkillName(keepId) + "!  (" + IntroUI.SkillName(sacId) + " was consumed)");
+            Say(Infusion.Name(give) + "-infused " + IntroUI.SkillName(keepId) + "!  (" + IntroUI.SkillName(sacId) + (fromShelf != null ? " was taken from the shelf)" : " was consumed)"));
+            Plugin.Log.LogInfo("INFUSION " + keepId + " took " + Infusion.Name(give) + " from " + sacId + (fromShelf != null ? " (from the shelf)" : "") + " for " + total + " gold");
         }
 
         void HubPress(Player.SkillState cur)
@@ -665,9 +793,13 @@ namespace WolHybridBosses
             string line;
             if (InRun)
             {
+                Player p = PlayerOf();
                 if (keep == null) line = "<b>[I] Infuse</b>  point at the arcana to keep  ·  cost " + Cost + " gold";
                 else if (sacrifice == null) line = "<b>Keeping " + IntroUI.SkillName(keep.skillID) + "</b>  ·  [I] on the arcana to sacrifice  ·  [I] on it again to clear";
-                else line = "<b>" + IntroUI.SkillName(keep.skillID) + "</b> takes <b>" + Infusion.Name(Infusion.CurrentElement(sacrifice)) + "</b> from " + IntroUI.SkillName(sacrifice.skillID) + "  ·  [I] infuse (" + Cost + " gold)";
+                else line = "<b>" + IntroUI.SkillName(keep.skillID) + "</b> takes <b>" + Infusion.Name(GiveOf(p, sacrifice)) + "</b> from " + IntroUI.SkillName(sacrifice.skillID) + "  ·  [I] infuse (" + TotalCost(p, sacrifice) + " gold)";
+                // v0.9.6: under the cursor, a card from the merchant's shelf (sacrifice only) and what it costs.
+                SkillStoreItem onShelf = cur != null ? ShelfOnly(p, cur) : null;
+                if (onShelf != null) line += "\n<color=#ffd27a>" + IntroUI.SkillName(cur.skillID) + ": on the merchant's shelf  ·  sacrifice only  ·  +" + ShelfPrice(onShelf) + " gold</color>";
             }
             else
             {

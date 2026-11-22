@@ -44,7 +44,6 @@ namespace WolHybridBosses
             { "ShockDart",             new[] { new Step("InitBounce") } },
             { "ThunderJavelin",        new[] { new Step("InitJavelin") } },
             { "PlantBarrage",          new[] { new Step("Initialize") } },
-            { "MortalCoil",            new[] { new Step("Initialize") } },
             { "MagmaBomb",             new[] { new Step("Initialize") } },
             { "LightningShadow",       new[] { new Step("Initialize") } },
             { "CreepingTendril",       new[] { new Step("Initialize") } },
@@ -73,6 +72,7 @@ namespace WolHybridBosses
             {
                 if (mb == null) continue;
                 ApplyDefaults(mb);
+                if (EnemyMortalCoil.Launch(mb, caster, def, dir, signature)) continue; // v0.9.4: its own wiring
                 if (ReleaseCharge(mb)) late = true; // again after its Start, in case Start resets the charge
                 Step[] steps;
                 if (Steps.TryGetValue(mb.GetType().Name, out steps))

@@ -449,6 +449,7 @@ namespace WolHybridBosses
                     return;
                 }
                 if (__instance.GetComponentInParent<Player>() != null) return;
+                if (Elites.InfuseAttack(__instance)) return; // v0.9.7: Infused elites
                 StageVariant v = Variants.AttackVariant(__instance);
                 if (v == StageVariant.None) return;
                 Variants.Apply(__instance, v);

@@ -199,7 +199,14 @@ namespace WolHybridBosses
         }
 
         // A castable def for one of the record's arcana (null if enemies can't cast it).
-        internal static ArcanaDef Def(string id) { return string.IsNullOrEmpty(id) || EnemyArcana.Broken.Contains(id) ? null : ArcanaCatalog.Get(id); }
+        // v0.9.1: the same checks as every other rival's pools (castable, not Broken). The record's plain "Dash" (the
+        // default dash, not an arcana) got through before and broke the fight: the player vanished from view.
+        internal static ArcanaDef Def(string id)
+        {
+            if (string.IsNullOrEmpty(id) || id == "Dash" || EnemyArcana.Broken.Contains(id)) return null;
+            ArcanaDef d = ArcanaCatalog.Get(id);
+            return d != null && d.Castable ? d : null;
+        }
 
         // The standard arcana it casts: the record's own castable ones, topped up from its element when some can't be cast.
         internal static List<ArcanaDef> Arcana(RivalMarker mk, List<ArcanaDef> pool, int count)

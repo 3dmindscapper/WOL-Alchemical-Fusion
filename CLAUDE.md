@@ -71,6 +71,77 @@ Cloning the player GameObject and driving it from script failed:
 - v0.0.7 tested: summon swap works (logged EarthKnight, FlameLancer etc.). SuperCoffin goes **pink** on palettes 4–8, so its sheet has no elemental rows: keep palette 3 and tint or outline it (MiniBoss uses `_OutlineColor`/`_OutlineColor2`). The user wants the coffin (and rivals) to cast **player arcana** instead.
 - Arcana research: `Contestant : Enemy` (PvP wizard) reimplements Tornado/SwordThrow/Fireball as its own states (ctor typed to Contestant). Its FireballState instantiates the prefab and calls `Attack.SetAttackInfo("Player", "ShootFireball", level, isUltimate)`, the same call player arcana make (e.g. `UseFireBeam.CreateFireBeam`: `FireBeam.Prefab` + `ChaosInst` + `SetAttackInfo`). There are 100 `Player+Use*` arcana. Plan: our own data-driven `ArcanaState : Enemy.SkillState` (skillID, prefab, delivery type). See ROADMAP "Enemy Arcana".
 
+## v0.9.7: seven more elite traits; gold by risk
+- **Elites.cs:** `EliteTrait` now has 12 traits (`Elites.TraitCount`), and the Ctrl+F7 test key cycles through all of them.
+  - **Volatile:** `EliteBlast.Spawn` (radius 2.4, 30 + 12/tier, its element, 0.9s delay). The warning is the game's `CastingCirclePool.Spawn("Draw", …, useCastTime, delay, size, CastingCircle.enemyColor)`, the same call `ArrowShower` makes. Then `Explosion.Prefab` + `Explode(scale)` (as `SuperMovingStatue`'s ground slam does), the "MeteorExplosion" sound, a camera shake, and one frame of `Attack.CirclePrefab`. Its info is `NeutralKnightAttack` re-owned by the elite (entity null if the body is gone), with damage and element status set (`Infusion.SetStatus`, now internal).
+  - **Vengeful:** `EliteSoul` flies to the nearest living enemy within 12 units. `Vengeance.Empower`: +20% speed, heals 50% of its current HP, ×1.12 scale, red outline; up to 3 stacks.
+  - **Haunting:** `EliteGhost` is a pale copy of the sprite. It rises for 0.6s, then drifts at 3.4 u/s through walls for about 6s and bursts on contact (radius 1.5, 20 + 8/tier).
+  - **Anchored:** `BoolVarStatMod` on `health.ignoreKnockbackVarStat` and `ignoreHurtVarStat` (the Earth Knight shield's switches), plus ×1.1 scale. `Pull()` moves the player 1.3 u/s toward it within 1.6–7 units, unless a Wall/Pit/Obstacle linecast blocks it.
+  - **Overcharged:** while `Charged`, its next hit on a player deals double. The `TakeDamage` prefix doubles `info.damage` and the postfix restores it, because infos are reused. `Discharged()` → recharges after 8s. Fast yellow flicker plus spark after-images while charged.
+  - **Infused:** `InfusedElement` is a base element other than its own (Chaos 15%). `Elites.InfuseAttack` runs in `VariantAttackPatch` before variants: `Infusion.ConvertEnemyInfo`, then `TintAttack` with the element's ramp. Outline and label use the element's colour ("Fire-infused Knight"). No arcana drop.
+  - **Thief:** each landed hit steals min(balance, 8 + 4/tier), up to 60 + 20/tier in total. It blinks about 7 units away 0.35s later. The label shows what it carries, and it drops double that on death.
+- **Gold:** `Elites.GoldFor(trait)` = (15 + 10/tier) × trait multiplier × 1.25 from loop 1.
+  - ×1.4: Overcharged
+  - ×1.25: Shielded, Vengeful, Infused, Anchored
+  - ×1.15: Hasted, Draining, Blinking, Volatile, Haunting
+  - ×1: Splitting (its copies drop too), Thief (pays back its theft)
+- `EliteDrainPatch` now handles Draining, Overcharged and Thief in one prefix/postfix pair (state struct).
+
+## v0.9.6: sacrifice from the merchant's shelf
+- **Why:** a run holds one basic and one dash, so buying a basic or dash only to sacrifice it was pointless.
+- **What shows:** `TomiInfusion.Shelf(p)` collects `SkillStoreItem`s within 20 units of the player. It skips:
+  - `signatureOnly` and platinum items
+  - cards already used this way (`consumed`)
+  - anything outside a run
+
+  `OwnedIds` adds their IDs, so they appear in Tomi's run menu. Locked arcana on the shelf don't appear, because Tomi's book only lists unlocked ones.
+- **Keep or sacrifice:** `ShelfOnly(p, s)` means "on the shelf and not held". Such a card can only be the sacrifice; pressing [I] on it as the keep explains why.
+- **Element given:** `GiveOf` uses the card's pending pre-infused element, else its base element.
+- **Cost:** `TotalCost` = infusion cost + `item.Cost` (shelf price, sale included).
+- **Taking the card:** `Consume` does what `SkillStoreItem.Buy` does: price marker "x", `Destroy` the card. It also clears the pending infusion.
+- **Hint bar:** under the cursor, a shelf card gets the line "on the merchant's shelf · sacrifice only · +N gold".
+- **Log:** `INFUSION <keep> took <El> from <sac> (from the shelf) for N gold`.
+
+## v0.9.5: Tomi's card view filtered too
+- The element pages were filtered in v0.9.4 (log: "5 owned arcana shown, 275 others hidden"), but the card view uses its own list: "view all arcana", or opening one of your arcana.
+  - `LoadInfoSkills` walks `player.skillsDict` (every unlocked arcana) and adds each through `AddSkillToInfoSkills` into `infoSkillList` and `infoEleSkillTupleList`.
+- `TomiRunInfoListPatch` (an `AddSkillToInfoSkills` prefix) skips arcana not in `OwnedIds` during runs. The owned set is cached per frame.
+
+## v0.9.4: enemy Mortal Coil fixed; Tomi's run list really filtered
+- **Mortal Coil (the "loud Chaos trail" bug, also the v0.7.4 one blamed only on Chaos Ball):**
+  - Cause: `ArcanaFinisher`'s generic `Initialize` step guessed the 7 arguments: the target as the start point, range 1, and `Enemy.globalEnemySkillCategory` for both skill category and skill ID. `SetAttackInfo` found no stats, so `atkInfo` was null. `MortalCoil.Update` threw in `Projectile.UpdateCalculatedDamage` every frame before setting `attackCreated`, so the coil respawned its projectile, `ChaosLightningTrail`/`ChaosWireTrail` and the `ChaosFormLong`/`ChaosBeamStart` sounds each frame. With no parent, the projectile also logged "has no parent, but is set to boomerang".
+  - Fix: new **EnemyMortalCoil.cs** wires it the way `Player+UseMortalCoil.InitMortalCoil` does: `Initialize(start, aim, "Player", skillID, signature, caster.transform, 8 / 14 signature)`, `delayStopwatchTime` 0.125.
+  - Postfixes on `MortalCoil.InitAttackBox` (the line attack) and `CreateMortalCoilProj` (the returning projectile, then `UpdateCalculatedDamage(true)`) run `EnemyArcana.MakeEnemyAttack` on the attacks it makes later, so they hit the player. The coil returns to its caster.
+  - Removed from `ArcanaFinisher.Steps`; enemies still cast it.
+- **Tomi's run list:**
+  - Cause 1: `LootManager.currentPlayerSkills` is never filled by the game (only `ResetAvailableSkills` touches it). The run's arcana are `assignedSkills` plus `stockSkill`, which is what the equip menu shows. `OwnedIds` uses those now.
+  - Cause 2: **LegendApi** hooks `SpellBookUI.LoadEleSkillDict` (MonoMod) and refills `eleSpellDict` after our postfix.
+  - Fix: the filter (`TomiRunListPatch.Filter`, also covering `eleOverdriveDict`) runs as a LoadEleSkillDict postfix at `Priority.Last`, a `LoadSpellPage` prefix and an `Activate` postfix. Debug log line: `INFUSION Tomi list: N owned arcana shown, M others hidden`.
+
+## v0.9.3: weighted rival difficulty; portal in the start room
+- **Difficulty:** `RivalEvent.RollTier(atLeastMedium)` rolls from `TierWeights` (Easy/Medium/Hard %), indexed by `tierCount` 0–2, or 3 from loop 1:
+  - tier 1: 60/30/10
+  - tier 2: 30/45/25
+  - tier 3: 15/40/45
+  - later loops: 5/30/65
+
+  The Echo rolls with Easy's weight dropped (at least Medium). With `ScaleWithProgress` off it's an even roll. `ScaledTier` is gone.
+- **Portal placement:** the stage's rival portal opens at `Level.startPosition + (4, 0)`. After two physics steps, `Settle` moves it to `StartRoomSpot`: the most open floor 3.5–6 units from the arrival, along 16 directions, keeping only spots with an unblocked linecast from the arrival so it stays in the start room. If nothing has 1+ clearance, it falls back to `Roomy`. `PickEntrance` (a random checkpoint elsewhere on the stage) is no longer used by the event. F11 still opens it beside the player.
+- **Announcement:** stays up 7s (`AnnounceSeconds`, was 4s) and says "In the starting room".
+
+## v0.9.2: no selector room; the rival portal leads straight to the arena
+- `RivalEvent` builds only the arena now. The stage portal carries the `RivalPortal` tag and teleports straight to `arenaArrival`. Entering it calls `Choose`, and `Run` works as before: it moves any player left behind, spawns, shows the intro, then opens the way back.
+- What the portal holds is rolled in `Open`:
+  - The Echo, when `EchoRecorder.Available` and the `RivalWizards.EchoChance` roll passes (new config, default 0.35). Its tier is `EchoTier`.
+  - Otherwise a rival at `ScaledTier`, or a random tier when `ScaleWithProgress` is off.
+- The portal colour shows which: pale `EchoColor` for the Echo, the element colour otherwise. So does the announcement ("The Echo of your last run has opened a portal" / "A rival's portal has opened · <element> rival · <tier>").
+- Removed: selector room, difficulty portals, the selector's way back, `PortalOffsets`.
+
+## v0.9.1: fixes from the first Echo / Hub test
+- **Hub duplicate Tomi:** `TomiAtMerchantPatch` also fired on the Hub shop's `SkillStoreItem`s and spawned a second Tomi at (4.5, 6.2) beside the Hub's own. It's now limited to runs (`TomiInfusion.InRun`).
+- **Doubled hint text:** `GameFont.Shadowed` drew the shadow pass with the same rich text, so `<color>` words (the element-memory line) drew a second coloured copy 2px off. The shadow pass now strips `<color>` tags.
+- **Echo fight, player invisible:** the record's dash was the plain default `Dash`, and `EchoRival.Def` skipped the `Castable` check every other rival pool applies (`ArcanaCatalog.Filter`), so the Echo got the player's own dash as an "arcana". In the test the player vanished while the Echo fought on. `Def` now rejects `Dash` and non-castable defs, so the Echo falls back to its element's dash pool. This is the likely cause; not confirmed in game.
+
 ## v0.9.0: Echo of your last run; rivals scaled to the run (built, not yet run in game)
 - **Echo.cs, recording:** `EchoRecorder` sits on the ChaosStageRunner object (DontDestroyOnLoad). Every 4s during a run it notes the loadout:
   - `assignedSkills` with role basic/dash/signature/standard, plus `Infusion.TryGet` names;

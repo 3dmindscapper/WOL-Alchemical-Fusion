@@ -7,29 +7,31 @@ using UnityEngine;
 namespace WolHybridBosses
 {
     // The rival event, with its own portal (the misc room is left alone):
-    //   a rival portal opens somewhere on the stage -> a selector room with the Easy / Medium / Hard portals (and a way
-    //   back) -> the arena -> after the fight, a portal back to where you came in.
-    // Both rooms are real rooms of the stage's own tileset, loaded off-map with Room.Load and built with
-    // Room.Generate (floor, walls, pits, decorations and checkpoints under the room's own transform), so it all happens
-    // in the same scene: nothing reloads and the stage's progress is untouched. Checkpoints (safe floor spots) place
-    // the arrival points, the portals and the rival.
+    //   a rival portal opens somewhere on the stage -> straight into the arena -> after the fight, a portal back to
+    //   where you came in. v0.9.2: no selector room any more. What the portal holds is rolled when it opens: the Echo
+    //   of your last run (config RivalWizards.EchoChance, once per run, pale portal) or a rival scaled to the run.
+    // The arena is a real room of the stage's own tileset, loaded off-map with Room.Load and built with Room.Generate
+    // (floor, walls, pits, decorations and checkpoints under the room's own transform), so it all happens in the same
+    // scene: nothing reloads and the stage's progress is untouched. Checkpoints (safe floor spots) place the arrival
+    // point and the rival.
     internal class RivalEvent : MonoBehaviour
     {
-        static readonly Vector2 SelectorOffset = new Vector2(0f, -420f), ArenaOffset = new Vector2(0f, -780f);
+        static readonly Vector2 ArenaOffset = new Vector2(0f, -780f);
         internal static bool Building; // true while one of our rooms runs Room.Generate (see RivalRoomMeshPatch)
-        static readonly Vector2[] PortalOffsets = { new Vector2(-5f, 3f), new Vector2(0f, 5f), new Vector2(5f, 3f) };
         const float PortalSpacing = 4f; // minimum distance between portals and from where the player lands
 
         internal static RivalEvent Current;
 
         string prefix;
-        Room selectorRoom, arenaRoom;
-        List<Vector2> selectorSpots = new List<Vector2>(), arenaSpots = new List<Vector2>();
-        Vector2 selectorArrival, arenaArrival, entrancePos;
+        Room arenaRoom;
+        List<Vector2> arenaSpots = new List<Vector2>();
+        Vector2 arenaArrival, entrancePos;
         internal Vector2 EntrancePos { get { return entrancePos; } }
-        GameObject entrance, leavePortal;
-        readonly List<GameObject> tierPortals = new List<GameObject>();
+        GameObject entrance;
+        RivalTier tier;
+        bool echo, inStartRoom;
         bool chosen;
+        const float AnnounceSeconds = 7f; // v0.9.3: was 4s, too short to read what the portal holds
         Enemy rival;
 
         // ---------- setup ----------
@@ -41,9 +43,9 @@ namespace WolHybridBosses
             {
                 if (!Plugin.RivalEvents.Value || Level.isBossRushMode) return;
                 if (UnityEngine.Random.value >= Plugin.RivalEventChance.Value) return;
-                Vector2? spot = PickEntrance(Level.startPosition);
-                if (!spot.HasValue) { Plugin.Log.LogWarning("RIVAL event: no spot for the portal on this stage"); return; }
-                Open(spot.Value, Rivals.StagePrefixOrRandom(), true);
+                // v0.9.3: in the start room, beside where the player arrives (placed on open floor once the
+                // stage's colliders are registered, in Settle), so it never sits in another room's setup.
+                Open(Level.startPosition + new Vector2(4f, 0f), Rivals.StagePrefixOrRandom(), true, true);
             }
             catch (Exception ex) { Plugin.Log.LogWarning("RIVAL event setup failed: " + ex); }
         }
@@ -53,92 +55,72 @@ namespace WolHybridBosses
         {
             Player p = GameController.playerScripts != null && GameController.playerScripts.Length > 0 ? GameController.playerScripts[0] : null;
             if (p == null) return;
-            Open((Vector2)p.transform.position + new Vector2(2.5f, 0f), prefix ?? Rivals.StagePrefixOrRandom(), false);
+            Open((Vector2)p.transform.position + new Vector2(2.5f, 0f), prefix ?? Rivals.StagePrefixOrRandom(), false, false);
         }
 
-        static void Open(Vector2 entranceAt, string prefix, bool announce)
+        static void Open(Vector2 entranceAt, string prefix, bool announce, bool inStartRoom)
         {
             if (Current != null) Current.Close();
             GameObject go = new GameObject("HybridBosses_RivalEvent");
             RivalEvent ev = go.AddComponent<RivalEvent>();
             ev.prefix = prefix;
             ev.entrancePos = entranceAt;
+            // What waits behind the portal, rolled now so its colour and the announcement can say so.
+            ev.echo = EchoRecorder.Available && UnityEngine.Random.value < Plugin.EchoChance.Value;
+            ev.tier = ev.echo ? EchoTier : Plugin.RivalScaleWithProgress.Value ? RollTier(false) : (RivalTier)UnityEngine.Random.Range(0, 3);
+            ev.inStartRoom = inStartRoom;
             if (!ev.Build()) { Destroy(go); return; }
             Current = ev;
             if (announce)
-                IntroUI.Show("A rival's portal has opened", "Somewhere on this floor  Â·  " + ElementalGiants.ElementColorName(prefix) + " rival",
-                    ElementalGiants.ElementColor(prefix), null, 4f);
+            {
+                if (ev.echo)
+                    IntroUI.Show("The Echo of your last run has opened a portal", "In the starting room  ·  your own arcana, robe and relics, turned against you", EchoColor, null, AnnounceSeconds);
+                else
+                    IntroUI.Show("A rival's portal has opened", "In the starting room  ·  " + ElementalGiants.ElementColorName(prefix) + " rival  ·  " + ev.tier,
+                        ElementalGiants.ElementColor(prefix), null, AnnounceSeconds);
+            }
         }
 
         bool Build()
         {
             Vector2 basePos = Level.startPosition;
-            selectorRoom = BuildRoom(basePos + SelectorOffset, false, selectorSpots);
             arenaRoom = BuildRoom(basePos + ArenaOffset, true, arenaSpots);
-            if (selectorRoom == null || arenaRoom == null || selectorSpots.Count == 0 || arenaSpots.Count == 0)
+            if (arenaRoom == null || arenaSpots.Count == 0)
             {
-                Plugin.Log.LogWarning("RIVAL event: could not build the rooms (selector " + (selectorRoom != null) + ", " + selectorSpots.Count
-                    + " spots; arena " + (arenaRoom != null) + ", " + arenaSpots.Count + " spots)");
-                if (selectorRoom != null) Destroy(selectorRoom.gameObject);
+                Plugin.Log.LogWarning("RIVAL event: could not build the arena (" + (arenaRoom != null) + ", " + arenaSpots.Count + " spots)");
                 if (arenaRoom != null) Destroy(arenaRoom.gameObject);
                 return false;
             }
-            selectorArrival = Central(selectorRoom, selectorSpots);
             arenaArrival = Central(arenaRoom, arenaSpots);
-
-            entrance = MakePortal(entrancePos, selectorArrival, ElementalGiants.ElementColor(prefix));
-            StartCoroutine(PlaceSelectorPortals());
-            Plugin.Log.LogInfo("RIVAL event: portal at " + entrancePos + " -> selector " + selectorRoom.name + " (" + selectorSpots.Count + " spots) -> arena "
-                + arenaRoom.name + " (" + arenaSpots.Count + " spots), " + prefix);
+            entrance = MakePortal(entrancePos, arenaArrival, echo ? EchoColor : ElementalGiants.ElementColor(prefix));
+            if (entrance != null)
+            {
+                RivalPortal rp = entrance.AddComponent<RivalPortal>();
+                rp.Event = this;
+                rp.Tier = tier;
+                rp.IsEcho = echo;
+            }
+            StartCoroutine(Settle());
+            Plugin.Log.LogInfo("RIVAL event: portal at " + entrancePos + " -> arena " + arenaRoom.name + " (" + arenaSpots.Count + " spots), "
+                + (echo ? "the Echo of your last run (" + tier + ")" : prefix + " " + tier));
             return true;
         }
 
-        // A couple of physics steps after building, so the new rooms' wall/pit colliders are registered for the checks.
-        IEnumerator PlaceSelectorPortals()
+        // A couple of physics steps after building, so the arena's wall/pit colliders are registered for the checks.
+        IEnumerator Settle()
         {
             yield return new WaitForFixedUpdate();
             yield return new WaitForFixedUpdate();
             // 0.5.11: land on the most open floor (not the checkpoint under a wall), and move the stage entrance off
             // walls / out of door nooks the same way.
-            selectorArrival = Roomy(selectorArrival, Mean(selectorSpots), selectorRoom);
             arenaArrival = Roomy(arenaArrival, Mean(arenaSpots), arenaRoom);
             if (entrance != null)
             {
-                entrancePos = Roomy(entrancePos, entrancePos);
+                entrancePos = inStartRoom ? StartRoomSpot(Level.startPosition) : Roomy(entrancePos, entrancePos);
                 entrance.transform.position = entrancePos;
                 Portal ep = entrance.GetComponent<Portal>();
-                if (ep != null) ep.targetLocation = selectorArrival;
+                if (ep != null) ep.targetLocation = arenaArrival;
             }
-            // Spread on open floor around the arrival point (rooms have only a few checkpoints, so snapping to them
-            // stacked every portal on the same spot).
-            List<Vector2> used = new List<Vector2> { selectorArrival };
-            // v0.9.0: by default one rival portal, scaled to the run (first tier Easy, second Medium, third Hard,
-            // always Hard from the second loop), plus the Echo of your last run when there is one. The old three
-            // difficulty portals stay available (config Rivals.ScaleWithProgress = false).
-            List<KeyValuePair<RivalTier, bool>> offer = new List<KeyValuePair<RivalTier, bool>>();
-            if (Plugin.RivalScaleWithProgress.Value) offer.Add(new KeyValuePair<RivalTier, bool>(ScaledTier, false));
-            else for (int i = 0; i < 3; i++) offer.Add(new KeyValuePair<RivalTier, bool>((RivalTier)i, false));
-            if (EchoRecorder.Available) offer.Add(new KeyValuePair<RivalTier, bool>(EchoTier, true));
-            Vector2[] offsets = offer.Count == 1 ? new[] { PortalOffsets[1] } : offer.Count == 2 ? new[] { PortalOffsets[0], PortalOffsets[2] } : PortalOffsets;
-            for (int i = 0; i < offer.Count && i < offsets.Length; i++)
-            {
-                RivalTier tier = offer[i].Key;
-                bool isEcho = offer[i].Value;
-                Vector2 at = OpenSpot(selectorRoom, selectorArrival, offsets[i], used);
-                used.Add(at);
-                GameObject p = MakePortal(at, arenaArrival, isEcho ? EchoColor : Rivals.TierColor(tier));
-                if (p == null) continue;
-                RivalPortal rp = p.AddComponent<RivalPortal>();
-                rp.Event = this;
-                rp.Tier = tier;
-                rp.IsEcho = isEcho;
-                tierPortals.Add(p);
-            }
-            if (EchoRecorder.Available)
-                IntroUI.Show("The Echo of your last run waits here", "The pale portal  ·  your own arcana, robe and relics, turned against you", EchoColor, null, 3.5f);
-            Vector2 leaveAt = OpenSpot(selectorRoom, selectorArrival, new Vector2(0f, -5f), used);
-            leavePortal = MakePortal(leaveAt, entrancePos + new Vector2(0f, -1.5f), new Color(0.85f, 0.85f, 0.85f));
-            Plugin.Log.LogInfo("RIVAL selector portals at " + string.Join(", ", used.ConvertAll(u => u.ToString("0.0")).ToArray()) + ", way back at " + leaveAt.ToString("0.0"));
         }
 
         // A real room of this stage's tileset, built on its own far off-map. Arena: a room the game designs for fights
@@ -414,6 +396,29 @@ namespace WolHybridBosses
             return best;
         }
 
+        // v0.9.3: the rival portal's spot in the start room: open floor 3.5-6 units from where the player arrives, in a
+        // straight unblocked line from it (so it stays in the same room, not through a wall into the next one), the
+        // most open such spot. Falls back to the arrival point's own most open floor.
+        static Vector2 StartRoomSpot(Vector2 start)
+        {
+            Vector2 best = start;
+            float bestClear = -1f;
+            for (int a = 0; a < 16; a++)
+            {
+                float ang = a * Mathf.PI / 8f;
+                for (float rad = 3.5f; rad <= 6f; rad += 1.25f)
+                {
+                    Vector2 p = start + new Vector2(Mathf.Cos(ang), Mathf.Sin(ang)) * rad;
+                    if (Blocked(null, start, p)) continue;
+                    float clear = Clearance(p);
+                    if (clear > bestClear) { bestClear = clear; best = p; }
+                }
+            }
+            if (bestClear < 1f) best = Roomy(start + new Vector2(3.5f, 0f), start);
+            Plugin.Log.LogInfo("RIVAL portal in the start room at " + best.ToString("0.0") + " (arrival " + start.ToString("0.0") + ", clearance " + bestClear.ToString("0.0") + ")");
+            return best;
+        }
+
         static void ClearChildren(Transform t)
         {
             if (t == null) return;
@@ -476,20 +481,25 @@ namespace WolHybridBosses
 
         // ---------- the fight ----------
 
-        // Portal.OnTriggerEnter2D prefix: the player stepped into a tier portal.
-        // v0.9.0: the rival's difficulty follows the run instead of a choice.
-        internal static RivalTier ScaledTier
+        // v0.9.3: the rival's difficulty is rolled, with Hard more likely the deeper the run (Easy / Medium / Hard %):
+        //   first tier 60 / 30 / 10, second 30 / 45 / 25, third 15 / 40 / 45, any later loop 5 / 30 / 65.
+        static readonly int[][] TierWeights = { new[] { 60, 30, 10 }, new[] { 30, 45, 25 }, new[] { 15, 40, 45 }, new[] { 5, 30, 65 } };
+
+        internal static int[] CurrentWeights
         {
-            get
-            {
-                if (GameController.loopCount >= 1) return RivalTier.Hard;
-                int t = Mathf.Max(0, GameController.tierCount);
-                return t <= 0 ? RivalTier.Easy : t == 1 ? RivalTier.Medium : RivalTier.Hard;
-            }
+            get { return TierWeights[GameController.loopCount >= 1 ? 3 : Mathf.Clamp(GameController.tierCount, 0, 2)]; }
+        }
+
+        internal static RivalTier RollTier(bool atLeastMedium)
+        {
+            int[] w = CurrentWeights;
+            int easy = atLeastMedium ? 0 : w[0];
+            int roll = UnityEngine.Random.Range(0, easy + w[1] + w[2]);
+            return roll < easy ? RivalTier.Easy : roll < easy + w[1] ? RivalTier.Medium : RivalTier.Hard;
         }
 
         // The Echo is at least Medium (it's your own build).
-        static RivalTier EchoTier { get { return ScaledTier == RivalTier.Easy ? RivalTier.Medium : ScaledTier; } }
+        static RivalTier EchoTier { get { return RollTier(true); } }
 
         static readonly Color EchoColor = new Color(0.72f, 0.66f, 0.85f);
 
@@ -517,8 +527,6 @@ namespace WolHybridBosses
                     Plugin.Log.LogInfo("RIVAL moved a player into the arena (the portal didn't teleport them)");
                 }
             }
-            foreach (GameObject p in tierPortals) if (p != null) Destroy(p);
-            if (leavePortal != null) Destroy(leavePortal);
             if (entrance != null) Destroy(entrance); // one fight per portal
 
             // The Hard portal sometimes holds an Archon (a final champion, with its half-health phase) instead.
@@ -574,7 +582,6 @@ namespace WolHybridBosses
         void Close()
         {
             if (entrance != null) Destroy(entrance);
-            if (selectorRoom != null) Destroy(selectorRoom.gameObject);
             if (arenaRoom != null) Destroy(arenaRoom.gameObject);
             Destroy(gameObject);
         }

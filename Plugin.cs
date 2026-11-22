@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
@@ -14,7 +14,7 @@ namespace WolHybridBosses
     [BepInDependency("wolarcanos.arcanos", BepInDependency.DependencyFlags.SoftDependency)] // optional: Radiant / Prism variants
     public class Plugin : BaseUnityPlugin
     {
-        public const string Version = "0.9.0";
+        public const string Version = "0.9.7";
         internal static ManualLogSource Log;
 
         internal static ConfigEntry<bool> ElementalGiants;
@@ -42,6 +42,7 @@ namespace WolHybridBosses
         internal static ConfigEntry<float> ChaosStageRewards;
         internal static ConfigEntry<float> VariantChaosShare, VariantRadiantShare, VariantPrismShare, VariantArchonChance, RadiantHealthDropChance;
         internal static ConfigEntry<bool> InfusionEnabled, InfusedCouncil, ElitesEnabled, TrialsEnabled, EchoEnabled, RivalScaleWithProgress;
+        internal static ConfigEntry<float> EchoChance; // v0.9.2
         internal static ConfigEntry<float> EliteChanceMultiplier, EliteInfusedDropChance, TrialChance;
         internal static ConfigEntry<string> InfusionButtons;
         internal static ConfigEntry<float> InfusedDropChance, InfusedStockChance;
@@ -119,11 +120,12 @@ namespace WolHybridBosses
             VariantArchonChance = Config.Bind("StageVariants", "ArchonChance", 0.25f, "With WoL Arcanos installed, chance that an elemental Archon (final champion or arena Archon) is a Radiant or Prism Archon instead.");
             InfusionEnabled = Config.Bind("Infusion", "Enabled", true, "An Infusion Altar stands beside the arcana merchant: keep one arcana, sacrifice another, and the kept one takes the sacrificed one's element (+10% damage). Run only.");
             InfusedCouncil = Config.Bind("Infusion", "InfusedCouncil", true, "A Council member (2nd and 3rd tier, when the tier has no Chaos/Radiant/Prism member) may have infused their element with another: same moveset, the other element's damage, status and colours, new lines, and a reward of that element. 15% / 25%, +20% from the second loop.");
-            RivalScaleWithProgress = Config.Bind("RivalWizards", "ScaleWithProgress", true, "The rival portal's room offers one rival scaled to the run (first tier Easy, second Medium, third Hard, always Hard from the second loop) instead of three difficulty portals.");
-            EchoEnabled = Config.Bind("RivalWizards", "EchoOfLastRun", true, "The rival portal's room also offers the Echo of your last run (your arcana with their infusions, robe and stat relics), once per run. Beating it gives a gold chest.");
-            ElitesEnabled = Config.Bind("Elites", "Enabled", true, "Now and then a regular enemy is an elite with one trait (Shielded, Hasted, Splitting, Draining, Blinking): a coloured outline, an Elite label, more gold and sometimes an infused arcana. Chance 4% +3% per tier, +4% from the second loop.");
+            RivalScaleWithProgress = Config.Bind("RivalWizards", "ScaleWithProgress", true, "The rival's difficulty is rolled with Hard more likely deeper in the run (Easy/Medium/Hard %: first tier 60/30/10, second 30/45/25, third 15/40/45, later loops 5/30/65). Off: an even roll.");
+            EchoEnabled = Config.Bind("RivalWizards", "EchoOfLastRun", true, "A rival portal can hold the Echo of your last run instead (your arcana with their infusions, robe and stat relics), once per run. Beating it gives a gold chest.");
+            EchoChance = Config.Bind("RivalWizards", "EchoChance", 0.35f, "Chance that a rival portal holds the Echo of your last run (when there is one and it has not been fought this run).");
+            ElitesEnabled = Config.Bind("Elites", "Enabled", true, "Now and then a regular enemy is an elite with one trait (Shielded, Hasted, Splitting, Draining, Blinking, Volatile, Vengeful, Haunting, Anchored, Overcharged, Infused, Thief): a coloured outline, an Elite label, more gold and sometimes an infused arcana. Chance 4% +3% per tier, +4% from the second loop.");
             EliteChanceMultiplier = Config.Bind("Elites", "ChanceMultiplier", 1f, "Multiplies the elite chance (0 turns elites off, 2 doubles them).");
-            EliteInfusedDropChance = Config.Bind("Elites", "InfusedDropChance", 0.12f, "Chance that an elite drops an arcana that is already infused.");
+            EliteInfusedDropChance = Config.Bind("Elites", "InfusedDropChance", 0.12f, "Chance that an elite (not an Infused one) drops an arcana that is already infused.");
             TrialsEnabled = Config.Bind("Trials", "Enabled", true, "Sometimes a trial portal opens on a stage: three waves with all your arcana forced into one element; clearing it drops an arcana already infused with that element.");
             TrialChance = Config.Bind("Trials", "Chance", 0.12f, "Chance per stage that a trial portal opens.");
             InfusionButtons = Config.Bind("Infusion", "Buttons", "Skill1,Skill2,Skill3", "Controller actions (the game's own input action names) that act as the infuse key [I] in Tomi's spellbook. Tomi's menu only uses Confirm and Cancel, so the arcana buttons are free. Other names: Interact, EquipMenu, Slide, Skill0..Skill5.");

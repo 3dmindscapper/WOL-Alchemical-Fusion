@@ -59,7 +59,9 @@ namespace WolHybridBosses
         {
             Color c = style.normal.textColor;
             style.normal.textColor = new Color(0f, 0f, 0f, color.a * 0.85f);
-            GUI.Label(new Rect(r.x + 2, r.y + 2, r.width, r.height), text, style);
+            // v0.9.1: the shadow pass drops <color> tags, or coloured words drew a second coloured copy offset by 2px.
+            string plain = System.Text.RegularExpressions.Regex.Replace(text, "</?color[^>]*>", "");
+            GUI.Label(new Rect(r.x + 2, r.y + 2, r.width, r.height), plain, style);
             style.normal.textColor = color;
             GUI.Label(r, text, style);
             style.normal.textColor = c;

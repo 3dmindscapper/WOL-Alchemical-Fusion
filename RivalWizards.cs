@@ -425,12 +425,12 @@ namespace WolHybridBosses
         public int RobeColor = -1;
     }
 
-    // Tags one of the selector room's three difficulty portals.
+    // Tags the stage's rival portal (v0.9.2: it leads straight to the arena) with what it holds.
     internal class RivalPortal : MonoBehaviour
     {
         public RivalEvent Event;
         public RivalTier Tier;
-        public bool IsEcho;              // v0.9.0: the selector's Echo portal
+        public bool IsEcho;              // v0.9.0: the Echo of your last run
     }
 
     // ---------- patches ----------

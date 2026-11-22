@@ -5,7 +5,7 @@ It mostly reuses the game's own assets. Custom art is possible, but so far every
 
 Status key: ✅ done · 🧪 built, needs in-game testing · 🔜 next · 📋 planned · ❓ needs research first · 💬 dev note (idea to consider)
 
-Current version: **0.9.0**. Technical details (game internals, file layout, pitfalls) live in `CLAUDE.md`.
+Current version: **0.9.7**. Technical details (game internals, file layout, pitfalls) live in `CLAUDE.md`.
 
 **Status:** sections 1–6 are built and in the **polish phase**: in-game testing and fixes, no new scope.
 **New in v0.8.0: section 7** (infused Council, elites, infusion trials) is built and needs testing; stage hazards are set aside.
@@ -42,7 +42,7 @@ Next:
 A rival is the game's PvP wizard (`Contestant`), turned hostile and given player arcana.
 
 Built:
-- ✅ **Event (own portal, v0.5.4–0.5.11; user-tested: rooms and fight work):** on some stages (`RivalWizards.Chance` 0.3) a **rival portal** opens on open floor somewhere on the stage ("A rival's portal has opened"). It leads to a **selector room** with three portals spread around you: Easy (green), Medium (yellow), Hard (red), plus a white one back. After that comes the **arena** (one of the stage's Survival/Challenge rooms), and after the fight a portal back to where you came in. Both rooms are real rooms of the stage's own tileset with their props and breakables, built off-map in the same scene, so stage progress is untouched. The misc room keeps its NPC.
+- ✅ **Event (own portal, v0.5.4–0.5.11; user-tested: rooms and fight work):** on some stages (`RivalWizards.Chance` 0.3) a **rival portal** opens on open floor somewhere on the stage ("A rival's portal has opened"). (Since v0.9.2 it goes straight to the arena; see below.) It led to a **selector room** with three portals spread around you: Easy (green), Medium (yellow), Hard (red), plus a white one back. After that comes the **arena** (one of the stage's Survival/Challenge rooms), and after the fight a portal back to where you came in. Both rooms are real rooms of the stage's own tileset with their props and breakables, built off-map in the same scene, so stage progress is untouched. The misc room keeps its NPC.
   - How the rooms are built: at the map origin and then moved, so their art and walls line up; you land on the most open floor; portals are at least 4 units apart and never on a wall or out a doorway.
   - 🧪 v0.5.11: breakables in both rooms, wider portal spacing, and no portals in walls or wall nooks (the stage portal too). Waiting on a test.
 - 🧪 **Intro:** the rival is frozen and the camera moves to it. Its arcana, dash arcana, signature spells, robe and relic appear one by one, then the fight starts.
@@ -79,7 +79,7 @@ Next:
 - 🔜 Confirm v0.5.11 in game: breakables, portal spacing, nothing in walls.
 - 💬 Limit the portal to the 2nd stage of each tier (just before the Council fight), as in the earlier dev note, if one random stage per run feels better.
 - 🧪 **Echo of your last run (v0.9.0):** your last run's loadout (equipped arcana with their infusions, robe, relics) is recorded. In the next runs, the rival portal's room offers a pale **Echo portal** once per run: a rival with exactly that build, in infused colours, titled "Echo of your last run". Beating it gives a gold chest. Test: Ctrl+Shift+F11 records your current loadout as the Echo.
-- 🧪 **Rivals scale with the run (v0.9.0):** the selector room offers one rival scaled to your progress (first tier Easy, second Medium, third Hard, always Hard from the second loop) instead of three difficulty portals. The choice that remains is regular rival or Echo. The three portals come back with config `RivalWizards.ScaleWithProgress = false`.
+- 🧪 **Rival portal (v0.9.0–v0.9.3):** opens in the **start room** (open floor 3.5–6 units from where you arrive, never in another room) and leads straight to the arena; the announcement stays up 7s. When it opens, a roll decides what it holds: the Echo of your last run (`RivalWizards.EchoChance`, default 35%, once per run, pale portal, at least Medium) or a rival whose difficulty is rolled with Hard more likely deeper in the run (Easy/Medium/Hard %: tier 1 60/30/10, tier 2 30/45/25, tier 3 15/40/45, later loops 5/30/65; an even roll with `ScaleWithProgress = false`).
 - 🧪 **Rivals hunt you (v0.8.2):** they no longer walk back to their post when you keep your distance (the PvP wizard's leash), they track you across the arena, and they dash in to close the gap when kept out of reach.
 - ✅ **Boss health bar (v0.4.9):** the game's own boss bar (the Council's and Sura's) with the rival's name, shown when the intro ends. Champions and elemental giants get it too (`BossBar.Enabled`, `BossBar.Giants`).
 - 📋 Dropping the rival's relic, a secondary element on Hard, Sura-style attack patterns, and special relics (Resurrect, Vampire…) done for real.
@@ -266,6 +266,8 @@ Pieces to build:
 Built in v0.8.0 (except 7c), not yet tested in game. Test keys: Ctrl+F7 (elite), Ctrl+F6 (trial), Shift+F12 (cycles to Infused Council).
 
 ### 7a. Elite enemies 🧪
+
+- 🧪 **v0.9.7: seven more traits** (12 in all). On death: **Volatile** (casting circle, then an explosion in its element after 0.9s), **Vengeful** (its soul empowers the nearest enemy: healed, faster, bigger, up to x3), **Haunting** (a slow ghost drifts after you through walls and bursts on contact). While alive: **Anchored** (no knockback or stagger, pulls you gently in), **Overcharged** (its next hit on you deals double; recharges 8s after landing one; flickers while charged), **Infused** (its attacks carry a second element and its colours; no arcana drop), **Thief** (hits steal gold, then it blinks away; killing it pays back double). Every elite drops extra gold scaled by risk (base 15 + 10 per tier, x1 to x1.4 by trait, x1.25 from loop 1). Not done: Mirrored, Bonded.
 Now and then a regular enemy spawns with **one trait** that changes how you fight it:
 
 | Trait | Effect | Look |
@@ -329,7 +331,7 @@ Lets any enemy cast real player arcana. Used by rivals, champions, arcana giants
 | Ctrl+F7 | Make the nearest enemy an elite (traits in turn) |
 | Ctrl+F8 | Bring Tomi beside you (infusing in his spellbook with [I]) |
 | Ctrl+F10 | Infusion look preview: your own arcana take Fire → Water → Ice → Earth → Thunder → Wind → Chaos → Radiant → off (look only) |
-| F11 | Open a rival portal beside you: selector room → arena → way back (cycles Fire → Water → Earth → Wind → Thunder → Chaos, then Radiant → Prism with Arcanos) |
+| F11 | Open a rival portal beside you: straight to the arena → way back (cycles Fire → Water → Earth → Wind → Thunder → Chaos, then Radiant → Prism with Arcanos) |
 | Shift+F11 | Cycle the current stage: normal → Chaos → Radiant → Prism (the last two with Arcanos) |
 | Ctrl+Shift+F11 | Record your current loadout as the Echo of your last run (test) |
 | Ctrl+F11 | Skip to the next stage, as if through the exit portal (needs the floor's exit; a Council floor only has one after the fight) |
