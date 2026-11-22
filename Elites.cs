@@ -279,6 +279,7 @@ namespace WolHybridBosses
             sr.sortingLayerID = src.sortingLayerID;
             sr.sortingOrder = src.sortingOrder - 1;
             sr.color = tint;
+            EliteGhost.UsePalette(sr, src, tint); // v1.1.1
             go.AddComponent<FadeOut>().Seconds = 0.3f;
         }
 
@@ -505,7 +506,23 @@ namespace WolHybridBosses
         SpriteRenderer sr;
         int damage;
         float born;
+        bool paletted;
         ElementType element;
+
+        // A copy of a palette-shader enemy sprite needs the enemy's material (same palette row), else it shows raw index
+        // data (a red box). True when the copy can be tinted / faded through the material's _Color.
+        internal static bool UsePalette(SpriteRenderer dst, SpriteRenderer src, Color tint)
+        {
+            try
+            {
+                if (dst == null || src == null || src.sharedMaterial == null || !src.sharedMaterial.HasProperty("_Palette")) return false;
+                dst.material = new Material(src.material);
+                if (!dst.material.HasProperty("_Color")) return false;
+                dst.material.SetColor("_Color", tint);
+                return true;
+            }
+            catch (Exception) { return false; }
+        }
 
         internal static void Spawn(Enemy from, Vector2 at, int damage)
         {
@@ -521,6 +538,9 @@ namespace WolHybridBosses
             g.sr.sortingLayerID = src.sortingLayerID;
             g.sr.sortingOrder = src.sortingOrder + 5;
             g.sr.color = new Color(0.8f, 0.95f, 1f, 0f);
+            // v1.1.1: enemy sprites hold palette indices, drawn by the palette shader; with the default sprite material
+            // the raw index data showed as a red box. Use a copy of the elite's own material (same palette row).
+            g.paletted = UsePalette(g.sr, src, g.sr.color);
             g.damage = damage;
             g.element = from.element;
             g.born = Time.time;
@@ -533,6 +553,7 @@ namespace WolHybridBosses
             if (age > 6.5f) { Destroy(gameObject); return; }
             float alpha = age < 0.6f ? age / 0.6f : age > 5.5f ? Mathf.Max(0f, 6.5f - age) : 1f;
             sr.color = new Color(0.8f, 0.95f, 1f, 0.55f * alpha + 0.1f * Mathf.Sin(Time.time * 8f));
+            if (paletted) sr.material.SetColor("_Color", sr.color); // the palette shader's own tint / fade
             if (age < 0.6f) { transform.position += new Vector3(0f, 0.6f * Time.deltaTime, 0f); return; } // rising
             Player p = Elites.Player0;
             if (p == null || p.IsDead) return;
@@ -569,6 +590,7 @@ namespace WolHybridBosses
                 sr.sortingLayerID = src.sortingLayerID;
                 sr.sortingOrder = src.sortingOrder + 5;
                 sr.color = new Color(0.9f, 0.15f, 0.25f, 0.8f);
+                EliteGhost.UsePalette(sr, src, sr.color); // v1.1.1
             }
             EliteSoul s = go.AddComponent<EliteSoul>();
             s.target = target; s.from = at; s.born = Time.time;
@@ -628,6 +650,7 @@ namespace WolHybridBosses
             float t = (Time.time - start) / Seconds;
             if (t >= 1f || sr == null) { Destroy(gameObject); return; }
             Color c = sr.color; c.a = a0 * (1f - t); sr.color = c;
+            if (sr.sharedMaterial != null && sr.sharedMaterial.HasProperty("_Palette") && sr.material.HasProperty("_Color")) sr.material.SetColor("_Color", c); // v1.1.1: palette copies
         }
     }
 

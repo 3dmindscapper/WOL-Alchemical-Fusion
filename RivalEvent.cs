@@ -93,7 +93,17 @@ namespace WolHybridBosses
             Open((Vector2)p.transform.position + new Vector2(2.5f, 0f), Rivals.StagePrefixOrRandom(), true, false, null, false, m);
         }
 
-        static void Open(Vector2 entranceAt, string prefix, bool announce, bool inStartRoom, GrudgeRecord grudge = null, bool forceEcho = false, RivalMode? forceMode = null)
+        // v1.1.1 test key (Alt+5): a Hard portal that always holds an Archon.
+        internal static void OpenArchonHere()
+        {
+            Player p = Elites.Player0;
+            if (p == null) return;
+            Open((Vector2)p.transform.position + new Vector2(2.5f, 0f), Rivals.StagePrefixOrRandom(), true, false, null, false, RivalMode.Duel, true);
+        }
+
+        bool forceArchon;
+
+        static void Open(Vector2 entranceAt, string prefix, bool announce, bool inStartRoom, GrudgeRecord grudge = null, bool forceEcho = false, RivalMode? forceMode = null, bool archon = false)
         {
             if (Current != null) Current.Close();
             GameObject go = new GameObject("HybridBosses_RivalEvent");
@@ -107,6 +117,7 @@ namespace WolHybridBosses
             if (grudge != null) { ev.grudge = grudge; ev.echo = false; ev.tier = grudge.Tier; }
             // v1.1.0: some portals hold a tournament or a team match instead of a duel.
             if (forceMode.HasValue) { ev.mode = forceMode.Value; if (ev.mode != RivalMode.Duel) ev.echo = false; }
+            if (archon) { ev.forceArchon = true; ev.echo = false; ev.tier = RivalTier.Hard; }
             else if (!ev.echo && grudge == null)
             {
                 float r = UnityEngine.Random.value;
@@ -134,7 +145,7 @@ namespace WolHybridBosses
         bool Build()
         {
             Vector2 basePos = Level.startPosition;
-            arenaRoom = BuildRoom(basePos + ArenaOffset, true, arenaSpots);
+            arenaRoom = BuildRoom(basePos + ArenaOffset, true, arenaSpots, mode == RivalMode.Team); // v1.1.1: team matches get the biggest room
             if (arenaRoom == null || arenaSpots.Count == 0)
             {
                 Plugin.Log.LogWarning("RIVAL event: could not build the arena (" + (arenaRoom != null) + ", " + arenaSpots.Count + " spots)");
@@ -149,6 +160,15 @@ namespace WolHybridBosses
                 rp.Event = this;
                 rp.Tier = tier;
                 rp.IsEcho = echo;
+                // v1.1.1: what's behind it, under the portal.
+                Color lc = mode == RivalMode.Tournament ? TournamentColor : mode == RivalMode.Team ? TeamColor : echo ? EchoColor : ElementalGiants.ElementColor(prefix);
+                string lt = mode == RivalMode.Tournament ? "Rival tournament  ·  3 rounds"
+                    : mode == RivalMode.Team ? "Team match  ·  2 vs 2"
+                    : echo ? "Echo of your last run"
+                    : grudge != null ? "Rematch  ·  " + ElementalGiants.ElementColorName(prefix) + " rival  ·  " + tier
+                    : forceArchon ? "Archon  ·  " + ElementalGiants.ElementColorName(prefix)
+                    : ElementalGiants.ElementColorName(prefix) + " rival  ·  " + tier;
+                PortalLabel.Attach(entrance, lt, lc);
             }
             StartCoroutine(Settle());
             Plugin.Log.LogInfo("RIVAL event: portal at " + entrancePos + " -> arena " + arenaRoom.name + " (" + arenaSpots.Count + " spots), "
@@ -178,7 +198,7 @@ namespace WolHybridBosses
         // Selector: a small Standard room. Never Start / Exit rooms: they bring the stage's start/exit setup with them
         // (a Start room copy pulled the player's spawn out of the real start room). Emptied of enemies, interactables
         // and portals.
-        internal static Room BuildRoom(Vector2 at, bool arena, List<Vector2> spots)
+        internal static Room BuildRoom(Vector2 at, bool arena, List<Vector2> spots, bool largest = false)
         {
             Dictionary<string, Room> dict = Level.LoadedRoomDict;
             if (dict == null || dict.Count == 0) return null;
@@ -192,7 +212,12 @@ namespace WolHybridBosses
                 try { size = t.Width * t.Height; } catch (Exception) { continue; }
                 if (size < 120) continue; // too cramped for portals / a fight
                 int score;
-                if (arena)
+                if (arena && largest)
+                {
+                    if (t.type != RoomType.Survival && t.type != RoomType.RandomSurvival && t.type != RoomType.Challenge && t.type != RoomType.Standard) continue;
+                    score = size;
+                }
+                else if (arena)
                 {
                     if (t.type == RoomType.Survival || t.type == RoomType.RandomSurvival) score = 2000000 + size;
                     else if (t.type == RoomType.Challenge) score = 1000000 + size;
@@ -584,7 +609,7 @@ namespace WolHybridBosses
             if (mode == RivalMode.Team) { yield return StartCoroutine(RunTeam()); if (!PlayerDown()) OpenWayBack(); yield break; }
 
             // The Hard portal sometimes holds an Archon (a final champion, with its half-health phase) instead.
-            bool archon = !echo && grudge == null && tier == RivalTier.Hard && UnityEngine.Random.value < Plugin.ArchonRivalChance.Value;
+            bool archon = forceArchon || (!echo && grudge == null && tier == RivalTier.Hard && UnityEngine.Random.value < Plugin.ArchonRivalChance.Value);
             Vector2 rivalAt = OpenSpot(arenaRoom, arenaArrival, new Vector2(0f, 6f), new List<Vector2> { arenaArrival });
             if ((rivalAt - arenaArrival).sqrMagnitude < 4f) rivalAt = FarthestWithin(arenaArrival, 9f);
             EchoRecord record = echo ? EchoRecorder.Last : null;
@@ -768,16 +793,54 @@ namespace WolHybridBosses
             string allyPrefix = others[0], second = others[1];
             LeagueRival allyLg = League.For(allyPrefix);
             string allyName = allyLg != null ? allyLg.Name : ElementalGiants.ElementColorName(allyPrefix) + " wizard";
-            Enemy ally = SpawnAlly(RivalSpot(new Vector2(-2.5f, -1.5f)), allyPrefix);
-            IntroUI.Show("Team match", "You and " + allyName + " against two rivals", TeamColor, null, 3f);
-            if (ally != null) RivalSpeech.Say(allyName + " (ally)", AllyHello[UnityEngine.Random.Range(0, AllyHello.Length)], ElementalGiants.ElementColor(allyPrefix), 3f);
-            yield return new WaitForSeconds(2.5f);
+            Color allyColour = ElementalGiants.ElementColor(allyPrefix);
+            // v1.1.1: everyone appears at once (you and your ally on one side, the rivals across the arena), nobody moves
+            // while each rival's card shows its arcana, then the fight starts for all four together.
             RivalTier t = Down(tier);
-            Enemy a = Rivals.Spawn(RivalSpot(new Vector2(-3f, 6f)), prefix, t);
-            if (a != null) { rival = a; yield return StartCoroutine(Challenger(a, prefix, t, "Team match  ·  " + t, false)); }
-            Enemy b = Rivals.Spawn(RivalSpot(new Vector2(3f, 6f)), second, t);
-            if (b != null) yield return StartCoroutine(Challenger(b, second, t, "Team match  ·  " + t, false));
+            Enemy ally = SpawnAlly(RivalSpot(new Vector2(-2.5f, -1.5f)), allyPrefix);
+            Enemy a = Rivals.Spawn(RivalSpot(new Vector2(-4f, 8f)), prefix, t);
+            Enemy b = Rivals.Spawn(RivalSpot(new Vector2(4f, 8f)), second, t);
             LeagueRival la = League.For(prefix), lb = League.For(second);
+            foreach (Enemy r in new[] { a, b })
+            {
+                RivalMarker mk = r != null ? r.GetComponent<RivalMarker>() : null;
+                if (mk != null) { mk.NoChest = false; mk.League = League.For(mk.Prefix); }
+            }
+            if (a != null) rival = a;
+            yield return null; // their Start + hostile setup
+            yield return null;
+            if (ally != null) ally.enabled = false;
+            if (a != null) a.enabled = false;
+            if (b != null) b.enabled = false;
+            string nameA = NameOf(la, prefix), nameB = NameOf(lb, second);
+
+            float hold = 3f + (Plugin.RivalIntroSeconds.Value + 2f) * 2f; // the whole introduction, roughly
+            if (ally != null && ally.health != null) try { ally.health.SetInvulnerabilityDuration(hold, false); } catch (Exception) { }
+            IntroUI.Show("Team match", "You and " + allyName + "  against  " + nameA + " and " + nameB, TeamColor, null, 3f);
+            try { CameraController cam = CameraController.Instance; if (cam != null && ally != null) cam.OverrideAndMoveCameraToLocation(ally.transform, null, 3f, true, false, false, false); } catch (Exception) { }
+            if (ally != null) RivalSpeech.Say(allyName + " (ally)", AllyHello[UnityEngine.Random.Range(0, AllyHello.Length)], allyColour, 3f);
+            yield return new WaitForSeconds(3f);
+            if (a != null)
+            {
+                float d = Rivals.IntroCard(a, nameA, "Team match  ·  " + t + (la != null ? "  ·  " + la.Record : ""), Plugin.RivalIntroSeconds.Value + 2f);
+                yield return new WaitForSeconds(d);
+            }
+            if (b != null)
+            {
+                float d = Rivals.IntroCard(b, nameB, "Team match  ·  " + t + (lb != null ? "  ·  " + lb.Record : ""), 0f);
+                yield return new WaitForSeconds(d);
+            }
+            IntroUI.Show("Fight!", "You and " + allyName + "  ·  defeat both rivals", TeamColor, null, 1.5f);
+            if (ally != null) { Rivals.DelayCasts(ally, 1f); ally.enabled = true; }
+            Rivals.Release(a, nameA);
+            Rivals.Release(b, nameB);
+            // v1.1.1: the rivals fight your ally too (they hunted only players: targetGroup players, onlyTargetPlayers).
+            foreach (Enemy r in new[] { a, b })
+                if (r != null && ally != null)
+                    try { r.targetGroup = GameController.allies; r.onlyTargetPlayers = false; } catch (Exception) { }
+            if (a != null) { RivalSpeech.Say(nameA, la != null ? League.Greet(la) : RivalLines.Greet(RivalVoice.Rival, prefix), ElementalGiants.ElementColor(prefix)); AddBanter(a, prefix, nameA, ElementalGiants.ElementColor(prefix)); }
+            if (b != null) AddBanter(b, second, nameB, ElementalGiants.ElementColor(second));
+
             bool doneA = !Alive(a), doneB = !Alive(b), lost = false;
             while (!doneA || !doneB)
             {
@@ -790,7 +853,7 @@ namespace WolHybridBosses
             yield return new WaitForSeconds(1.5f);
             if (Alive(ally))
             {
-                RivalSpeech.Say(allyName + " (ally)", AllyThanks[UnityEngine.Random.Range(0, AllyThanks.Length)], ElementalGiants.ElementColor(allyPrefix), 3f);
+                RivalSpeech.Say(allyName + " (ally)", AllyThanks[UnityEngine.Random.Range(0, AllyThanks.Length)], allyColour, 3f);
                 yield return new WaitForSeconds(2f);
             }
             if (ally != null)
@@ -802,12 +865,16 @@ namespace WolHybridBosses
             Plugin.Log.LogInfo("RIVAL team match won");
         }
 
-        // The game's own wizard AI on your side: a Contestant left as it spawns (friendly), in an element's colours.
+        // The game's own wizard AI on your side. Contestant.targetEnemyGroup (read in its Start) is how the game makes a
+        // friendly contestant: ally hurtbox and layers, skills that only hit enemies. v1.1.1: 1.1.0 left it hostile (it
+        // attacked the player); after Start, SetAffiliation(false) (what Mind Control does) makes sure of it.
         Enemy SpawnAlly(Vector2 at, string pfx)
         {
             Enemy a = null;
             try { a = Enemy.Spawn("Contestant", at, null, false, true, false, false, false); } catch (Exception) { a = null; }
             if (a == null) { Plugin.Log.LogWarning("RIVAL team match: no ally"); return null; }
+            Contestant ct = a as Contestant;
+            if (ct != null) ct.targetEnemyGroup = true;
             ElementType el;
             if (ElementalGiants.TryGetElement(a, pfx, out el)) a.element = el;
             a.gameObject.AddComponent<BossEventEnemy>(); // never an elite, never re-elemented
@@ -815,12 +882,25 @@ namespace WolHybridBosses
             Plugin.Log.LogInfo("RIVAL team match ally: " + pfx);
             return a;
         }
-
         static IEnumerator AllyHealth(Enemy a)
         {
             yield return null;
             yield return null;
-            if (a == null || a.health == null) yield break;
+            if (a == null) yield break;
+            // Its Start (targetEnemyGroup) gave it ally hurtboxes (rivals hit them, you don't) and enemy-only skills. Make
+            // sure it hunts the enemies and that the rivals, who hunt GameController.allies, see it.
+            try
+            {
+                if (a.targetGroup != GameController.enemies) Traverse.Create(a).Property("targetGroup").SetValue(GameController.enemies);
+                Traverse.Create(a).Property("currentGroup").SetValue(GameController.allies);
+                GameController.enemies.Remove(a.gameObject);
+                if (!GameController.allies.Contains(a.gameObject)) GameController.allies.Add(a.gameObject);
+                a.skillCategory = "EnemyOnly";
+                a.onlyTargetPlayers = false; // v1.1.1: else GetClosestTarget skips every non-player (the ally stood idle)
+                Plugin.Log.LogInfo("RIVAL ally ready: targets enemies, hurtbox " + (a.hurtBoxTransform != null ? a.hurtBoxTransform.name : "?"));
+            }
+            catch (Exception ex) { Plugin.Log.LogWarning("RIVAL ally affiliation: " + ex.Message); }
+            if (a.health == null) yield break;
             float hp = Rivals.TierHP(RivalTier.Hard);
             try { a.health.healthStat.AddMod(new NumVarStatMod("HB_AllyHP", hp, 10, VarStatModType.Override, true)); a.health.CurrentHealthValue = Mathf.RoundToInt(hp); } catch (Exception) { }
         }
@@ -838,7 +918,7 @@ namespace WolHybridBosses
 
         void OpenWayBack()
         {
-            MakePortal(arenaArrival, entrancePos + new Vector2(0f, -1.5f), new Color(0.85f, 0.85f, 0.85f));
+            PortalLabel.Attach(MakePortal(arenaArrival, entrancePos + new Vector2(0f, -1.5f), new Color(0.85f, 0.85f, 0.85f)), "Way back", Color.white);
             IntroUI.Show("The way back is open", "Return to the floor", new Color(0.9f, 0.9f, 0.9f), null, 3f);
             Plugin.Log.LogInfo("RIVAL event: way back opened");
         }

@@ -33,6 +33,8 @@ namespace WolHybridBosses
         {
             "No infusions? You still wield the elements one at a time, the way the Council taught you.",
             "Your arcana are pure, untouched. Let me show you what they could become.",
+            "Not a single fusion? Visit Tomi, little wizard. The elements were never meant to stay apart.",
+            "You have never fused an element. Learn to blend them, and one day you may stand where I stand.",
         };
 
         static readonly string[] Challenge =
@@ -61,8 +63,8 @@ namespace WolHybridBosses
         internal static string HurtLine() { return Pick(Hurt); }
         internal static string DefeatLine() { return Pick(Defeat); }
 
-        // Its introduction: who it is, what it notices about your arcana (a dual infusion, an infusion, or none), the
-        // element you lean on most, and its challenge.
+        // Its introduction: who it is, one comment (a dual-infused arcana, else an infused one, else the element you lean
+        // on or a nudge toward fusion), and its challenge.
         internal static List<string> IntroLines()
         {
             List<string> lines = new List<string> { Pick(Hello) };
@@ -86,7 +88,7 @@ namespace WolHybridBosses
             if (dualArc != null)
                 lines.Add(Pick(new[]
                 {
-                    Infusion.Name(da) + " and " + Infusion.Name(db) + ", braided into your " + dualArc + ". You have touched what I am made of.",
+                    Infusion.Name(da) + " and " + Infusion.Name(db) + ", braided into your " + dualArc + ". You have glimpsed what I am made of.",
                     "Your " + dualArc + " carries " + Infusion.Name(da) + " and " + Infusion.Name(db) + " at once. Few wizards dare to fuse what the Council keeps apart.",
                 }));
             else if (singleArc != null)
@@ -95,35 +97,23 @@ namespace WolHybridBosses
                     Infusion.Name(sa) + " poured into your " + singleArc + ". A small transmutation... but a true one.",
                     "I can feel " + Infusion.Name(sa) + " where it does not belong, in your " + singleArc + ". Good. Rules are for apprentices.",
                 }));
-            else lines.Add(Pick(NoInfusion));
-            string top = null;
-            int best = 0;
-            foreach (KeyValuePair<string, int> kv in counts) if (kv.Value > best) { best = kv.Value; top = kv.Key; }
-            string[] words;
-            if (top != null && ElementWords.TryGetValue(top, out words)) lines.Add(Pick(words));
+            else
+            {
+                // v1.1.1: one comment only. Without infusions: half the time the element you lean on most, otherwise
+                // a nudge toward fusion (also the fallback when no element stands out).
+                string top = null;
+                int best = 0;
+                foreach (KeyValuePair<string, int> kv in counts) if (kv.Value > best) { best = kv.Value; top = kv.Key; }
+                string[] words;
+                if (top != null && ElementWords.TryGetValue(top, out words) && UnityEngine.Random.value < 0.5f) lines.Add(Pick(words));
+                else lines.Add(Pick(NoInfusion));
+            }
             lines.Add(Pick(Challenge));
             return lines;
         }
 
         // Before the fight: it speaks while frozen and untouchable, the camera on it.
-        internal static System.Collections.IEnumerator Monologue(Enemy boss)
-        {
-            if (boss == null) yield break;
-            List<string> lines = IntroLines();
-            float total = 0f;
-            foreach (string l in lines) total += 3.2f + l.Length * 0.035f;
-            boss.enabled = false;
-            if (boss.health != null) try { boss.health.SetInvulnerabilityDuration(total + 1f, false); } catch (Exception) { }
-            try { CameraController cam = CameraController.Instance; if (cam != null) cam.OverrideAndMoveCameraToLocation(boss.transform, null, total, true, false, false, false); } catch (Exception) { }
-            foreach (string l in lines)
-            {
-                if (boss == null) yield break;
-                float wait = 3.2f + l.Length * 0.035f;
-                RivalSpeech.Say(Name, l, White, wait - 0.4f);
-                yield return new WaitForSeconds(wait);
-            }
-            Plugin.Log.LogInfo("ALCHEMIST spoke " + lines.Count + " lines");
-        }
+        internal static System.Collections.IEnumerator Monologue(Enemy boss) { return ChampionSpeech.Monologue(boss, Name, IntroLines(), White); }
 
         // At the end of the champion's hostile setup.
         internal static void Setup(Enemy e)
@@ -180,7 +170,10 @@ namespace WolHybridBosses
     // A white overdrive aura that stays on (the game's own signature aura).
     internal static class WhiteAura
     {
-        internal static OverdriveEffects Attach(Transform owner, Material mat)
+        internal static OverdriveEffects Attach(Transform owner, Material mat) { return Attach(owner, mat, new Color(1.5f, 1.55f, 1.6f, 0.5f)); }
+
+        // v1.1.1: any colour (Archons wear their element's).
+        internal static OverdriveEffects Attach(Transform owner, Material mat, Color colour)
         {
             try
             {
@@ -191,7 +184,7 @@ namespace WolHybridBosses
                 go.name = "HB_WhiteAura";
                 OverdriveEffects fx = go.GetComponent<OverdriveEffects>();
                 if (fx == null) { UnityEngine.Object.Destroy(go); return null; }
-                fx.Initialize(new Color(1.5f, 1.55f, 1.6f, 0.5f), owner, mat);
+                fx.Initialize(colour, owner, mat);
                 fx.ToggleAura(true);
                 return fx;
             }

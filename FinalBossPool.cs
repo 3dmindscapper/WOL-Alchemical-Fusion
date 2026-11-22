@@ -41,6 +41,9 @@ namespace WolHybridBosses
             fc.room = room;
             fc.prefix = FinalRun.ChampionPrefix;
             fc.title = FinalRun.ChampionTitle;
+            // v1.1.1: Sura doesn't speak or walk up (the room's own intro skips that whole part); our cutscene replaces it.
+            try { Traverse.Create(room).Field("playBossDialog").SetValue(false); } catch (Exception ex) { Plugin.Log.LogWarning("FINAL could not silence Sura: " + ex.Message); }
+            fc.StartCoroutine(fc.TintSoon()); // v1.1.1: the whole castle in the champion's colours
             if (Plugin.FinalRoomBadge.Value) FinalChampionBadge.Show(fc);
             Plugin.Log.LogInfo("FINAL boss this run: " + fc.title + " (not Sura)");
             return fc;
@@ -52,6 +55,10 @@ namespace WolHybridBosses
             Traverse tr = Traverse.Create(room);
             if (!swapped)
             {
+                // v1.1.1: Sura is never seen on champion runs (her throne stays empty until the champion arrives).
+                // Every frame until the swap: her intro states and the health bar's FadeIn turn things back on, which
+                // showed her and her bar for a moment.
+                HideSuraEarly(tr);
                 if (!tr.Field("bossSpawned").GetValue<bool>()) return; // Sura's intro finished, fight begins now
                 sura = tr.Field("boss").GetValue() as Boss;
                 if (sura == null) return;
@@ -64,6 +71,45 @@ namespace WolHybridBosses
         }
 
         bool championSpawned;
+        FinalBoss placedSura;
+
+        // A frame after the level's Start, so every scenery object has set itself up.
+        internal IEnumerator TintSoon()
+        {
+            yield return null;
+            yield return null;
+            ArenaTint.ApplyFor(prefix, FinalRun.Alchemist);
+        }
+
+        void HideSuraEarly(Traverse tr)
+        {
+            Boss b = tr.Field("boss").GetValue() as Boss;
+            if (b == null) b = tr.Field("finalBoss").GetValue() as FinalBoss;
+            if (b == null) { if (placedSura == null) placedSura = FindObjectOfType<FinalBoss>(); b = placedSura; }
+            if (b == null) return;
+            foreach (Renderer r in b.GetComponentsInChildren<Renderer>(true)) if (r.enabled) r.enabled = false;
+            try
+            {
+                if (b.healthBar != null && b.healthBar.gameObject.activeSelf) b.healthBar.gameObject.SetActive(false);
+                if (b.health != null) b.health.showDamageNumbers = false;
+            }
+            catch (Exception) { }
+        }
+
+        // v1.1.1: the torches the skipped intro would have lit, one after another.
+        IEnumerator LightTorches()
+        {
+            List<Torch> torches = new List<Torch>();
+            try { Torch[] own = Traverse.Create(room).Field("regularModeTorches").GetValue() as Torch[]; if (own != null) torches.AddRange(own); } catch (Exception) { }
+            foreach (Torch t in FindObjectsOfType<Torch>()) if (t != null && !torches.Contains(t)) torches.Add(t);
+            foreach (Torch t in torches)
+            {
+                if (t == null) continue;
+                try { t.Toggle(true); } catch (Exception) { }
+                try { SoundManager.PlayAudio("MageFireballRelease", 1f, false, -1f, -1f); } catch (Exception) { }
+                yield return new WaitForSeconds(0.12f);
+            }
+        }
 
         bool ChampionDown()
         {
@@ -76,6 +122,13 @@ namespace WolHybridBosses
         {
             Vector3 pos = sura.transform.position;
             HideSura();
+            // v1.1.1: the champion's own entrance: the torches light, a flash on the empty throne, then it appears.
+            yield return StartCoroutine(LightTorches());
+            // v1.1.1: the room takes the champion's colours.
+            ArenaTint.ApplyFor(prefix, FinalRun.Alchemist); // second pass: lit torches, anything turned on since
+            try { CameraController cam = CameraController.Instance; if (cam != null) cam.OverrideAndMoveCameraToLocation(sura.transform, null, 2f, true, false, false, false); } catch (Exception) { }
+            yield return new WaitForSeconds(0.6f);
+            ArcanosBridge.Fx("Teletransporte", pos);
             champion = Rivals.Spawn(pos, prefix, RivalTier.Final);
             if (champion == null)
             {
@@ -91,6 +144,7 @@ namespace WolHybridBosses
             yield return null; // its Start + hostile setup
             yield return null;
             if (alchemist) yield return StartCoroutine(WhiteAlchemist.Monologue(champion)); // v1.1.1: it introduces itself
+            else if (champion != null) yield return StartCoroutine(ChampionSpeech.Monologue(champion, title, ArchonLines.IntroLines(prefix), ElementalGiants.ElementColor(prefix))); // v1.1.1: so does an Archon
             if (champion == null) yield break;
             yield return StartCoroutine(Rivals.Intro(champion, title, alchemist ? "Final Champion  ·  the essence of every element" : "Final Champion"));
             if (alchemist && champion != null)
@@ -99,6 +153,14 @@ namespace WolHybridBosses
                 b.Voice = RivalVoice.Primordial;
                 b.Speaker = WhiteAlchemist.Name;
                 b.Colour = WhiteAlchemist.White;
+            }
+            else if (champion != null && champion.GetComponent<RivalBanter>() == null)
+            {
+                RivalBanter b = champion.gameObject.AddComponent<RivalBanter>(); // v1.1.1: an Archon's half-health and defeat lines
+                b.Voice = RivalVoice.Archon;
+                b.Prefix = prefix;
+                b.Speaker = title;
+                b.Colour = ElementalGiants.ElementColor(prefix);
             }
         }
 
@@ -143,6 +205,16 @@ namespace WolHybridBosses
             tr.Field("thirdFormStarted").SetValue(true);  // ...and the super-form intro
             try { sura.fsm.ChangeState("Dead", false); }
             catch (Exception ex) { Plugin.Log.LogError("FINAL could not finish Sura: " + ex); }
+            // v1.1.1: the room's Update only declares victory when chaosMode is off (with it on, it waits for her Chaos
+            // form; she's frozen and hidden, so it waited forever: the Alchemist died and nothing happened). Her Dead
+            // state has read it by now; turn it off, and no super form either.
+            yield return null;
+            if (sura != null) ts.Field("chaosMode").SetValue(false);
+            tr.Field("superModeAvailable").SetValue(false);
+            yield return new WaitForSeconds(2f);
+            if (sura != null && !tr.Field("bossDefeated").GetValue<bool>())
+                Plugin.Log.LogWarning("FINAL victory not declared yet (Sura state " + (sura.fsm != null ? sura.fsm.currentStateName : "?") + ")");
+            else Plugin.Log.LogInfo("FINAL victory declared");
         }
     }
 
@@ -205,6 +277,14 @@ namespace WolHybridBosses
             ChampionPrefix = "Chaos";
         }
 
+        // v1.1.1 test key (Alt+4): an Archon (or the Chaos Sovereign) in the next final room.
+        internal static void ForceArchon()
+        {
+            Tick();
+            Alchemist = false;
+            ChampionPrefix = UnityEngine.Random.value < 0.2f ? "Chaos" : Archons.MaybeVariant(ElementalGiants.RandomPrefix());
+        }
+
         internal static void ForceChampion()
         {
             Tick();
@@ -228,6 +308,7 @@ namespace WolHybridBosses
         const string OverlayName = "HB_ChampionIcon";
         static bool loggedLayout;
         static readonly Dictionary<Image, KeyValuePair<Color, bool>> original = new Dictionary<Image, KeyValuePair<Color, bool>>();
+        static readonly Dictionary<Image, Sprite> originalSprite = new Dictionary<Image, Sprite>(); // v1.1.1
 
         static Color Multiply(Color a, Color b) { return new Color(a.r * b.r, a.g * b.g, a.b * b.b, a.a); }
 
@@ -258,12 +339,19 @@ namespace WolHybridBosses
                     KeyValuePair<Color, bool> o = original[img];
                     img.color = o.Key;
                     img.enabled = o.Value;
+                    if (!originalSprite.ContainsKey(img)) originalSprite[img] = img.sprite;
+                    img.sprite = originalSprite[img];
                     if (!champion) continue;
                     switch (img.name)
                     {
                         case "BossPortrait":                                    // Sura in the element's colour (the game hides
                             img.enabled = true;                                 // her portrait behind the Chaos symbol by default)
-                            img.color = Multiply(o.Key, Color.Lerp(Color.white, el, 0.7f));
+                            // v1.1.1: a recoloured Sura in the champion's palette (pure white for the Primordial
+                            // Alchemist, the element's ramp for an Archon); the old tint if the twin can't be made.
+                            string ramp = FinalRun.Alchemist ? "Pure" : ArchonLook.RampForPrefix(prefix);
+                            Sprite twin = ramp != null ? RecolorEngine.Twin(originalSprite[img], ramp) : null;
+                            if (twin != null) { img.sprite = twin; img.color = o.Key; }
+                            else img.color = Multiply(o.Key, Color.Lerp(Color.white, el, 0.7f));
                             BoardMarksFor(__instance).Add(img, img.color, null, true); // keep it shown if the board toggles it
                             break;
                         case "BossCircleInner": img.color = Multiply(o.Key, Color.Lerp(el, Color.black, 0.35f)); break;

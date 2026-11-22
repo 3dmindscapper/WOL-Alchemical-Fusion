@@ -15,7 +15,6 @@ namespace WolHybridBosses
         internal static string Detail;   // Elite: the trait
         internal static int Need, Have;
         internal static bool Active, Done;
-        internal static float ShowUntil;
 
         internal static void Roll()
         {
@@ -52,7 +51,7 @@ namespace WolHybridBosses
             }
         }
 
-        static int Reward { get { return 60 + 30 * Mathf.Max(0, GameController.tierCount); } }
+        internal static int Reward { get { return 60 + 30 * Mathf.Max(0, GameController.tierCount); } }
 
         internal static void Report(BountyKind k, string detail)
         {
@@ -63,7 +62,6 @@ namespace WolHybridBosses
                 if (Kind == BountyKind.Elites && k == BountyKind.Elite) match = true;
                 if (!match) return;
                 Have++;
-                ShowUntil = Time.unscaledTime + 5f;
                 if (Have < Need) BountyBoard.Announce("Bounty progress", Text + "  ·  " + Have + " / " + Need, 0f, 3f); // v1.1.1
                 Plugin.Log.LogInfo("BOUNTY progress " + Have + "/" + Need);
                 if (Have >= Need) Complete();
@@ -91,7 +89,7 @@ namespace WolHybridBosses
         // screen (a rival / trial portal), then stays long enough to read.
         static string cardTitle, cardText;
         static float cardAt = -1f, cardSeconds;
-        static int Reward { get { return 60 + 30 * Mathf.Max(0, GameController.tierCount); } }
+        static int Reward { get { return Bounties.Reward; } }
 
         internal static void Announce(string title, string text, float delay, float seconds)
         {
@@ -101,17 +99,19 @@ namespace WolHybridBosses
 
         void LateUpdate()
         {
-            if (cardAt < 0f || Time.time < cardAt || IntroUI.Busy || ModifiersMenu.IsOpen || NocturneMenu.IsOpen) return;
+            if (cardAt < 0f) return;
+            if (!TomiInfusion.AtHome && !TomiInfusion.InRun) { cardAt = -1f; return; } // v1.1.1: never on the title screen
+            if (Time.time < cardAt || IntroUI.Busy || ModifiersMenu.IsOpen || NocturneMenu.IsOpen || LeagueMenu.IsOpen) return;
             cardAt = -1f;
             IntroUI.Show(cardTitle, cardText, new Color(1f, 0.85f, 0.45f), null, cardSeconds);
         }
-        static GUIStyle style;
-        static Font styleFont;
 
         void Update()
         {
-            string scene = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name ?? "";
-            bool inHub = scene == "Hub";
+            // v1.1.1: home = the Hub or your house (walking into the house isn't a run start). The title screen and
+            // loading scenes are neither: no bounty card there, and quitting to the title isn't a run start either.
+            bool inHub = TomiInfusion.AtHome;
+            if (!inHub && !TomiInfusion.InRun) return; // title screen, loading, PvP...: wait
             if (inHub && !wasInHub)
             {
                 Bounties.Roll();
@@ -128,23 +128,7 @@ namespace WolHybridBosses
             wasInHub = inHub;
         }
 
-        void OnGUI()
-        {
-            if (ModifiersMenu.IsOpen || NocturneMenu.IsOpen) return;
-            bool inHub = !TomiInfusion.InRun;
-            // v1.1.0: the league rank, in the Hub under the bounty.
-            if (inHub && League.On && UnityEngine.SceneManagement.SceneManager.GetActiveScene().name == "Hub")
-            {
-                if (style == null || GameFont.Changed(ref styleFont)) style = GameFont.Style(GUI.skin.label, 15, TextAnchor.UpperLeft, false, true);
-                GameFont.Shadowed(new Rect(16f, 38f, 620f, 24f), "Rival League:  " + League.RankName + "  ·  " + League.Points + " pts  ·  " + League.NextRankText
-                    + (WhiteMantle.Unlocked ? "  ·  White Mantle " + (WhiteMantle.Worn ? "worn" : "off") : ""), style, new Color(0.8f, 0.85f, 1f));
-            }
-            if (!Bounties.Active || !Plugin.BountiesEnabled.Value) return;
-            if (!inHub) return; // v1.1.1: in runs the bounty shows as centred cards instead (Announce)
-            if (style == null || GameFont.Changed(ref styleFont)) style = GameFont.Style(GUI.skin.label, 15, TextAnchor.UpperLeft, false, true);
-            string line = (inHub ? "Next run's bounty:  " : "Bounty:  ") + Bounties.Text + (Bounties.Need > 1 ? "  (" + Bounties.Have + "/" + Bounties.Need + ")" : "")
-                + "  ·  " + (60 + 30 * Mathf.Max(0, GameController.tierCount)) + "+ gold";
-            GameFont.Shadowed(new Rect(16f, 14f, 620f, 24f), line, style, new Color(1f, 0.85f, 0.45f));
-        }
+        // v1.1.1: no corner text any more: the bounty shows as centred cards (Announce), the league and the next run's
+        // bounty on the League board at the Hub statue (LeagueMenu).
     }
 }

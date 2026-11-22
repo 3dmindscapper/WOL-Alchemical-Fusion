@@ -83,7 +83,8 @@ namespace WolHybridBosses
 
         void Update()
         {
-            bool inHub = !TomiInfusion.InRun;
+            bool inHub = TomiInfusion.AtHome; // v1.1.1: not on the title screen
+            if (inHub && !IsOpen && (LeagueMenu.IsOpen || NocturneMenu.IsOpen)) return; // one menu at a time
             if (!inHub) { IsOpen = false; return; }
             ChaosInputDevice dev = TomiInfusion.Device;
             if (!IsOpen)

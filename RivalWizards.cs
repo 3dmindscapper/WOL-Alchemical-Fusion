@@ -250,6 +250,7 @@ namespace WolHybridBosses
             // v0.9.21: holder-only relics run for real in the rival's own inventory (after its stats and HP are set).
             RivalLoadout.EquipReal(e, mk.RelicIDs);
             if (mk.Alchemist) WhiteAlchemist.Setup(e); // v1.1.0: white body and aura (after its robe colour)
+            else if (mk.Tier == RivalTier.Final && mk.Echo == null) ArchonLook.Setup(e, mk.Prefix); // v1.1.1: a primordial Archon
 
             Plugin.Log.LogInfo("RIVAL " + mk.Prefix + " pool: " + pool.Count + " arcana, basic " + (mk.Basic != null ? mk.Basic.SkillID : "none")
                 + ", dash " + (mk.Dash != null ? mk.Dash.SkillID : "none") + " (of " + dashes.Count + "), signature "
@@ -298,7 +299,7 @@ namespace WolHybridBosses
             if (mk.OutfitID != null)
             {
                 Sprite robe = null;
-                try { robe = IconManager.GetWizardSprite(mk.OutfitID); } catch (Exception) { }
+                try { robe = IntroUI.RobeIcon(mk.RobeColor); } catch (Exception) { } // v1.1.1: in the robe's colours (was a raw, solid-looking pose)
                 IntroEntry ie = new IntroEntry(robe, IntroUI.OutfitName(mk.OutfitID));
                 if (robe == null) ie.Tint = new Color(0.7f, 0.5f, 1f);
                 list.Add(ie);
@@ -312,23 +313,38 @@ namespace WolHybridBosses
         internal static IEnumerator Intro(Enemy rival, string title, string subtitle)
         {
             if (rival == null) yield break;
+            float intro = IntroCard(rival, title, subtitle, 0f);
+            yield return new WaitForSeconds(intro);
+            Release(rival, title);
+        }
+
+        // v1.1.1: the intro split in two, so a team match can show every wizard before anyone moves. IntroCard freezes
+        // the rival (untouchable for the card + extraHold seconds), camera on it, and shows its card; Release starts it.
+        internal static float IntroCard(Enemy rival, string title, string subtitle, float extraHold)
+        {
+            if (rival == null) return 0f;
             rival.enabled = false;
-            BossBar bar = BossBar.Attach(rival, title); // the game's boss health bar, shown when the fight starts
+            BossBar.Attach(rival, title); // the game's boss health bar, shown when the fight starts
             RivalMarker mk = rival.GetComponent<RivalMarker>();
             RivalTier tier = mk != null ? mk.Tier : RivalTier.Medium;
             float intro = IntroUI.Show(title, subtitle + (mk != null ? "  ·  " + mk.Bonus.Describe() : ""), TierColor(tier),
                 mk != null ? IntroEntries(mk) : null, Plugin.RivalIntroSeconds.Value);
-            if (rival.health != null) rival.health.SetInvulnerabilityDuration(intro + 0.5f, false);
+            if (rival.health != null) rival.health.SetInvulnerabilityDuration(intro + extraHold + 0.5f, false);
             CameraController cam = CameraController.Instance;
             if (cam != null) cam.OverrideAndMoveCameraToLocation(rival.transform, null, intro, true, false, false, false);
-            yield return new WaitForSeconds(intro);
-            if (rival != null)
-            {
-                DelayCasts(rival, 1.5f); // no opening burst
-                rival.enabled = true;
-                if (bar != null) bar.Show();
-                if (tier == RivalTier.Final && Plugin.ChampionPhases.Value) ChampionPhase.Attach(rival, title); // phase 2 at half health
-            }
+            return intro;
+        }
+
+        internal static void Release(Enemy rival, string title)
+        {
+            if (rival == null) return;
+            RivalMarker mk = rival.GetComponent<RivalMarker>();
+            RivalTier tier = mk != null ? mk.Tier : RivalTier.Medium;
+            DelayCasts(rival, 1.5f); // no opening burst
+            rival.enabled = true;
+            BossBar bar = rival.GetComponent<BossBar>();
+            if (bar != null) bar.Show();
+            if (tier == RivalTier.Final && Plugin.ChampionPhases.Value) ChampionPhase.Attach(rival, title); // phase 2 at half health
         }
 
         internal static string ArcanaList(List<ArcanaDef> defs)

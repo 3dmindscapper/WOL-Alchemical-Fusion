@@ -11,8 +11,8 @@ using UnityEngine;
 namespace WolHybridBosses
 {
     [BepInPlugin("osi.wol.hybridbosses", "WOL Alchemical Fusion", Version)] // the ID stays (config, unlocks and Echo files carry over)
-    [BepInDependency("wolarcanos.arcanos", BepInDependency.DependencyFlags.SoftDependency)] // optional: Radiant / Prism variants
-    [BepInDependency(MantleRobe.LegendApiGuid, BepInDependency.DependencyFlags.SoftDependency)] // optional: the White Mantle as a wardrobe robe
+    [BepInDependency("wolarcanos.arcanos", BepInDependency.DependencyFlags.SoftDependency)] // recommended: Radiant / Prism variants
+    [BepInDependency(MantleRobe.LegendApiGuid, BepInDependency.DependencyFlags.HardDependency)] // v1.1.1: required (the White Mantle robe, later content)
     public class Plugin : BaseUnityPlugin
     {
         public const string Version = "1.1.1";
@@ -23,6 +23,12 @@ namespace WolHybridBosses
         internal static ConfigEntry<bool> MatchStageElement;
         internal static ConfigEntry<bool> IgnoreSkillDifficulty;
         internal static ConfigEntry<bool> DebugKeys;
+
+        // v1.1.1: with the test hotkeys on, nothing the mod unlocks is saved (infusion unlocks, league, Alchemist wins,
+        // the White Mantle): it all lives in memory until the game closes. Latched: once on, it stays on this session,
+        // so test unlocks can't be written later either.
+        static bool testLatched;
+        internal static bool TestMode { get { if (DebugKeys != null && DebugKeys.Value) testLatched = true; return testLatched; } }
         internal static ConfigEntry<float> ArcanaDamageMultiplier;
         internal static ConfigEntry<bool> ArcanaForAllGiants;
         internal static ConfigEntry<float> ArcanaCastGap;
@@ -50,7 +56,7 @@ namespace WolHybridBosses
         internal static ConfigEntry<bool> NocturneFree, LeagueEnabled; internal static ConfigEntry<int> NocturnePreset; internal static ConfigEntry<float> AlchemistChance, TournamentChance, TeamMatchChance; // v1.1.0
         internal static ConfigEntry<float> EliteChanceMultiplier, EliteInfusedDropChance, TrialChance;
         internal static ConfigEntry<string> InfusionButtons;
-        internal static ConfigEntry<float> InfusedDropChance, InfusedStockChance;
+        internal static ConfigEntry<float> InfusedDropChance, InfusedStockChance, UnlockedStockChance;
         internal static ConfigEntry<int> ChaosGiantPalette;
         internal static ConfigEntry<float> ChaosEnemyChance;
         internal static ConfigEntry<int> GiantMinElementMoves;
@@ -148,6 +154,7 @@ namespace WolHybridBosses
             InfusionButtons = Config.Bind("Infusion", "Buttons", "Skill1,Skill2,Skill3", "Controller actions (the game's own input action names) that act as the infuse key [I] in Tomi's spellbook. Tomi's menu only uses Confirm and Cancel, so the arcana buttons are free. Other names: Interact, EquipMenu, Slide, Skill0..Skill5.");
             InfusedDropChance = Config.Bind("Infusion", "InfusedDropChance", 0.04f, "Chance that a dropped arcana comes already infused with another element.");
             InfusedStockChance = Config.Bind("Infusion", "InfusedStockChance", 0.08f, "Chance that an arcana in the merchant's stock is already infused (25% pricier).");
+            UnlockedStockChance = Config.Bind("Infusion", "UnlockedStockChance", 0.5f, "v1.1.1: chance that a merchant arcana you have unlocked infused versions of is sold as one of them (10% pricier).");
             RadiantHealthDropChance = Config.Bind("StageVariants", "RadiantHealthDrop", 0.15f, "Chance that an enemy on a Radiant stage leaves a health pickup when it dies.");
             ChaosEnemyChance = Config.Bind("ChaosStages", "EnemyChance", 0.5f,
                 "No longer used: on a Chaos / Radiant / Prism stage every humanoid enemy (and some Coffin Knights, Cyclops, blobs and ghouls) takes the variant.");
@@ -195,6 +202,7 @@ namespace WolHybridBosses
         void Update()
         {
             if (!DebugKeys.Value) return;
+            TestKeys.Tick(); // v1.1.1: instakill
             if (Input.GetKey(KeyCode.LeftAlt) || Input.GetKey(KeyCode.RightAlt)) { TestKeys.Update(); return; } // v1.0.0: Alt + F-keys
             if (Input.GetKeyDown(KeyCode.F5) && (Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl))) MinibossFights.TestHere(); // v0.9.11: the next special mini-boss beside you
             else if (Input.GetKeyDown(KeyCode.F5)) Debug.ListEnemies();

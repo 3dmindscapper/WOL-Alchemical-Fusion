@@ -1,9 +1,10 @@
 {
   "name": "WOL_Alchemical_Fusion",
-  "version_number": "1.0.0",
+  "version_number": "1.1.1",
   "website_url": "https://github.com/3dmindscapper/WOL-Hybrid_Bosses",
-  "description": "Elemental giants, rival wizards and the Echo of your last run, Chaos stages, elites, special mini-bosses, and arcana infusion with dual elements at Tomi. Optional WoL Arcanos support (Radiant / Prism).",
+  "description": "Elemental giants, rival wizards and a Rival League, the Primordial Alchemist, Chaos stages, elites, special mini-bosses, and arcana infusion at Tomi. Requires LegendAPI; WoL Arcanos recommended (Radiant / Prism).",
   "dependencies": [
-    "Modding_Council-BepInExPack_of_Legend-5.4.2100"
+    "Modding_Council-BepInExPack_of_Legend-5.4.2100",
+    "RandomlyAwesome-LegendAPI-2.2.1"
   ]
 }

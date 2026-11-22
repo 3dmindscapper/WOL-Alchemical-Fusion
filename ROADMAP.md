@@ -71,7 +71,7 @@ Ramp = the recolour gradient, from shadow to highlight. Identity = the colour us
 
 Expansions are themed updates built on the systems already in place. Each section lists its ideas with a size.
 
-### 1.1.0 (built, ready to test) 🧪
+### 1.1.0 (built, ready to test, folded into 1.1.1) 🧪
 - **Nocturne overhaul.** Her shuffle is free (config `Nocturne.Free`), and talking to her opens a preset menu:
   - Full shuffle
   - Arcana only
@@ -93,6 +93,25 @@ Expansions are themed updates built on the systems already in place. Each sectio
   - **Summoner Coven:** coven summoners shield their leader.
   - **Lancer Phalanx:** each armour break sends the phalanx charging.
   - **Archer Volley:** Blinking archers keep repositioning.
+
+### 1.1.1 (built, ready to test) 🧪
+- **The Primordial Alchemist** (renamed): introduces itself before the fight with one comment on your arcana (a dual infusion, else an infusion, else your main element or a nudge toward fusion), and speaks at half health and in defeat.
+- **Final room on champion runs:** Sura never appears. The torches light, the champion arrives on the empty throne and speaks (Archons as their element), and the whole castle (walk-up, throne room, cosmic arena, lights) takes the champion's colours. NPCs and their wares keep theirs.
+- **Archons** look primordial: the whole body in their element's colours, with a permanent aura. The loading board shows a matching recoloured Sura (white for the Alchemist).
+- **Team matches:** the biggest arena, a real ally (fights the rivals, the rivals fight it), and all four wizards introduced before anyone moves.
+- **Rival League board** at the Hub's wizard statue (Interact, or F2).
+- **Bounties** as centred cards; **portal labels** under every mod portal.
+- **Nocturne** skips her gem pitch when free. **The merchant** stocks your unlocked infused versions.
+- **LegendAPI** is required; WoL Arcanos recommended.
+- **Testing:** Alt+1-6 keys (tournament, team, Alchemist final, Archon final, Archon portal, instakill); with the hotkeys on, nothing unlocks for good.
+- **Fixes:** the final victory after a champion (softlock), Tomi's book in your house, the bounty on the title screen, robe icons in loadouts, red boxes on elite ghosts and after-images.
+
+### Planned 📋
+- **Alternate endings (M).** Beating Sura keeps the standard ending. Beating an Archon or the Primordial Alchemist plays its own: a short epilogue scene in the champion's colours with its own lines (an Archon returning to its element; the Alchemist dissolving into you, which ties into the White Mantle), then the credits.
+- **Primordial robes (M).** Beating each Archon unlocks its element's primordial look as a wardrobe robe (LegendAPI), like the White Mantle: a collection goal across runs, with a small bonus to that element's arcana.
+- **League rewards (S).** Reaching each rank unlocks something: a named rival's robe, a relic in the shop, or a Hub title. The board at the statue shows what's next.
+- **Choose your ally (S).** In team matches, pick the ally from league rivals you've beaten (shown at the portal).
+- **Bounty choice (S).** Pick one of three bounties at the statue, with bigger rewards for harder ones.
 
 ### Still ideas 💡
 - **Fused signatures (A).** Firing a dual arcana's signature triggers both elements together for one big effect. (Everyday element combos are already covered by WoL Arcanos' ailments.)
@@ -126,11 +145,14 @@ Expansions are themed updates built on the systems already in place. Each sectio
 - Gold economy: elite gold, thieves, specials, bounties, trials, league bonuses and tournament prizes, against infusion costs.
 - Anchored's pull feels fair; rival voice lines' timing; dual icons read well at small sizes.
 - Real relics on rivals all activate cleanly (watch the log for "could not wear").
-- 1.1.0 checks:
-  - **Nocturne:** her menu opens after you sign up; each preset changes the shuffle as described.
-  - **White Alchemist and Mantle:** white body and aura; the Mantle whitens your wizard in the Hub and in runs, and its cooldown bonus takes effect.
-  - **Team match ally:** fights on your side.
-  - **Tournament:** rounds hand over cleanly.
+- 1.1.x checks:
+  - **Nocturne:** the menu opens straight away when free; each preset changes the shuffle as described.
+  - **Primordial Alchemist and Mantle:** white body and aura; one comment in its intro; the Mantle whitens your wizard and its cooldown bonus takes effect.
+  - **Final room:** no Sura or Sura bar at any point; the castle recolour looks right (white floors not too bright) and doesn't hitch (log `ARENA tint ... ms`); the victory and ending play after a champion (log `FINAL victory declared`).
+  - **Team match:** the ally attacks and is attacked; the intro shows all four before the fight.
+  - **League board:** the prompt shows at the central statue.
+  - **Robe icons:** in the robe's colours (log `ROBE icon from ...`).
+  - **Elite ghosts / after-images:** no box, and they still fade.
 
 ---
 ## 4. What shipped in 1.0.0
@@ -174,6 +196,7 @@ Expansions are themed updates built on the systems already in place. Each sectio
 | Key | What it does |
 |---|---|
 | F1 (Hub) | Modifiers menu (always available, not a debug key) |
+| F2 (Hub) | Rival League board (also: Interact at the big wizard statue; not a debug key) |
 | F5 | List enemies (log) |
 | Ctrl+F5 | Spawn the next special mini-boss beside you (cycles all eleven) |
 | Alt+F5 | Rematch rival portal beside you |
@@ -190,6 +213,12 @@ Expansions are themed updates built on the systems already in place. Each sectio
 | Alt+F10 | Echo of your last run, beside you |
 | Alt+F11 | Team match portal beside you |
 | Alt+F12 | Jump to the final fight against the Primordial Alchemist |
+| Alt+1 / Alt+2 | Tournament / team match portal beside you (Alt+F9 is often taken by NVIDIA's recorder) |
+| Alt+3 | Jump to the final fight against the Primordial Alchemist |
+| Alt+4 | Jump to the final fight against an Archon (or the Chaos Sovereign) |
+| Alt+5 | Hard rival portal that always holds an Archon |
+| Alt+6 | Instakill on / off (every enemy at 1 HP) |
+| (any, hotkeys on) | Test mode: no unlocks are saved this session (mod progress files, the game's arcana unlocks, the final Chaos arcana) |
 | F11 | Rival portal beside you (cycles elements) |
 | Shift+F11 | Toggle the variant on the current stage |
 | Ctrl+F11 | Skip to the next stage |

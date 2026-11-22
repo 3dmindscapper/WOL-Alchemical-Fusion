@@ -520,6 +520,16 @@ namespace WolHybridBosses
             try
             {
                 if (!Plugin.InfusionEnabled.Value || __instance == null || string.IsNullOrEmpty(__instance.skillID) || __instance.signatureOnly) return;
+                // v1.1.1: an arcana you've unlocked infused versions of is often sold as one of them.
+                List<ElementType> mine = InfusionUnlocks.Versions(__instance.skillID);
+                if (mine.Count > 0 && UnityEngine.Random.value < Plugin.UnlockedStockChance.Value)
+                {
+                    ElementType v = mine[UnityEngine.Random.Range(0, mine.Count)];
+                    Infusion.SetPending(__instance.skillID, v);
+                    try { __instance.costStat.AddMod(new NumVarStatMod("HB_Infused", 1.1f, 10, VarStatModType.Multiplicative, false)); } catch (Exception) { }
+                    Traverse.Create(__instance).Method("SetCardSprite").GetValue();
+                    return;
+                }
                 if (UnityEngine.Random.value >= Plugin.InfusedStockChance.Value) return;
                 Infusion.SetPending(__instance.skillID, Infusion.RandomOther(__instance.skillID));
                 try { __instance.costStat.AddMod(new NumVarStatMod("HB_Infused", 1.25f, 10, VarStatModType.Multiplicative, false)); } catch (Exception) { }
@@ -667,12 +677,25 @@ namespace WolHybridBosses
         string message;
         float messageUntil;
 
+        static readonly string[] RunStages = { "Fire", "Ice", "Earth", "Air", "Lightning" };
+
+        // v1.1.1: the Hub or your house (the title screen and loading scenes are neither home nor a run).
+        internal static bool AtHome
+        {
+            get { string s = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name; return s == "Hub" || s == "PlayerRoom"; }
+        }
+
         internal static bool InRun
         {
             get
             {
+                // v1.1.1: only the run's own scenes (the stages, their boss levels, the final level). Every other scene is
+                // home: the Hub, your house (PlayerRoom, where Tomi's book showed only your equipped arcana), PvP, menus.
                 string s = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
-                return s != "Hub" && s != "Tutorial" && !string.IsNullOrEmpty(s);
+                if (string.IsNullOrEmpty(s)) return false;
+                if (s == "FinalBossLevel") return true;
+                foreach (string st in RunStages) if (s == st || s == st + "BossLevel") return true;
+                return false;
             }
         }
 
@@ -1041,6 +1064,7 @@ namespace WolHybridBosses
 
         static void Save()
         {
+            if (Plugin.TestMode) return; // v1.1.1: test hotkeys on: kept in memory only
             try
             {
                 List<string> lines = new List<string>();

@@ -67,6 +67,7 @@ namespace WolHybridBosses
             if (room == null || spots.Count == 0) { Plugin.Log.LogWarning("TRIAL: could not build the room"); if (room != null) Destroy(room.gameObject); return false; }
             arrival = RivalEvent.Central(room, spots);
             entrance = RivalEvent.MakePortal(entrancePos, arrival, Infusion.ColorOf(element));
+            PortalLabel.Attach(entrance, "Infusion trial  ·  " + Infusion.Name(element), Infusion.ColorOf(element)); // v1.1.1
             StartCoroutine(Settle());
             Plugin.Log.LogInfo("TRIAL of " + Infusion.Name(element) + ": portal at " + entrancePos + " -> " + room.name);
             return true;
@@ -89,7 +90,7 @@ namespace WolHybridBosses
                 if (ep != null) ep.targetLocation = arrival;
             }
             Vector2 back = RivalEvent.OpenSpot(room, arrival, new Vector2(0f, -5f), new List<Vector2> { arrival });
-            RivalEvent.MakePortal(back, entrancePos + new Vector2(0f, -1.5f), new Color(0.85f, 0.85f, 0.85f));
+            PortalLabel.Attach(RivalEvent.MakePortal(back, entrancePos + new Vector2(0f, -1.5f), new Color(0.85f, 0.85f, 0.85f)), "Way back", Color.white);
             // The stage's own enemy kinds, for the waves (the names Enemy.Spawn takes).
             // v0.8.1: only the humanoid enemy kinds (Knight, Rogue, Archer, Mage, Summoner, Lancer and their elemental
             // versions), by clean name: object names carry "(!)", " (3)" and the like, and the stage also holds

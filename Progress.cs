@@ -28,6 +28,7 @@ namespace WolHybridBosses
 
         static void Save()
         {
+            if (Plugin.TestMode) return; // v1.1.1: test hotkeys on: kept in memory only
             try
             {
                 List<string> lines = new List<string>();

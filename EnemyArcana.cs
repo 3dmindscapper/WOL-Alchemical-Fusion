@@ -349,6 +349,14 @@ namespace WolHybridBosses
             Entity target = __0.GetComponentInParent<Entity>();
             if (target is Enemy)
             {
+                // v1.1.1: a team match's ally (in GameController.allies) and the rivals are on opposite sides: let them hit.
+                try
+                {
+                    if (owner != null && target != owner && GameController.allies != null
+                        && GameController.allies.Contains(owner.gameObject) != GameController.allies.Contains(target.gameObject))
+                        return true;
+                }
+                catch (Exception) { }
                 __result = false; // no self-hits, no friendly fire
                 return false;
             }

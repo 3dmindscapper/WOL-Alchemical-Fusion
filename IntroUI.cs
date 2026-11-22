@@ -191,6 +191,83 @@ namespace WolHybridBosses
             return itemID;
         }
 
+        // v1.1.1: a robe's icon in its colours. IconManager.GetWizardSprite takes a POSE name ("WizardDeadDown8"), not
+        // a robe; the pose is drawn in palette indices (the game shows it through the palette shader with
+        // _PaletteIndex = the robe's colour row), which drawn raw was a solid block. Here the indices are looked up
+        // in the wizard palette (the player's material) once per row: red channel = column, row = robe colour.
+        static readonly Dictionary<int, Sprite> robeIcons = new Dictionary<int, Sprite>();
+        static readonly string[] Poses = { "WizardIdleDown0", "WizardIdleDown", "WizardRunDown0", "WizardJokePose0", "WizardDeadDown8" };
+        static bool loggedRobe;
+
+        internal static Sprite RobeIcon(int row)
+        {
+            Sprite cached;
+            if (robeIcons.TryGetValue(row, out cached)) return cached;
+            Sprite result = null;
+            try
+            {
+                Player p = Elites.Player0;
+                Material pm = p != null && p.spriteRenderer != null ? p.spriteRenderer.sharedMaterial : null;
+                if (pm == null || !pm.HasProperty("_Palette") || !pm.HasProperty("_PaletteCount")) return null;
+                Texture pal = pm.GetTexture("_Palette");
+                int count = Mathf.Max(1, Mathf.RoundToInt(pm.GetFloat("_PaletteCount")));
+                Sprite pose = null;
+                string poseName = null;
+                Dictionary<string, Sprite> all = HarmonyLib.Traverse.Create(typeof(IconManager)).Property("WizardSprites").GetValue() as Dictionary<string, Sprite>; // private
+                if (all != null) foreach (string n in Poses) if (all.ContainsKey(n)) { pose = all[n]; poseName = n; break; }
+                if (pose == null && all != null) // none of the expected names: any front-facing pose, else any
+                    foreach (KeyValuePair<string, Sprite> kv in all) { if (pose == null || (kv.Key.Contains("Down") && !poseName.Contains("Down"))) { pose = kv.Value; poseName = kv.Key; } }
+                if (pose == null || pal == null) return null;
+                Rect tr;
+                try { tr = pose.textureRect; } catch (Exception) { tr = pose.rect; }
+                int pw, ph, sw = Mathf.RoundToInt(tr.width), sh = Mathf.RoundToInt(tr.height);
+                Color32[] palPx = ReadAll(pal, out pw, out ph);
+                int tw, th;
+                Color32[] atlas = ReadAll(pose.texture, out tw, out th);
+                if (palPx == null || atlas == null) return null;
+                int r = Mathf.Clamp(row, 0, count - 1);
+                int py = Mathf.Clamp(Mathf.FloorToInt((r + 0.5f) * ph / count), 0, ph - 1);
+                Color32[] outPx = new Color32[sw * sh];
+                int x0 = Mathf.RoundToInt(tr.x), y0 = Mathf.RoundToInt(tr.y);
+                for (int y = 0; y < sh; y++)
+                    for (int x = 0; x < sw; x++)
+                    {
+                        Color32 c = atlas[(y0 + y) * tw + (x0 + x)];
+                        if (c.a == 0) { outPx[y * sw + x] = new Color32(0, 0, 0, 0); continue; }
+                        int px = Mathf.Clamp(c.r * pw / 256, 0, pw - 1);
+                        Color32 o = palPx[py * pw + px];
+                        o.a = c.a;
+                        outPx[y * sw + x] = o;
+                    }
+                Texture2D t = new Texture2D(sw, sh, TextureFormat.RGBA32, false) { filterMode = FilterMode.Point, wrapMode = TextureWrapMode.Clamp };
+                t.SetPixels32(outPx);
+                t.Apply(false);
+                result = Sprite.Create(t, new Rect(0, 0, sw, sh), new Vector2(0.5f, 0.5f), 16f);
+                result.name = "HB_Robe" + row;
+                if (!loggedRobe) { loggedRobe = true; Plugin.Log.LogInfo("ROBE icon from " + poseName + " " + sw + "x" + sh + ", palette " + pw + "x" + ph + " (" + count + " rows)"); }
+            }
+            catch (Exception ex) { Plugin.Log.LogWarning("ROBE icon failed: " + ex.Message); result = null; }
+            robeIcons[row] = result;
+            return result;
+        }
+
+        static Color32[] ReadAll(Texture src, out int w, out int h)
+        {
+            w = src.width; h = src.height;
+            RenderTexture rt = RenderTexture.GetTemporary(w, h, 0, RenderTextureFormat.ARGB32, RenderTextureReadWrite.Linear);
+            Graphics.Blit(src, rt);
+            RenderTexture prev = RenderTexture.active;
+            RenderTexture.active = rt;
+            Texture2D t = new Texture2D(w, h, TextureFormat.RGBA32, false);
+            t.ReadPixels(new Rect(0, 0, w, h), 0, 0);
+            t.Apply(false);
+            RenderTexture.active = prev;
+            RenderTexture.ReleaseTemporary(rt);
+            Color32[] px = t.GetPixels32();
+            Destroy(t);
+            return px;
+        }
+
         internal static string OutfitName(string outfitID)
         {
             try { string n = TextManager.GetOutfitName(outfitID); if (!string.IsNullOrEmpty(n)) return n; } catch (Exception) { }

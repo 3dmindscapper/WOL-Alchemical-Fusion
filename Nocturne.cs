@@ -43,7 +43,17 @@ namespace WolHybridBosses
 
         static void Prefix(RandomBuildNpc __instance)
         {
-            try { if (Plugin.NocturneFree.Value && __instance != null) Traverse.Create(__instance).Field("cost").SetValue(0); } catch (Exception) { }
+            try
+            {
+                if (!Plugin.NocturneFree.Value || __instance == null) return;
+                Traverse.Create(__instance).Field("cost").SetValue(0);
+                // v1.1.1: skip her pitch (lines 0-1 ask for 10 gems): jump straight to line 2, where the game signs you up
+                // (now for 0 gems) and moves to her "Thanks!" line, and the preset menu opens.
+                bool signed = GameController.runModifier != null && GameController.runModifier.HasMod("RandomRun");
+                Traverse idx = Traverse.Create(__instance).Property("CurrentDialogIndex");
+                if (!signed && idx.GetValue<int>() < 2) idx.SetValue(2);
+            }
+            catch (Exception) { }
         }
 
         static void Postfix()

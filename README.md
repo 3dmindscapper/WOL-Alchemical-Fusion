@@ -28,13 +28,14 @@ A run-changing content mod for Wizard of Legend: elemental bosses, rival wizards
 - **Infusion trials**: three waves with all your arcana forced into one element, for a pre-infused reward.
 
 ### Run extras
-- **Bounties**: one per run, shown in the Hub, with a gold reward.
+- **Bounties**: one per run, announced in the Hub and at the start of the run, with a gold reward.
+- **Rival League board**: walk up to the big wizard statue in the Hub and press Interact (or F2) for your rank, your record against each rival, and the next bounty.
 - **Modifiers menu**: press **F1** in the Hub (controller: **Skill4** while Tomi's spellbook is open) to switch systems on or off and tune their chances. No config file editing needed, which makes it handy on the Steam Deck.
 
 ## Installation
 Install with **r2modman** or the **Thunderstore Mod Manager**. Manual install: put `WolHybridBosses.dll` in `BepInEx/plugins`.
 
-Requires **BepInExPack of Legend**. **WoL Arcanos** is optional: with it installed, Radiant and Prism content turns on automatically, and it respects Arcanos' own unlock rules.
+Requires **BepInExPack of Legend** and **LegendAPI** (installed automatically). **WoL Arcanos** is recommended: with it installed, Radiant and Prism content turns on automatically, and it respects Arcanos' own unlock rules.
 
 ## Controls
 - **Infusing at Tomi**: press **I** on the keyboard. On a controller, press any of the **Skill1 / Skill2 / Skill3** arcana buttons (changeable in the config, `Infusion.Buttons`).
@@ -50,7 +51,7 @@ Delete either one to reset it.
 
 ## Credits
 - Built on the game's own enemies, arcana, relics and art (nothing from the game is redistributed).
-- Optional integration with **WoL Arcanos** by Nahuelx32: Radiant and Prism elements, its icons and effects, and its unlocks.
+- Recommended: integration with **WoL Arcanos** by Nahuelx32: Radiant and Prism elements, its icons and effects, and its unlocks.
 
 ## Feedback
 Bugs and ideas: open an issue on the GitHub page. The BepInEx log (`BepInEx/LogOutput.log`) helps a lot. The mod's lines are tagged RIVAL, ELITE, MINIBOSS, INFUSION, BOUNTY, REMATCH and so on.
