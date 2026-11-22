@@ -113,6 +113,15 @@ namespace WolHybridBosses
 
         internal static bool IsTwin(Sprite s) { return s != null && made.Contains(s.GetInstanceID()); }
 
+        // The ramp a twin was made with (null if it isn't one of ours).
+        internal static string KeyOf(Sprite s)
+        {
+            if (!IsTwin(s)) return null;
+            string n = s.name;
+            int open = n.LastIndexOf(" ("), close = n.LastIndexOf(')');
+            return open >= 0 && close > open ? n.Substring(open + 2, close - open - 2) : null;
+        }
+
         // The recoloured twin of a sprite (null if it can't be made: tightly packed, unreadable...).
         internal static Sprite Twin(Sprite src, string key)
         {

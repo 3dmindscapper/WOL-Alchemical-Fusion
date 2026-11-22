@@ -289,6 +289,7 @@ namespace WolHybridBosses
         }
 
         static GUIStyle burstStyle, labelStyle;
+        static Font styleFont;
 
         void OnGUI()
         {
@@ -297,10 +298,10 @@ namespace WolHybridBosses
             if (cam == null) return;
             Vector3 sp = cam.WorldToScreenPoint(Owner.transform.position + new Vector3(0f, -0.35f, 0f));
             if (sp.z < 0f) return;
-            if (burstStyle == null)
+            if (burstStyle == null || GameFont.Changed(ref styleFont))
             {
-                burstStyle = new GUIStyle(GUI.skin.label) { fontSize = 22, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-                labelStyle = new GUIStyle(GUI.skin.label) { fontSize = 12, fontStyle = FontStyle.Bold, alignment = TextAnchor.UpperCenter };
+                burstStyle = GameFont.Style(GUI.skin.label, 22, TextAnchor.MiddleCenter, true);
+                labelStyle = GameFont.Style(GUI.skin.label, 12, TextAnchor.UpperCenter, true);
             }
             float w = 64f, h = 6f;
             Rect back = new Rect(sp.x - w * 0.5f, Screen.height - sp.y, w, h);

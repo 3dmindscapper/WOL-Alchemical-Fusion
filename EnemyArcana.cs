@@ -80,7 +80,10 @@ namespace WolHybridBosses
         }
 
         // Arcana whose cast threw an error once: never picked again this session.
-        internal static readonly HashSet<string> Broken = new HashSet<string>();
+        // Arcana enemies must not cast. v0.7.4: Chaos Ball is a player charge arcana (hold to grow a ball with orbiting
+        // sub-balls and lightning, release to fire); cast by an enemy it was never released and crackled loudly while
+        // trailing particles.
+        internal static readonly HashSet<string> Broken = new HashSet<string> { "UseChaosBall" };
 
         internal static List<ArcanaDef> ForElement(string prefix) { return ArcanaCatalog.Pool(prefix); }
 

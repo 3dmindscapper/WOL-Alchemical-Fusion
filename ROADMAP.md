@@ -5,9 +5,10 @@ It mostly reuses the game's own assets. Custom art is possible, but so far every
 
 Status key: ✅ done · 🧪 built, needs in-game testing · 🔜 next · 📋 planned · ❓ needs research first · 💬 dev note (idea to consider)
 
-Current version: **0.7.1**. Technical details (game internals, file layout, pitfalls) live in `CLAUDE.md`.
+Current version: **0.7.4**. Technical details (game internals, file layout, pitfalls) live in `CLAUDE.md`.
 
-**Next major focus: Arcana infusion (section 6).**
+**Status:** sections 1–6 are built and in the **polish phase**: in-game testing and fixes, no new scope.
+**Next new features: section 7** (elites, infusion trials, stage hazards, infused Council).
 
 ---
 
@@ -185,7 +186,7 @@ Next:
 - 🔜 Test: each port's look, size and damage; the Dazzle glare; whether Prism statuses feel fair.
 - 📋 More ports if these work: Radiant Aegis (a reflecting shield), Light Deer (a summon), Supernova, Refraction.
 - ❓ Purified (Arcanos' second Radiant stage: armour broken, extra damage taken) as a short "takes +15% damage" on the player, if Dazzled alone feels too light.
-## 6. Arcana infusion (player feature) 🧪 v0.7.1
+## 6. Arcana infusion (player feature) 🧪 v0.7.4
 
 **Idea:** pick an arcana to keep and an arcana to sacrifice. The kept arcana takes the sacrificed arcana's element. For example, Ice Spear plus a sacrificed Fire arcana gives a "Fire-infused Ice Spear": the same move, now dealing fire damage, applying burn and looking fiery.
 
@@ -210,7 +211,8 @@ Why it fits: the enemy side already exists. Variant stages turn arcana into anot
 
 Still to do:
 - 📋 "Fire-infused X" names in the game's own spellbook / HUD text (the hint bar already says it).
-- 📋 Controller button for [I] (keyboard only for now).
+- 🧪 Controller (v0.7.3): the arcana buttons act as [I] in Tomi's spellbook (config `Infusion.Buttons`), so it works on a Steam Deck.
+- 🧪 The mod's on-screen cards and hints use the game's own font (v0.7.3).
 - 📋 Element accents for infused player attacks (enemy variants have them).
 ### 6a. Research: how vanilla sells an element's look (v0.6.4)
 
@@ -256,6 +258,45 @@ Pieces to build:
 5. 🧪 Rare infused drops and merchant stock (v0.7.0).
 6. Arcanos: Radiant/Prism infusions only from arcana the player has unlocked.
 7. Edge cases: signature versions, basics and dash arcana, co-op, mid-run saves, arcana whose element can't be read.
+## 7. Next features 📋
+
+Planned, not started. Each one builds on systems that already exist.
+
+### 7a. Elite enemies 📋
+Now and then a regular enemy spawns with **one trait** that changes how you fight it:
+
+| Trait | Effect | Look |
+|---|---|---|
+| Shielded | a shield that has to be broken before it takes damage | gold outline |
+| Hasted | faster movement and attacks | streaky after-images |
+| Splitting | splits into two smaller copies on death | pale, swollen tint |
+| Draining | heals itself from the damage it deals | red pulse |
+| Blinking | teleports short distances between attacks | ghostly, flickering tint |
+
+- Uses: the recolour engine and outlines for the looks, the variant enemy hooks to apply a trait, and the game's own stats for speed, health and shields.
+- A small "Elite <enemy>" name above it. Rewards: more gold, a better chance at an infused arcana drop (fits the "rare infused drops" rule).
+- Tuning: rare on the first tier, more common later. Never stacked with a variant giant.
+
+### 7b. Infusion trials 📋
+A portal (like the rival portal) that sometimes opens on a stage and leads to a **trial room**:
+- All your arcana are temporarily forced into one element, chosen by the trial ("Trial of Frost"). You fight a few waves with that element.
+- Clear it: **one free infusion** at Tomi (no gold, no sacrifice), or a pre-infused arcana of that element.
+- Leave or fail: back through the way-back portal, nothing lost but the time.
+- Reuses: the rival event's room building and portals, infusion's attack conversion (a run-wide "forced element" mode), and the recolour engine so your spells visibly change.
+
+### 7c. Variant stage hazards 📋
+Each variant stage plays differently, not just looks different:
+- **Radiant:** light pillars that flare on a telegraphed timer. Standing in one dazzles you (the existing glare) and also dazzles enemies, so they're a tool too.
+- **Prism:** floor patches that cycle through the five elements. Stepping on one applies that element's status, to enemies as well.
+- **Chaos:** rifts that sometimes spit out an extra enemy unless you close them by hitting them.
+- Built from the tile and room code (hazard spots on open floor, like the rival portal placement), Arcanos effects where installed, and the game's own status effects.
+
+### 7d. Infused Council members 📋
+A Council member who has infused their own element with another, for example "Flame Empress, Frost-infused". It's separate from the Chaos/Radiant/Prism variant Council:
+- Their whole moveset stays, but their attacks take the infused element's damage, status and look (the recolour engine on their attacks, like player infusion).
+- Boss bar "<Element>-infused <name>", a few new voicelines (they've been experimenting with a classmate's element), and a recoloured room.
+- Reward: their chest drops an arcana of the infused element, or a pre-infused arcana of their own element.
+- When: a chance on later loops, or from a choice on the loading board. It never stacks with a variant Council member.
 ## Shared system: Enemy Arcana 🧪
 
 Lets any enemy cast real player arcana. Used by rivals, champions, arcana giants and chaos enemies.
@@ -285,6 +326,7 @@ Lets any enemy cast real player arcana. Used by rivals, champions, arcana giants
 | Ctrl+F11 | Skip to the next stage, as if through the exit portal (needs the floor's exit; a Council floor only has one after the fight) |
 | F12 | Final champion test (this final room, or spawn one here and make this run's final boss a champion) |
 | Shift+F12 | Cycle the forced Council variant: off → Chaos → Radiant → Prism (every Council fight, including the current room) |
+| Ctrl+Shift+F12 | Jump straight to the final fight (Sura or this run's champion), from any stage of a run |
 | Ctrl+F12 | Jump straight to this tier's Council floor, corrupted for that fight (from any regular stage of a run) |
 
 Config: `BepInEx\config\osi.wol.hybridbosses.cfg` (created on first launch).

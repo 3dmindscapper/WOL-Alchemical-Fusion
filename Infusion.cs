@@ -202,6 +202,8 @@ namespace WolHybridBosses
     [HarmonyPatch(typeof(IconManager), "GetSkillIcon")]
     static class InfusionIconPatch
     {
+        static readonly HashSet<string> logged = new HashSet<string>();
+
         static void Postfix(string __0, ref Sprite __result)
         {
             if (__result == null || !Infusion.Any) return;
@@ -209,7 +211,107 @@ namespace WolHybridBosses
             if (!Infusion.TryGetShown(__0, out el)) return;
             string key = Infusion.RampKey(el);
             Sprite twin = key != null ? RecolorEngine.Twin(__result, key) : null;
+            if (logged.Add(__0 + "|" + key)) Plugin.Log.LogInfo("INFUSION icon " + __0 + " -> " + key + (twin != null ? " (recoloured)" : " (could not recolour)"));
             if (twin != null) __result = twin;
+        }
+    }
+
+    // v0.7.2: infused cards stand out more than by their art alone: the card's frame takes the element's colour too,
+    // on dropped / world cards (Card.SetSkillIcon) and in the merchant's stock (SkillStoreItem.SetCardSprite).
+    [HarmonyPatch(typeof(Card), "SetSkillIcon")]
+    static class InfusionCardFramePatch
+    {
+        static readonly HashSet<int> tinted = new HashSet<int>();
+
+        static void Postfix(Card __instance, string __0)
+        {
+            try
+            {
+                if (__instance == null) return;
+                Traverse tr = Traverse.Create(__instance);
+                SpriteRenderer[] frames = { tr.Field("frameSpriteRenderer").GetValue() as SpriteRenderer, tr.Field("backSpriteRenderer").GetValue() as SpriteRenderer };
+                ElementType el;
+                bool infused = Infusion.Any && Infusion.TryGetShown(__0, out el);
+                if (!infused)
+                {
+                    // A pooled card we tinted before, now showing a normal arcana: back to white.
+                    if (tinted.Remove(__instance.GetInstanceID())) foreach (SpriteRenderer sr in frames) if (sr != null) sr.color = Color.white;
+                    return;
+                }
+                Infusion.TryGetShown(__0, out el);
+                Color c = Color.Lerp(Color.white, Infusion.ColorOf(el), 0.55f);
+                foreach (SpriteRenderer sr in frames) if (sr != null) sr.color = c;
+                tinted.Add(__instance.GetInstanceID());
+            }
+            catch (Exception) { }
+        }
+    }
+
+    // Tomi's spellbook pages: each card whose icon is a recoloured (infused) one gets its card image tinted in the
+    // element's colour, on the spell page, the info page and the loadout page.
+    static class TomiCardTint
+    {
+        internal static void Tint(SpellBookUI ui)
+        {
+            try
+            {
+                if (ui == null) return;
+                object sbRef = Traverse.Create(ui).Field("sbRef").GetValue();
+                if (sbRef == null) return;
+                Traverse r = Traverse.Create(sbRef);
+                object spell = r.Field("spellPage").GetValue(), info = r.Field("infoPage").GetValue(), player = r.Field("playerPage").GetValue();
+                if (spell != null) Pair(Traverse.Create(spell).Field("iconArray").GetValue() as UnityEngine.UI.Image[], Traverse.Create(spell).Field("cardImgArray").GetValue() as UnityEngine.UI.Image[]);
+                if (player != null) Pair(Traverse.Create(player).Field("spellIconArray").GetValue() as UnityEngine.UI.Image[], Traverse.Create(player).Field("cardBGArray").GetValue() as UnityEngine.UI.Image[]);
+                if (info != null)
+                {
+                    UnityEngine.UI.Image[] icons = Traverse.Create(info).Field("iconArray").GetValue() as UnityEngine.UI.Image[];
+                    GameObject[] cards = Traverse.Create(info).Field("cardArray").GetValue() as GameObject[];
+                    if (icons != null && cards != null)
+                    {
+                        UnityEngine.UI.Image[] cardImgs = new UnityEngine.UI.Image[cards.Length];
+                        for (int i = 0; i < cards.Length; i++) cardImgs[i] = cards[i] != null ? cards[i].GetComponent<UnityEngine.UI.Image>() : null;
+                        Pair(icons, cardImgs);
+                    }
+                }
+            }
+            catch (Exception ex) { Plugin.Log.LogWarning("INFUSION Tomi card tint failed: " + ex.Message); }
+        }
+
+        static void Pair(UnityEngine.UI.Image[] icons, UnityEngine.UI.Image[] cards)
+        {
+            if (icons == null || cards == null) return;
+            for (int i = 0; i < icons.Length && i < cards.Length; i++)
+            {
+                if (cards[i] == null) continue;
+                string key = icons[i] != null ? RecolorEngine.KeyOf(icons[i].sprite) : null;
+                cards[i].color = key != null ? Color.Lerp(Color.white, ElementRamps.Mid(key), 0.55f) : Color.white;
+            }
+        }
+    }
+
+    [HarmonyPatch(typeof(SpellBookUI), "LoadSpellPage")]
+    static class TomiSpellPageTintPatch { static void Postfix(SpellBookUI __instance) { TomiCardTint.Tint(__instance); } }
+
+    [HarmonyPatch(typeof(SpellBookUI), "LoadInfoPage")]
+    static class TomiInfoPageTintPatch { static void Postfix(SpellBookUI __instance) { TomiCardTint.Tint(__instance); } }
+
+    [HarmonyPatch(typeof(SpellBookUI), "SetEquipSlots")]
+    static class TomiEquipTintPatch { static void Postfix(SpellBookUI __instance) { TomiCardTint.Tint(__instance); } }
+
+    [HarmonyPatch(typeof(SkillStoreItem), "SetCardSprite")]
+    static class InfusionStockFramePatch
+    {
+        static void Postfix(SkillStoreItem __instance)
+        {
+            try
+            {
+                ElementType el;
+                if (__instance == null || !Infusion.Any || !Infusion.TryGetShown(__instance.skillID, out el)) return;
+                Color c = Color.Lerp(Color.white, Infusion.ColorOf(el), 0.55f);
+                foreach (SpriteRenderer sr in __instance.GetComponentsInChildren<SpriteRenderer>(true))
+                    if (sr != null && sr.name.IndexOf("Frame", StringComparison.OrdinalIgnoreCase) >= 0) sr.color = c;
+            }
+            catch (Exception) { }
         }
     }
 
@@ -296,14 +398,25 @@ namespace WolHybridBosses
         static IEnumerator SpawnLater(SkillStoreItem item)
         {
             yield return new WaitForSeconds(0.5f);
-            if (item == null || UnityEngine.Object.FindObjectOfType<SpellBookNpc>() != null) yield break; // the game already brought him
-            try
+            if (item == null) yield break;
+            // v0.7.2: the merchant's own SpawnTomi always puts him at (14, 8), his spot in the Hub's shop, so in a run
+            // he landed off somewhere in the level. Instead: just left of the merchant's arcana row, a bit above it.
+            Vector2 c = item.transform.position;
+            float minX = c.x, sumY = 0f;
+            int n = 0;
+            foreach (SkillStoreItem s in UnityEngine.Object.FindObjectsOfType<SkillStoreItem>())
             {
-                Traverse.Create(item).Method("SpawnTomi").GetValue();
-                Traverse.Create(item).Field("tomiSpawned").SetValue(true);
-                Plugin.Log.LogInfo("INFUSION Tomi came to the arcana merchant");
+                if (s == null || Vector2.Distance(s.transform.position, c) > 12f) continue;
+                minX = Mathf.Min(minX, s.transform.position.x);
+                sumY += s.transform.position.y;
+                n++;
             }
-            catch (Exception ex) { Plugin.Log.LogWarning("INFUSION SpawnTomi failed: " + ex.Message); TomiInfusion.SpawnAt((Vector2)item.transform.position + new Vector2(-3.5f, -1f)); }
+            Vector2 at = new Vector2(minX - 2.5f, (n > 0 ? sumY / n : c.y) + 2.2f);
+            foreach (SpellBookNpc t in UnityEngine.Object.FindObjectsOfType<SpellBookNpc>())
+                if (t != null && Vector2.Distance(t.transform.position, at) < 15f) yield break; // he's already here
+            TomiInfusion.SpawnAt(at);
+            ArcanosBridge.Fx("Teletransporte", at);
+            Plugin.Log.LogInfo("INFUSION Tomi came to the arcana merchant at " + at);
         }
     }
 
@@ -419,10 +532,30 @@ namespace WolHybridBosses
         void Update()
         {
             if (!Active) return;
-            if (!Input.GetKeyDown(KeyCode.I)) return;
+            if (!Input.GetKeyDown(KeyCode.I) && !PadPressed()) return;
             Player.SkillState cur = Cursor();
             if (InRun) RunPress(cur); else HubPress(cur);
         }
+
+        // v0.7.3: controller (Steam Deck): the game's own input actions (Rewired) through the menu's input device.
+        // Tomi's menu only reads Confirm and Cancel, so the arcana buttons (config Infusion.Buttons, default
+        // Skill1,Skill2,Skill3) are free; a press that is also Confirm / Cancel this frame is ignored.
+        bool PadPressed()
+        {
+            try
+            {
+                ChaosInputDevice dev = Traverse.Create(ui).Field("inputDev").GetValue() as ChaosInputDevice;
+                if (dev == null) { Player p = PlayerOf(); dev = p != null ? p.inputDevice : null; }
+                if (dev == null) return false;
+                if (dev.GetButtonDown("Confirm") || dev.GetButtonDown("Cancel")) return false;
+                foreach (string action in Plugin.InfusionButtons.Value.Split(',', ';', ' '))
+                    if (action.Length > 0 && dev.GetButtonDown(action.Trim())) return true;
+            }
+            catch (Exception) { }
+            return false;
+        }
+
+        static string Key { get { return "[I] / arcana button"; } }
 
         void RunPress(Player.SkillState cur)
         {
@@ -475,7 +608,7 @@ namespace WolHybridBosses
             ElementType? next = i + 1 < versions.Count ? (ElementType?)versions[i + 1] : null;
             InfusionUnlocks.Select(cur.skillID, next);
             Refresh(PlayerOf());
-            Say(IntroUI.SkillName(cur.skillID) + ": " + (next.HasValue ? Infusion.Name(next.Value) + "-infused" : "original"));
+            message = null; // the bar itself shows the chosen version (a second line repeated it and overlapped)
         }
 
         // Rebuild the menu's lists and the shown page so icons and lists update.
@@ -506,12 +639,26 @@ namespace WolHybridBosses
                 line = v.Count == 0 ? "Infused versions you unlock in runs can be chosen here with [I]"
                     : "<b>[I] Switch version</b>  " + IntroUI.SkillName(cur.skillID) + ": " + (sel.HasValue ? Infusion.Name(sel.Value) + "-infused" : "original") + "  (" + (v.Count + 1) + " versions)";
             }
-            if (message != null && Time.unscaledTime < messageUntil) line += "\n" + message;
-            GUIStyle st = new GUIStyle(GUI.skin.box) { richText = true, fontSize = 14, alignment = TextAnchor.MiddleCenter, wordWrap = true };
-            st.normal.textColor = new Color(1f, 0.96f, 0.85f);
-            float w = Mathf.Min(760, Screen.width - 40);
-            GUI.Box(new Rect((Screen.width - w) / 2, Screen.height - 86, w, 58), line, st);
+            if (message != null && Time.unscaledTime < messageUntil) line += "\n<color=#ffe9a8>" + message + "</color>";
+            line = line.Replace("<b>", "").Replace("</b>", "").Replace("[I]", Key);
+            // v0.7.3: the game's look: its font with a drop shadow on a dark band (no Unity box skin).
+            if (hintStyle == null || GameFont.Changed(ref hintFont)) hintStyle = GameFont.Style(GUI.skin.label, 18, TextAnchor.MiddleCenter, false, true);
+            // v0.7.4: at the top of the screen (the bottom has the game's own prompts) and as tall as its text.
+            float w = Mathf.Min(900, Screen.width - 40);
+            float h = hintStyle.CalcHeight(new GUIContent(line), w - 24) + 14f;
+            Rect band = new Rect((Screen.width - w) / 2, 18f, w, h);
+            Color old = GUI.color;
+            GUI.color = new Color(0.04f, 0.03f, 0.07f, 0.82f);
+            GUI.DrawTexture(band, Texture2D.whiteTexture);
+            GUI.color = new Color(0.95f, 0.8f, 0.45f, 0.9f);
+            GUI.DrawTexture(new Rect(band.x, band.y, band.width, 2f), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(band.x, band.yMax - 2f, band.width, 2f), Texture2D.whiteTexture);
+            GUI.color = old;
+            GameFont.Shadowed(new Rect(band.x + 12, band.y + 4, band.width - 24, band.height - 8), line, hintStyle, new Color(1f, 0.97f, 0.9f));
         }
+
+        static GUIStyle hintStyle;
+        static Font hintFont;
     }
 
     // Infused versions the player has unlocked (kept between runs) and which one is chosen for each arcana.

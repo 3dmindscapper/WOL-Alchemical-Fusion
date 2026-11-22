@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using HarmonyLib;
@@ -318,15 +318,14 @@ namespace WolHybridBosses
             if (icon != null) IntroUI.DrawSprite(new Rect(frame.x + 6, frame.y + 6, size - 12, size - 12), icon, Color.white);
             else
             {
-                GUIStyle q = new GUIStyle(GUI.skin.label) { fontSize = 30, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+                GUIStyle q = GameFont.Style(GUI.skin.label, 30, TextAnchor.MiddleCenter, true);
                 q.normal.textColor = el;
                 GUI.Label(frame, "?", q);
             }
-            GUIStyle st = new GUIStyle(GUI.skin.label) { fontSize = 13, fontStyle = FontStyle.Bold, alignment = TextAnchor.UpperRight };
+            GUIStyle st = GameFont.Style(GUI.skin.label, 13, TextAnchor.UpperRight, true);
             st.normal.textColor = el;
             GUI.Label(new Rect(Screen.width - 260f, frame.yMax + 4f, 236f, 20f), "NOT SURA", st);
             st.normal.textColor = Color.white;
-            st.fontStyle = FontStyle.Normal;
             GUI.Label(new Rect(Screen.width - 260f, frame.yMax + 20f, 236f, 20f), fc.Title + " awaits", st);
             GUI.color = old;
         }

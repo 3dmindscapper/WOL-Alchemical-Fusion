@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
@@ -14,7 +14,7 @@ namespace WolHybridBosses
     [BepInDependency("wolarcanos.arcanos", BepInDependency.DependencyFlags.SoftDependency)] // optional: Radiant / Prism variants
     public class Plugin : BaseUnityPlugin
     {
-        public const string Version = "0.7.1";
+        public const string Version = "0.7.4";
         internal static ManualLogSource Log;
 
         internal static ConfigEntry<bool> ElementalGiants;
@@ -42,6 +42,7 @@ namespace WolHybridBosses
         internal static ConfigEntry<float> ChaosStageRewards;
         internal static ConfigEntry<float> VariantChaosShare, VariantRadiantShare, VariantPrismShare, VariantArchonChance, RadiantHealthDropChance;
         internal static ConfigEntry<bool> InfusionEnabled;
+        internal static ConfigEntry<string> InfusionButtons;
         internal static ConfigEntry<float> InfusedDropChance, InfusedStockChance;
         internal static ConfigEntry<int> ChaosGiantPalette;
         internal static ConfigEntry<float> ChaosEnemyChance;
@@ -116,6 +117,7 @@ namespace WolHybridBosses
             VariantPrismShare = Config.Bind("StageVariants", "PrismShare", 0.15f, "With WoL Arcanos installed, the share of variant stages that are Prism (Arcanos' Prisma element).");
             VariantArchonChance = Config.Bind("StageVariants", "ArchonChance", 0.25f, "With WoL Arcanos installed, chance that an elemental Archon (final champion or arena Archon) is a Radiant or Prism Archon instead.");
             InfusionEnabled = Config.Bind("Infusion", "Enabled", true, "An Infusion Altar stands beside the arcana merchant: keep one arcana, sacrifice another, and the kept one takes the sacrificed one's element (+10% damage). Run only.");
+            InfusionButtons = Config.Bind("Infusion", "Buttons", "Skill1,Skill2,Skill3", "Controller actions (the game's own input action names) that act as the infuse key [I] in Tomi's spellbook. Tomi's menu only uses Confirm and Cancel, so the arcana buttons are free. Other names: Interact, EquipMenu, Slide, Skill0..Skill5.");
             InfusedDropChance = Config.Bind("Infusion", "InfusedDropChance", 0.04f, "Chance that a dropped arcana comes already infused with another element.");
             InfusedStockChance = Config.Bind("Infusion", "InfusedStockChance", 0.08f, "Chance that an arcana in the merchant's stock is already infused (25% pricier).");
             RadiantHealthDropChance = Config.Bind("StageVariants", "RadiantHealthDrop", 0.15f, "Chance that an enemy on a Radiant stage leaves a health pickup when it dies.");
@@ -178,7 +180,8 @@ namespace WolHybridBosses
             if (Input.GetKeyDown(KeyCode.F11) && ctrl) Debug.SkipToNextStage();
             else if (Input.GetKeyDown(KeyCode.F11) && shift) ChaosStages.ToggleOnCurrentStage();
             else if (Input.GetKeyDown(KeyCode.F11)) Debug.OpenRivalArenaHere();
-            if (Input.GetKeyDown(KeyCode.F12) && ctrl) CouncilCorruption.JumpToCouncil();
+            if (Input.GetKeyDown(KeyCode.F12) && ctrl && shift) Debug.JumpToFinal();
+            else if (Input.GetKeyDown(KeyCode.F12) && ctrl) CouncilCorruption.JumpToCouncil();
             else if (Input.GetKeyDown(KeyCode.F12) && shift) CouncilCorruption.ToggleForce();
             else if (Input.GetKeyDown(KeyCode.F12)) Debug.FinalChampionTest();
         }
@@ -737,6 +740,23 @@ namespace WolHybridBosses
         // Ctrl+F9 (v0.6.4, infusion research): what each castable arcana's prefab is made of, to learn how vanilla
         // sells an element's look: sprites (and their shaders), animators, particle systems (and start colours),
         // trails, lines, lights. One line per arcana plus a per-element summary in the log.
+        // Ctrl+Shift+F12: straight to the final fight (Sura, or this run's champion), as if the three Council floors
+        // were done (NextLevelLoader loads "FinalBossLevel" once tierCount reaches 3).
+        internal static void JumpToFinal()
+        {
+            string scene = Application.loadedLevelName;
+            if (scene == "Hub" || scene == "Tutorial" || scene == "TitleScreen")
+            {
+                Plugin.Log.LogWarning("FINAL jump: start a run first (scene " + scene + ")");
+                return;
+            }
+            FinalRun.Tick();
+            GameController.tierCount = 3;
+            GameController.stageCount = 0;
+            Plugin.Log.LogInfo("FINAL jump: " + scene + " -> FinalBossLevel (" + (FinalRun.ChampionTitle ?? "Sura") + ")");
+            GameController.LoadLevel("FinalBossLevel");
+        }
+
         internal static void DumpArcanaVisuals()
         {
             Dictionary<string, int[]> perEl = new Dictionary<string, int[]>(); // arcana, with particles, with lights, with trails

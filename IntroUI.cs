@@ -44,7 +44,8 @@ namespace WolHybridBosses
         internal static void DrawSprite(Rect r, Sprite s, Color tint)
         {
             if (s == null || s.texture == null) return;
-            Rect tr = s.textureRect;
+            Rect tr;
+            try { tr = s.textureRect; } catch (Exception) { tr = s.rect; } // tightly packed sprites have no textureRect
             Texture2D tex = s.texture;
             Rect uv = new Rect(tr.x / tex.width, tr.y / tex.height, tr.width / tex.width, tr.height / tex.height);
             Color old = GUI.color;
@@ -54,6 +55,7 @@ namespace WolHybridBosses
         }
 
         static GUIStyle titleStyle, subStyle, labelStyle;
+        static Font styleFont;
 
         static void Label(Rect r, string text, GUIStyle style, Color color)
         {
@@ -69,11 +71,12 @@ namespace WolHybridBosses
         {
             float t = Time.time - start;
             if (t > duration) return;
-            if (titleStyle == null)
+            if (titleStyle == null || GameFont.Changed(ref styleFont))
             {
-                titleStyle = new GUIStyle(GUI.skin.label) { fontSize = 30, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-                subStyle = new GUIStyle(GUI.skin.label) { fontSize = 18, alignment = TextAnchor.MiddleCenter };
-                labelStyle = new GUIStyle(GUI.skin.label) { fontSize = 15, fontStyle = FontStyle.Bold, alignment = TextAnchor.UpperCenter, wordWrap = true };
+                // v0.7.3: the game's own font (falls back to Unity's until it's found).
+                titleStyle = GameFont.Style(GUI.skin.label, 32, TextAnchor.MiddleCenter, true);
+                subStyle = GameFont.Style(GUI.skin.label, 18, TextAnchor.MiddleCenter);
+                labelStyle = GameFont.Style(GUI.skin.label, 15, TextAnchor.UpperCenter, true, true);
             }
 
             float fadeOut = Mathf.Clamp01((duration - t) / 0.5f);

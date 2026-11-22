@@ -71,6 +71,30 @@ Cloning the player GameObject and driving it from script failed:
 - v0.0.7 tested: summon swap works (logged EarthKnight, FlameLancer etc.). SuperCoffin goes **pink** on palettes 4–8, so its sheet has no elemental rows: keep palette 3 and tint or outline it (MiniBoss uses `_OutlineColor`/`_OutlineColor2`). The user wants the coffin (and rivals) to cast **player arcana** instead.
 - Arcana research: `Contestant : Enemy` (PvP wizard) reimplements Tornado/SwordThrow/Fireball as its own states (ctor typed to Contestant). Its FireballState instantiates the prefab and calls `Attack.SetAttackInfo("Player", "ShootFireball", level, isUltimate)`, the same call player arcana make (e.g. `UseFireBeam.CreateFireBeam`: `FireBeam.Prefab` + `ChaosInst` + `SetAttackInfo`). There are 100 `Player+Use*` arcana. Plan: our own data-driven `ArcanaState : Enemy.SkillState` (skillID, prefab, delivery type). See ROADMAP "Enemy Arcana".
 
+## v0.7.4: final-fight hotkey; Tomi hint overlap; Chaos Ball and Chaos accents (built, not yet run in game)
+- **Ctrl+Shift+F12 → `Debug.JumpToFinal`:** sets tierCount = 3 and stageCount = 0, then `GameController.LoadLevel("FinalBossLevel")` (Sura, or the run's champion). It only works from inside a run.
+- **Tomi hint:** in the Hub the switched version was shown twice (the bar line plus a status message), and two lines didn't fit the fixed 70px band. The message is dropped, and the band moved to the top of the screen (the game's prompts sit at the bottom), sized with `CalcHeight`.
+- **Chaos noise/trail:** `UseChaosBall` is a player charge arcana (`ProjectileChargeAttackState` with sub-balls, lightning and Chaos pillars) that enemies never release. It's now in `EnemyArcana.Broken` at startup.
+  - `Variants.Apply` skips attacks that already are Chaos on Chaos stages, since recolouring them onto the Chaos ramp made a murky blob.
+  - `Accent` fires once per attack object (`accented`) and at most every 1.5s per caster. Attacks that re-set their info in flight had left spark trails and repeated sounds.
+
+## v0.7.3: controller infusion; game font on mod UI (built, not yet run in game)
+- **Controller:** the game reads input through `ChaosInputDevice.GetButtonDown(actionName)` (Rewired). Every action name the game uses: Cancel, Confirm, EquipMenu, Interact, Menu, Skill, Skill0–Skill5, Slide, Slot. SpellBookUI.Update only reads Confirm and Cancel; navigation is directional.
+  - `TomiInfusion.PadPressed` reads `SpellBookUI.inputDev` (fallback `player.inputDevice`). Any action in config `Infusion.Buttons` (default `Skill1,Skill2,Skill3`) acts as [I]. A press that's also Confirm/Cancel on the same frame is ignored.
+- **GameFont.cs:** `Get()` picks the font most of the game's `UI.Text` use (`Resources.FindObjectsOfTypeAll`, retried every 2s until found, logged as `UI using the game's font`).
+  - `Style()` builds GUIStyles in it (bold dropped, since the pixel font has none), `Changed(ref seen)` rebuilds styles when the font turns up, and `Shadowed()` draws text with a drop shadow.
+  - It's used by IntroUI (all announcement cards: rival portal, Council, intros), SignatureMeter labels, the champion overlay, and Tomi's hint bar (now a dark band with gold edge lines instead of Unity's box skin).
+- `IntroUI.DrawSprite` falls back to `sprite.rect` for tightly packed sprites (textureRect throws).
+
+## v0.7.2: Tomi placed at the merchant; infused cards tinted everywhere (built, not yet run in game)
+- **Bug:** `SkillStoreItem.SpawnTomi` hard-codes (14, 8), his Plaza spot in the Hub. In runs he spawned out of sight, even though the log said he came.
+- **Fix:** `TomiAtMerchantPatch` spawns him itself at the left end of the shop's arcana row (SkillStoreItems within 12 units) plus 2.2 up, with Arcanos' "Teletransporte" effect. It skips if a Tomi is already within 15 units.
+- **Infused cards:**
+  - `InfusionIconPatch` logs each icon request once: `INFUSION icon <id> -> <ramp> (recoloured / could not recolour)`.
+  - `InfusionCardFramePatch` (Card.SetSkillIcon) tints the frame and back renderers (via Traverse) in the element's colour on dropped/world cards, and resets pooled cards.
+  - `InfusionStockFramePatch` tints the merchant card's "Frame" renderers.
+  - `TomiCardTint` (after SpellBookUI LoadSpellPage / LoadInfoPage / SetEquipSlots) tints the card image wherever the paired icon is one of our twins (`RecolorEngine.KeyOf`, which reads the ramp from the twin's name). It covers the spell page (iconArray/cardImgArray), loadout (spellIconArray/cardBGArray) and info page (iconArray/cardArray).
+
 ## v0.7.1: real attack recolour; infusion moved to Tomi; persistent infused versions (built, not yet run in game)
 - **Bug:** the icon was recoloured, but attacks weren't. There were two causes:
   - effect sprites are tightly packed in atlases, so `textureRect` throws, the twin failed and only a weak tint was applied;

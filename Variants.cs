@@ -193,6 +193,9 @@ namespace WolHybridBosses
         internal static void Apply(Attack atk, StageVariant v, bool stage = true)
         {
             if (atk == null || v == StageVariant.None) return;
+            // v0.7.4: an attack that already is Chaos (a Chaos arcana) keeps its own look: recolouring it onto the
+            // Chaos ramp only turned it into a murky blob, and accents on it left a sparking, noisy trail.
+            if (v == StageVariant.Chaos && atk.atkInfo != null && atk.atkInfo.elementType == ElementType.Chaos) return;
             Convert(atk, v);
             PrismElement el = null;
             if (v == StageVariant.Prism && atk.atkInfo != null) prismDone.TryGetValue(atk.atkInfo, out el);
@@ -204,14 +207,19 @@ namespace WolHybridBosses
         // v0.6.5: a few element particles where the attack starts, to sell the element (Arcanos' effects when
         // installed). At most one per caster every 0.35s, so busy fights don't fill with sparks.
         static readonly Dictionary<int, float> lastAccent = new Dictionary<int, float>();
+        static readonly HashSet<int> accented = new HashSet<int>();
 
+        // v0.7.4: once per attack object (attacks that re-set their info while travelling used to leave a trail of
+        // sparks and repeated sounds), at most once per caster every 1.5s.
         static void Accent(Attack atk, StageVariant v, PrismElement el)
         {
             if (!ArcanosBridge.Present || atk == null || atk.atkInfo == null) return;
+            if (!accented.Add(atk.GetInstanceID())) return;
+            if (accented.Count > 4096) accented.Clear();
             Entity owner = atk.atkInfo.entity;
             int id = owner != null ? owner.GetInstanceID() : 0;
             float last;
-            if (lastAccent.TryGetValue(id, out last) && Time.time - last < 0.35f) return;
+            if (lastAccent.TryGetValue(id, out last) && Time.time - last < 1.5f) return;
             lastAccent[id] = Time.time;
             if (lastAccent.Count > 256) lastAccent.Clear();
             Vector2 p = atk.transform.position;
